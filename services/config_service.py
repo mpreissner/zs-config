@@ -1,0 +1,125 @@
+"""Tenant configuration management with encrypted secret storage.
+
+Secrets (client_secret) are encrypted with Fernet symmetric encryption before
+being stored in the database. The encryption key lives only in the
+ZSCALER_SECRET_KEY environment variable — never on disk.
+
+To generate a key for first-time setup:
+    python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+Then set: export ZSCALER_SECRET_KEY=<generated_key>
+"""
+
+import os
+from typing import List, Optional
+
+from cryptography.fernet import Fernet, InvalidToken
+
+from db.database import get_session
+from db.models import TenantConfig
+
+
+def _get_fernet() -> Fernet:
+    key = os.environ.get("ZSCALER_SECRET_KEY")
+    if not key:
+        raise EnvironmentError(
+            "ZSCALER_SECRET_KEY is not set. "
+            "Generate one with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+        )
+    return Fernet(key.encode() if isinstance(key, str) else key)
+
+
+def generate_key() -> str:
+    """Generate a new Fernet encryption key. Print and store securely."""
+    return Fernet.generate_key().decode()
+
+
+def encrypt_secret(value: str) -> str:
+    return _get_fernet().encrypt(value.encode()).decode()
+
+
+def decrypt_secret(value: str) -> str:
+    try:
+        return _get_fernet().decrypt(value.encode()).decode()
+    except InvalidToken as e:
+        raise ValueError(
+            "Failed to decrypt client secret — ZSCALER_SECRET_KEY may be wrong or the record is corrupted."
+        ) from e
+
+
+def add_tenant(
+    name: str,
+    zidentity_base_url: str,
+    client_id: str,
+    client_secret: str,
+    oneapi_base_url: str = "https://api.zsapi.net",
+    zpa_customer_id: Optional[str] = None,
+    notes: Optional[str] = None,
+) -> TenantConfig:
+    """Add a new tenant configuration to the database."""
+    with get_session() as session:
+        tenant = TenantConfig(
+            name=name,
+            zidentity_base_url=zidentity_base_url.rstrip("/"),
+            oneapi_base_url=oneapi_base_url.rstrip("/"),
+            client_id=client_id,
+            client_secret_enc=encrypt_secret(client_secret),
+            zpa_customer_id=zpa_customer_id or None,
+            notes=notes,
+        )
+        session.add(tenant)
+        session.flush()
+        session.refresh(tenant)
+        return tenant
+
+
+def get_tenant(name: str) -> Optional[TenantConfig]:
+    """Retrieve an active tenant by name."""
+    with get_session() as session:
+        return session.query(TenantConfig).filter_by(name=name, is_active=True).first()
+
+
+def list_tenants() -> List[TenantConfig]:
+    """Return all active tenants."""
+    with get_session() as session:
+        return session.query(TenantConfig).filter_by(is_active=True).order_by(TenantConfig.name).all()
+
+
+def update_tenant(
+    name: str,
+    zidentity_base_url: Optional[str] = None,
+    client_id: Optional[str] = None,
+    client_secret: Optional[str] = None,
+    oneapi_base_url: Optional[str] = None,
+    zpa_customer_id: Optional[str] = None,
+    notes: Optional[str] = None,
+) -> Optional[TenantConfig]:
+    """Update fields on an existing tenant. Only provided fields are changed."""
+    with get_session() as session:
+        tenant = session.query(TenantConfig).filter_by(name=name, is_active=True).first()
+        if not tenant:
+            return None
+        if zidentity_base_url is not None:
+            tenant.zidentity_base_url = zidentity_base_url.rstrip("/")
+        if oneapi_base_url is not None:
+            tenant.oneapi_base_url = oneapi_base_url.rstrip("/")
+        if client_id is not None:
+            tenant.client_id = client_id
+        if client_secret is not None:
+            tenant.client_secret_enc = encrypt_secret(client_secret)
+        if zpa_customer_id is not None:
+            tenant.zpa_customer_id = zpa_customer_id
+        if notes is not None:
+            tenant.notes = notes
+        session.flush()
+        session.refresh(tenant)
+        return tenant
+
+
+def deactivate_tenant(name: str) -> bool:
+    """Soft-delete a tenant (sets is_active=False)."""
+    with get_session() as session:
+        tenant = session.query(TenantConfig).filter_by(name=name, is_active=True).first()
+        if not tenant:
+            return False
+        tenant.is_active = False
+        return True
