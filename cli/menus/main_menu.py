@@ -3,6 +3,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from cli.banner import render_banner
 from cli.menus import select_tenant
 
 console = Console()
@@ -16,7 +17,7 @@ def _active_tenant_label() -> str:
 
 def main_menu():
     while True:
-        console.clear()
+        render_banner()
         choice = questionary.select(
             "Main Menu",
             choices=[
@@ -72,7 +73,7 @@ def _switch_tenant():
 
 def settings_menu():
     while True:
-        console.clear()
+        render_banner()
         choice = questionary.select(
             "Settings",
             choices=[
@@ -97,7 +98,7 @@ def settings_menu():
 
 def tenant_management_menu():
     while True:
-        console.clear()
+        render_banner()
         choice = questionary.select(
             "Manage Tenants",
             choices=[

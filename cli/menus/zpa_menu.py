@@ -2,6 +2,7 @@ import questionary
 from rich.console import Console
 from rich.table import Table
 
+from cli.banner import render_banner
 from cli.menus import get_zpa_client
 
 console = Console()
@@ -13,8 +14,7 @@ def zpa_menu():
         return
 
     while True:
-        console.clear()
-        console.print(f"[dim]Connected: [bold]{tenant.name}[/bold][/dim]")
+        render_banner()
         choice = questionary.select(
             "ZPA",
             choices=[
@@ -46,7 +46,7 @@ def zpa_menu():
 
 def cert_menu(client, tenant):
     while True:
-        console.clear()
+        render_banner()
         choice = questionary.select(
             "Certificate Management",
             choices=[

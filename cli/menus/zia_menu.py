@@ -2,6 +2,7 @@ import questionary
 from rich.console import Console
 from rich.table import Table
 
+from cli.banner import render_banner
 from cli.menus import get_zia_client
 
 console = Console()
@@ -13,8 +14,7 @@ def zia_menu():
         return
 
     while True:
-        console.clear()
-        console.print(f"[dim]Connected: [bold]{tenant.name}[/bold][/dim]")
+        render_banner()
         choice = questionary.select(
             "ZIA",
             choices=[
@@ -46,7 +46,7 @@ def zia_menu():
 
 def _activation_menu(client, tenant):
     while True:
-        console.clear()
+        render_banner()
         with console.status("Checking activation status..."):
             try:
                 status = client.get_activation_status()

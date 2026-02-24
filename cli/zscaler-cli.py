@@ -15,23 +15,9 @@ import sys
 # Ensure repo root is importable regardless of working directory
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from rich.align import Align
 from rich.console import Console
-from rich.panel import Panel
-from rich.text import Text
 
 console = Console()
-
-VERSION = "1.0.0"
-
-ASCII_LOGO = r"""
- _____        ____             __ _
-|__  /  ___  / ___|___  _ __  / _(_) __ _
-  / /  |___|| |   / _ \| '_ \| |_| |/ _` |
- / /__      | |__| (_) | | | |  _| | (_| |
-/____|       \____\___/|_| |_|_| |_|\__, |
-                                      |___/
-"""
 
 
 def check_secret_key() -> bool:
@@ -49,28 +35,13 @@ def check_secret_key() -> bool:
 
 def main():
     from db.database import init_db
-    from cli.menus.main_menu import main_menu
+    from cli.banner import render_banner
     from cli.menus import select_tenant
+    from cli.menus.main_menu import main_menu
     from cli.session import set_active_tenant
 
-    # Initialise database (creates tables if needed)
     init_db()
-
-    # Pad all logo lines to the same width so Align centres the block as a unit
-    # (justify="center" would centre each line independently against the panel width)
-    _lines = ASCII_LOGO.strip().split("\n")
-    _w = max(len(l) for l in _lines)
-    _logo = "\n".join(l.ljust(_w) for l in _lines)
-
-    console.print(
-        Panel(
-            Align(Text(_logo, style="bold cyan", no_wrap=True), align="center"),
-            subtitle=f"v{VERSION}  |  Zscaler OneAPI Automation",
-            border_style="cyan",
-            padding=(0, 4),
-        )
-    )
-
+    render_banner()
     check_secret_key()
 
     # Select active tenant at startup (skipped if none are configured yet)
@@ -79,7 +50,6 @@ def main():
         tenant = select_tenant()
         if tenant:
             set_active_tenant(tenant)
-            console.print(f"[dim]Active tenant: [bold cyan]{tenant.name}[/bold cyan][/dim]\n")
 
     main_menu()
 
