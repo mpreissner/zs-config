@@ -1,6 +1,9 @@
 # Core HTTP
 requests>=2.31.0
 
+# Zscaler SDK
+zscaler-sdk-python>=1.0.0
+
 # Rich TUI (CLI)
 rich>=13.7.0
 questionary>=2.0.0

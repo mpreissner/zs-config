@@ -1,14 +1,40 @@
-import requests
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
+
+from zscaler import ZscalerClient
 
 from .auth import ZscalerAuth
 
 
-class ZPAClient:
-    """Low-level HTTP client for the Zscaler Private Access (ZPA) OneAPI.
+def _unwrap(result, resp, err):
+    if err:
+        raise RuntimeError(str(err))
+    return result
 
-    Handles authentication headers, base URL construction, and raw HTTP
-    operations. Business logic lives in services/zpa_service.py.
+
+def _to_dicts(items) -> list:
+    if not items:
+        return []
+    return [
+        i if isinstance(i, dict) else (i.as_dict() if hasattr(i, 'as_dict') else vars(i))
+        for i in items
+    ]
+
+
+def _to_dict(item) -> dict:
+    if item is None:
+        return {}
+    if isinstance(item, dict):
+        return item
+    if hasattr(item, 'as_dict'):
+        return item.as_dict()
+    return vars(item)
+
+
+class ZPAClient:
+    """SDK adapter for the Zscaler Private Access (ZPA) API.
+
+    Wraps zscaler-sdk-python behind the same method signatures as the
+    original hand-rolled HTTP client so all callers remain unchanged.
     """
 
     def __init__(
@@ -19,235 +45,155 @@ class ZPAClient:
     ):
         self.auth = auth
         self.customer_id = customer_id
-        base = f"{oneapi_base_url.rstrip('/')}/zpa/mgmtconfig"
-        self._v1 = f"{base}/v1/admin/customers/{customer_id}"
-        self._v2 = f"{base}/v2/admin/customers/{customer_id}"
-        self._userconfig = f"{oneapi_base_url.rstrip('/')}/zpa/userconfig/v1/customers/{customer_id}"
-        self._session = requests.Session()
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    def _headers(self) -> Dict[str, str]:
-        return {
-            "Authorization": f"Bearer {self.auth.get_token()}",
-            "Content-Type": "application/json",
-            "Accept": "*/*",
-        }
-
-    def _get(self, url: str, params: Optional[Dict] = None) -> Any:
-        r = self._session.get(url, headers=self._headers(), params=params, timeout=30)
-        r.raise_for_status()
-        return r.json()
-
-    def _post(self, url: str, payload: Dict) -> Any:
-        r = self._session.post(url, headers=self._headers(), json=payload, timeout=30)
-        r.raise_for_status()
-        return r.json() if r.content else None
-
-    def _put(self, url: str, payload: Dict) -> bool:
-        r = self._session.put(url, headers=self._headers(), json=payload, timeout=30)
-        r.raise_for_status()
-        return r.status_code == 204
-
-    def _delete(self, url: str) -> bool:
-        r = self._session.delete(url, headers=self._headers(), timeout=30)
-        r.raise_for_status()
-        return r.status_code == 204
+        self._sdk = ZscalerClient({
+            "clientId": auth.client_id,
+            "clientSecret": auth.client_secret,
+            "vanityDomain": auth.vanity_domain,
+            "customerId": customer_id,
+        })
 
     # ------------------------------------------------------------------
     # Certificates
     # ------------------------------------------------------------------
 
     def list_certificates(self, page: int = 1, page_size: int = 500) -> List[Dict]:
-        data = self._get(f"{self._v1}/certificate", params={"page": page, "pagesize": page_size})
-        return data.get("list", [])
+        result, resp, err = self._sdk.zpa.certificates.list_certificates({"page_size": page_size})
+        return _to_dicts(_unwrap(result, resp, err))
 
     def list_issued_certificates(self) -> List[Dict]:
-        """v2 endpoint — returns only Zscaler-issued certificates."""
-        data = self._get(f"{self._v2}/certificate/issued")
-        return data.get("list", [])
+        result, resp, err = self._sdk.zpa.certificates.list_issued_certificates()
+        return _to_dicts(_unwrap(result, resp, err))
 
     def get_certificate(self, cert_id: str) -> Optional[Dict]:
         try:
-            return self._get(f"{self._v1}/certificate/{cert_id}")
-        except requests.HTTPError:
+            result, resp, err = self._sdk.zpa.certificates.get_certificate(cert_id)
+            return _to_dict(_unwrap(result, resp, err))
+        except Exception:
             return None
 
     def upload_certificate(self, name: str, cert_blob: str, description: str = "") -> Dict:
-        """Upload a certificate + private key (combined PEM) to ZPA."""
-        return self._post(
-            f"{self._v1}/certificate",
-            {"name": name, "description": description, "certBlob": cert_blob},
+        result, resp, err = self._sdk.zpa.certificates.add_certificate(
+            name=name, pem=cert_blob, description=description
         )
+        return _to_dict(_unwrap(result, resp, err))
 
     def delete_certificate(self, cert_id: str) -> bool:
-        return self._delete(f"{self._v1}/certificate/{cert_id}")
+        result, resp, err = self._sdk.zpa.certificates.delete_certificate(cert_id)
+        _unwrap(result, resp, err)
+        return True
 
     # ------------------------------------------------------------------
     # Application Segments
     # ------------------------------------------------------------------
 
     def list_applications(self, app_type: str = "BROWSER_ACCESS") -> List[Dict]:
-        r = self._session.get(
-            f"{self._v1}/application/getAppsByType",
-            headers=self._headers(),
-            params={"applicationType": app_type},
-            timeout=30,
+        result, resp, err = self._sdk.zpa.application_segment.list_application_segments(
+            {"application_type": app_type}
         )
-        r.raise_for_status()
-        return r.json().get("list", [])
+        return _to_dicts(_unwrap(result, resp, err))
 
     def get_application(self, app_id: str) -> Dict:
-        return self._get(f"{self._v1}/application/{app_id}")
-
-    def create_application(self, config: Dict) -> Dict:
-        return self._post(f"{self._v1}/application", config)
+        result, resp, err = self._sdk.zpa.application_segment.get_application_segment(app_id)
+        return _to_dict(_unwrap(result, resp, err))
 
     def update_application(self, app_id: str, config: Dict) -> bool:
-        return self._put(f"{self._v1}/application/{app_id}", config)
-
-    def delete_application(self, app_id: str) -> bool:
-        return self._delete(f"{self._v1}/application/{app_id}")
+        result, resp, err = self._sdk.zpa.application_segment.update_application_segment(app_id, **config)
+        _unwrap(result, resp, err)
+        return True
 
     # ------------------------------------------------------------------
     # PRA Portals
     # ------------------------------------------------------------------
 
     def list_pra_portals(self) -> List[Dict]:
-        r = self._session.get(f"{self._v1}/praPortal", headers=self._headers(), timeout=30)
-        r.raise_for_status()
-        return r.json()
+        result, resp, err = self._sdk.zpa.pra_portal.list_pra_portals()
+        return _to_dicts(_unwrap(result, resp, err))
 
     def get_pra_portal(self, portal_id: str) -> Dict:
-        return self._get(f"{self._v1}/praPortal/{portal_id}")
-
-    def create_pra_portal(self, config: Dict) -> Dict:
-        return self._post(f"{self._v1}/praPortal", config)
+        result, resp, err = self._sdk.zpa.pra_portal.get_pra_portal(portal_id)
+        return _to_dict(_unwrap(result, resp, err))
 
     def update_pra_portal(self, portal_id: str, config: Dict) -> bool:
-        return self._put(f"{self._v1}/praPortal/{portal_id}", config)
-
-    def delete_pra_portal(self, portal_id: str) -> bool:
-        return self._delete(f"{self._v1}/praPortal/{portal_id}")
-
-    # ------------------------------------------------------------------
-    # PRA Consoles
-    # ------------------------------------------------------------------
-
-    def list_pra_consoles(self) -> List[Dict]:
-        data = self._get(f"{self._v1}/praConsole")
-        return data.get("list", [])
-
-    def get_pra_console(self, console_id: str) -> Dict:
-        return self._get(f"{self._v1}/praConsole/{console_id}")
-
-    # ------------------------------------------------------------------
-    # App Connectors & Groups
-    # ------------------------------------------------------------------
-
-    def list_connectors(self) -> List[Dict]:
-        data = self._get(f"{self._v1}/connector")
-        return data.get("list", [])
-
-    def list_connector_groups(self) -> List[Dict]:
-        data = self._get(f"{self._v1}/appConnectorGroup")
-        return data.get("list", [])
-
-    def list_server_groups(self) -> List[Dict]:
-        data = self._get(f"{self._v1}/serverGroup")
-        return data.get("list", [])
-
-    def get_connector_group(self, group_id: str) -> Dict:
-        return self._get(f"{self._v1}/appConnectorGroup/{group_id}")
-
-    # ------------------------------------------------------------------
-    # Segment Groups
-    # ------------------------------------------------------------------
-
-    def list_segment_groups(self) -> List[Dict]:
-        data = self._get(f"{self._v1}/segmentGroup")
-        return data.get("list", [])
-
-    def get_segment_group(self, group_id: str) -> Dict:
-        return self._get(f"{self._v1}/segmentGroup/{group_id}")
-
-    def create_segment_group(self, config: Dict) -> Dict:
-        return self._post(f"{self._v1}/segmentGroup", config)
-
-    def update_segment_group(self, group_id: str, config: Dict) -> bool:
-        return self._put(f"{self._v1}/segmentGroup/{group_id}", config)
-
-    def delete_segment_group(self, group_id: str) -> bool:
-        return self._delete(f"{self._v1}/segmentGroup/{group_id}")
-
-    # ------------------------------------------------------------------
-    # Policy Sets
-    # ------------------------------------------------------------------
-
-    def get_policy_set(self, policy_type: str) -> Dict:
-        return self._get(f"{self._v1}/policySet/policyType/{policy_type}")
-
-    def list_policy_rules(self, policy_type: str) -> List[Dict]:
-        data = self._get(f"{self._v1}/policySet/rules/policyType/{policy_type}")
-        return data.get("list", [])
-
-    # ------------------------------------------------------------------
-    # IdP / SAML / SCIM
-    # ------------------------------------------------------------------
-
-    def list_idp(self) -> List[Dict]:
-        data = self._get(f"{self._v2}/idp")
-        return data.get("list", [])
-
-    def list_saml_attributes(self, idp_id: Optional[str] = None) -> List[Dict]:
-        if idp_id:
-            data = self._get(f"{self._v1}/samlAttribute/idp/{idp_id}")
-        else:
-            data = self._get(f"{self._v2}/samlAttribute")
-        return data.get("list", [])
-
-    def list_scim_groups(self, idp_id: str) -> List[Dict]:
-        data = self._get(f"{self._userconfig}/scimgroup/idpId/{idp_id}")
-        return data.get("list", [])
-
-    # ------------------------------------------------------------------
-    # Microtenants
-    # ------------------------------------------------------------------
-
-    def list_microtenants(self) -> List[Dict]:
-        data = self._get(f"{self._v1}/microtenants")
-        return data.get("list", [])
-
-    def get_microtenant_summary(self) -> List[Dict]:
-        data = self._get(f"{self._v1}/microtenants/summary")
-        return data.get("list", [])
-
-    # ------------------------------------------------------------------
-    # Enrollment Certificates
-    # ------------------------------------------------------------------
-
-    def list_enrollment_certificates(self) -> List[Dict]:
-        data = self._get(f"{self._v2}/enrollmentCert")
-        return data.get("list", [])
+        result, resp, err = self._sdk.zpa.pra_portal.update_pra_portal(portal_id, **config)
+        _unwrap(result, resp, err)
+        return True
 
     # ------------------------------------------------------------------
     # Privileged Credentials
     # ------------------------------------------------------------------
 
     def list_credentials(self) -> List[Dict]:
-        data = self._get(f"{self._v1}/credential")
-        return data.get("list", [])
+        result, resp, err = self._sdk.zpa.pra_credential.list_credentials()
+        return _to_dicts(_unwrap(result, resp, err))
 
-    def get_credential(self, credential_id: str) -> Dict:
-        return self._get(f"{self._v1}/credential/{credential_id}")
+    # ------------------------------------------------------------------
+    # Segment Groups
+    # ------------------------------------------------------------------
 
-    def create_credential(self, config: Dict) -> Dict:
-        return self._post(f"{self._v1}/credential", config)
+    def list_segment_groups(self) -> List[Dict]:
+        result, resp, err = self._sdk.zpa.segment_groups.list_segment_groups()
+        return _to_dicts(_unwrap(result, resp, err))
 
-    def update_credential(self, credential_id: str, config: Dict) -> bool:
-        return self._put(f"{self._v1}/credential/{credential_id}", config)
+    # ------------------------------------------------------------------
+    # Server Groups
+    # ------------------------------------------------------------------
 
-    def delete_credential(self, credential_id: str) -> bool:
-        return self._delete(f"{self._v1}/credential/{credential_id}")
+    def list_server_groups(self) -> List[Dict]:
+        result, resp, err = self._sdk.zpa.server_groups.list_server_groups()
+        return _to_dicts(_unwrap(result, resp, err))
+
+    # ------------------------------------------------------------------
+    # App Connectors & Connector Groups
+    # ------------------------------------------------------------------
+
+    def list_connector_groups(self) -> List[Dict]:
+        result, resp, err = self._sdk.zpa.app_connector_groups.list_app_connector_groups()
+        return _to_dicts(_unwrap(result, resp, err))
+
+    def list_connectors(self) -> List[Dict]:
+        result, resp, err = self._sdk.zpa.app_connectors.list_app_connectors()
+        return _to_dicts(_unwrap(result, resp, err))
+
+    # ------------------------------------------------------------------
+    # IdP / SAML / SCIM
+    # ------------------------------------------------------------------
+
+    def list_idp(self) -> List[Dict]:
+        result, resp, err = self._sdk.zpa.idp.list_idps()
+        return _to_dicts(_unwrap(result, resp, err))
+
+    def list_saml_attributes(self, idp_id: Optional[str] = None) -> List[Dict]:
+        result, resp, err = self._sdk.zpa.saml_attributes.list_saml_attributes()
+        return _to_dicts(_unwrap(result, resp, err))
+
+    def list_scim_groups(self, idp_id: str) -> List[Dict]:
+        result, resp, err = self._sdk.zpa.scim_groups.list_scim_groups(idp_id)
+        return _to_dicts(_unwrap(result, resp, err))
+
+    # ------------------------------------------------------------------
+    # Microtenants
+    # ------------------------------------------------------------------
+
+    def list_microtenants(self) -> List[Dict]:
+        result, resp, err = self._sdk.zpa.microtenants.list_microtenants()
+        return _to_dicts(_unwrap(result, resp, err))
+
+    # ------------------------------------------------------------------
+    # Enrollment Certificates
+    # ------------------------------------------------------------------
+
+    def list_enrollment_certificates(self) -> List[Dict]:
+        result, resp, err = self._sdk.zpa.enrollment_certificates.list_enrollment_certificates()
+        return _to_dicts(_unwrap(result, resp, err))
+
+    # ------------------------------------------------------------------
+    # Policy Sets
+    # ------------------------------------------------------------------
+
+    def list_policy_rules(self, policy_type: str) -> List[Dict]:
+        result, resp, err = self._sdk.zpa.policies.list_rules(policy_type)
+        return _to_dicts(_unwrap(result, resp, err))
+
+    def get_policy_set(self, policy_type: str) -> Dict:
+        result, resp, err = self._sdk.zpa.policies.get_policy(policy_type)
+        return _to_dict(_unwrap(result, resp, err))

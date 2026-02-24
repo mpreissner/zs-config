@@ -22,7 +22,6 @@ from typing import Callable, List, Optional
 
 from db.database import get_session
 from db.models import SyncLog, ZPAResource
-from lib.rate_limiter import ZPA_READ_LIMITER
 from services import audit_service
 
 
@@ -182,24 +181,21 @@ class ZPAImportService:
     # ------------------------------------------------------------------
 
     def _fetch(self, defn: ResourceDef) -> list:
-        """Call the appropriate ZPAClient list method with rate limiting."""
+        """Call the appropriate ZPAClient list method."""
         if defn.list_method == "_scim_groups_all":
             return self._fetch_scim_groups_all()
-        ZPA_READ_LIMITER.acquire()
         method = getattr(self.client, defn.list_method)
         result = method(**defn.list_args) if defn.list_args else method()
         return result or []
 
     def _fetch_scim_groups_all(self) -> list:
-        """Fetch SCIM groups across all IdPs, rate-limiting each call."""
-        ZPA_READ_LIMITER.acquire()
+        """Fetch SCIM groups across all IdPs."""
         idps = self.client.list_idp()
         groups = []
         for idp in idps:
             idp_id = str(idp.get("id", ""))
             if not idp_id:
                 continue
-            ZPA_READ_LIMITER.acquire()
             try:
                 groups.extend(self.client.list_scim_groups(idp_id) or [])
             except Exception:

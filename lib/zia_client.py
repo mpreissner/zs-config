@@ -1,11 +1,40 @@
-import requests
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
+
+from zscaler import ZscalerClient
 
 from .auth import ZscalerAuth
 
 
+def _unwrap(result, resp, err):
+    if err:
+        raise RuntimeError(str(err))
+    return result
+
+
+def _to_dicts(items) -> list:
+    if not items:
+        return []
+    return [
+        i if isinstance(i, dict) else (i.as_dict() if hasattr(i, 'as_dict') else vars(i))
+        for i in items
+    ]
+
+
+def _to_dict(item) -> dict:
+    if item is None:
+        return {}
+    if isinstance(item, dict):
+        return item
+    if hasattr(item, 'as_dict'):
+        return item.as_dict()
+    return vars(item)
+
+
 class ZIAClient:
-    """Low-level HTTP client for the Zscaler Internet Access (ZIA) OneAPI.
+    """SDK adapter for the Zscaler Internet Access (ZIA) API.
+
+    Wraps zscaler-sdk-python behind the same method signatures as the
+    original hand-rolled HTTP client so all callers remain unchanged.
 
     NOTE: ZIA configuration changes do not take effect until you call activate().
     Always call activate() after making changes, or use the context manager pattern
@@ -14,95 +43,60 @@ class ZIAClient:
 
     def __init__(self, auth: ZscalerAuth, oneapi_base_url: str = "https://api.zsapi.net"):
         self.auth = auth
-        self._base = f"{oneapi_base_url.rstrip('/')}/zia/api/v1"
-        self._session = requests.Session()
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    def _headers(self) -> Dict[str, str]:
-        return {
-            "Authorization": f"Bearer {self.auth.get_token()}",
-            "Content-Type": "application/json",
-            "Accept": "*/*",
-        }
-
-    def _get(self, path: str, params: Optional[Dict] = None) -> Any:
-        r = self._session.get(f"{self._base}{path}", headers=self._headers(), params=params, timeout=30)
-        r.raise_for_status()
-        return r.json()
-
-    def _post(self, path: str, payload: Dict = None) -> Any:
-        r = self._session.post(f"{self._base}{path}", headers=self._headers(), json=payload or {}, timeout=30)
-        r.raise_for_status()
-        return r.json() if r.content else None
-
-    def _put(self, path: str, payload: Dict) -> Any:
-        r = self._session.put(f"{self._base}{path}", headers=self._headers(), json=payload, timeout=30)
-        r.raise_for_status()
-        return r.json() if r.content else None
-
-    def _delete(self, path: str) -> bool:
-        r = self._session.delete(f"{self._base}{path}", headers=self._headers(), timeout=30)
-        r.raise_for_status()
-        return True
+        self._sdk = ZscalerClient({
+            "clientId": auth.client_id,
+            "clientSecret": auth.client_secret,
+            "vanityDomain": auth.vanity_domain,
+        })
 
     # ------------------------------------------------------------------
     # Activation
     # ------------------------------------------------------------------
 
     def get_activation_status(self) -> Dict:
-        return self._get("/status")
+        result, resp, err = self._sdk.zia.activate.get_activation_status()
+        return _to_dict(_unwrap(result, resp, err))
 
     def activate(self) -> Dict:
         """Commit all pending ZIA configuration changes."""
-        return self._post("/status/activate")
+        result, resp, err = self._sdk.zia.activate.activate()
+        return _to_dict(_unwrap(result, resp, err))
 
     # ------------------------------------------------------------------
     # URL Categories
     # ------------------------------------------------------------------
 
     def list_url_categories(self, include_built_in: bool = False) -> List[Dict]:
-        params = {"includeParentCategory": "true"} if include_built_in else {}
-        return self._get("/urlCategories", params=params)
+        result, resp, err = self._sdk.zia.url_categories.list_url_categories()
+        return _to_dicts(_unwrap(result, resp, err))
 
     def list_url_categories_lite(self) -> List[Dict]:
-        return self._get("/urlCategories/lite")
+        result, resp, err = self._sdk.zia.url_categories.list_url_categories_lite()
+        return _to_dicts(_unwrap(result, resp, err))
 
     def get_url_category(self, category_id: str) -> Dict:
-        return self._get(f"/urlCategories/{category_id}")
+        result, resp, err = self._sdk.zia.url_categories.get_url_category(category_id)
+        return _to_dict(_unwrap(result, resp, err))
 
     def create_url_category(self, config: Dict) -> Dict:
-        return self._post("/urlCategories", config)
+        result, resp, err = self._sdk.zia.url_categories.add_url_category(**config)
+        return _to_dict(_unwrap(result, resp, err))
 
     def update_url_category(self, category_id: str, config: Dict) -> Dict:
-        return self._put(f"/urlCategories/{category_id}", config)
-
-    def delete_url_category(self, category_id: str) -> bool:
-        return self._delete(f"/urlCategories/{category_id}")
+        result, resp, err = self._sdk.zia.url_categories.update_url_category(category_id, **config)
+        return _to_dict(_unwrap(result, resp, err))
 
     def url_lookup(self, urls: List[str]) -> List[Dict]:
-        return self._post("/urlLookup", urls)
+        result, resp, err = self._sdk.zia.url_categories.url_lookup(urls)
+        return _to_dicts(_unwrap(result, resp, err))
 
     # ------------------------------------------------------------------
     # URL Filtering Policies
     # ------------------------------------------------------------------
 
     def list_url_filtering_rules(self) -> List[Dict]:
-        return self._get("/urlFilteringRules")
-
-    def get_url_filtering_rule(self, rule_id: str) -> Dict:
-        return self._get(f"/urlFilteringRules/{rule_id}")
-
-    def create_url_filtering_rule(self, config: Dict) -> Dict:
-        return self._post("/urlFilteringRules", config)
-
-    def update_url_filtering_rule(self, rule_id: str, config: Dict) -> Dict:
-        return self._put(f"/urlFilteringRules/{rule_id}", config)
-
-    def delete_url_filtering_rule(self, rule_id: str) -> bool:
-        return self._delete(f"/urlFilteringRules/{rule_id}")
+        result, resp, err = self._sdk.zia.url_filtering.list_url_filtering_rules()
+        return _to_dicts(_unwrap(result, resp, err))
 
     # ------------------------------------------------------------------
     # User Management
@@ -116,109 +110,41 @@ class ZIAClient:
             params["group"] = group
         if dept:
             params["dept"] = dept
-        return self._get("/users", params=params)
-
-    def get_user(self, user_id: str) -> Dict:
-        return self._get(f"/users/{user_id}")
-
-    def create_user(self, config: Dict) -> Dict:
-        return self._post("/users", config)
-
-    def update_user(self, user_id: str, config: Dict) -> Dict:
-        return self._put(f"/users/{user_id}", config)
-
-    def delete_user(self, user_id: str) -> bool:
-        return self._delete(f"/users/{user_id}")
+        result, resp, err = self._sdk.zia.user_management.list_users(params)
+        return _to_dicts(_unwrap(result, resp, err))
 
     def list_departments(self) -> List[Dict]:
-        return self._get("/departments")
+        result, resp, err = self._sdk.zia.user_management.list_departments()
+        return _to_dicts(_unwrap(result, resp, err))
 
     def list_groups(self) -> List[Dict]:
-        return self._get("/groups")
-
-    # ------------------------------------------------------------------
-    # Firewall Policies
-    # ------------------------------------------------------------------
-
-    def list_firewall_rules(self) -> List[Dict]:
-        return self._get("/firewallFilteringRules")
-
-    def get_firewall_rule(self, rule_id: str) -> Dict:
-        return self._get(f"/firewallFilteringRules/{rule_id}")
-
-    def create_firewall_rule(self, config: Dict) -> Dict:
-        return self._post("/firewallFilteringRules", config)
-
-    def update_firewall_rule(self, rule_id: str, config: Dict) -> Dict:
-        return self._put(f"/firewallFilteringRules/{rule_id}", config)
-
-    def delete_firewall_rule(self, rule_id: str) -> bool:
-        return self._delete(f"/firewallFilteringRules/{rule_id}")
+        result, resp, err = self._sdk.zia.user_management.list_groups()
+        return _to_dicts(_unwrap(result, resp, err))
 
     # ------------------------------------------------------------------
     # Location Management
     # ------------------------------------------------------------------
 
     def list_locations(self) -> List[Dict]:
-        return self._get("/locations")
+        result, resp, err = self._sdk.zia.locations.list_locations()
+        return _to_dicts(_unwrap(result, resp, err))
 
     def list_locations_lite(self) -> List[Dict]:
-        return self._get("/locations/lite")
+        result, resp, err = self._sdk.zia.locations.list_locations_lite()
+        return _to_dicts(_unwrap(result, resp, err))
 
     def get_location(self, location_id: str) -> Dict:
-        return self._get(f"/locations/{location_id}")
-
-    def create_location(self, config: Dict) -> Dict:
-        return self._post("/locations", config)
-
-    def update_location(self, location_id: str, config: Dict) -> Dict:
-        return self._put(f"/locations/{location_id}", config)
-
-    def delete_location(self, location_id: str) -> bool:
-        return self._delete(f"/locations/{location_id}")
-
-    # ------------------------------------------------------------------
-    # Admin Audit Logs
-    # ------------------------------------------------------------------
-
-    def request_audit_log(self, filter_config: Dict) -> Dict:
-        return self._post("/auditlogEntryReport", filter_config)
-
-    def get_audit_log_status(self) -> Dict:
-        return self._get("/auditlogEntryReport")
+        result, resp, err = self._sdk.zia.locations.get_location(location_id)
+        return _to_dict(_unwrap(result, resp, err))
 
     # ------------------------------------------------------------------
     # Security Policy (Allowlist / Denylist)
     # ------------------------------------------------------------------
 
     def get_allowlist(self) -> Dict:
-        return self._get("/security")
-
-    def update_allowlist(self, config: Dict) -> Dict:
-        return self._put("/security", config)
+        result, resp, err = self._sdk.zia.security_policy_settings.get_whitelist()
+        return _to_dict(_unwrap(result, resp, err))
 
     def get_denylist(self) -> Dict:
-        return self._get("/security/advanced")
-
-    def update_denylist(self, config: Dict) -> Dict:
-        return self._put("/security/advanced", config)
-
-    # ------------------------------------------------------------------
-    # Rule Labels
-    # ------------------------------------------------------------------
-
-    def list_rule_labels(self) -> List[Dict]:
-        return self._get("/ruleLabels")
-
-    def create_rule_label(self, name: str, description: str = "") -> Dict:
-        return self._post("/ruleLabels", {"name": name, "description": description})
-
-    # ------------------------------------------------------------------
-    # Admin & Role Management
-    # ------------------------------------------------------------------
-
-    def list_admin_users(self) -> List[Dict]:
-        return self._get("/adminUsers")
-
-    def list_admin_roles(self) -> List[Dict]:
-        return self._get("/adminRoles/lite")
+        result, resp, err = self._sdk.zia.security_policy_settings.get_blacklist()
+        return _to_dict(_unwrap(result, resp, err))
