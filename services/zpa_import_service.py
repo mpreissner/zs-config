@@ -21,7 +21,7 @@ from datetime import datetime
 from typing import Callable, List, Optional
 
 from db.database import get_session
-from db.models import SyncLog, ZPAResource
+from db.models import SyncLog, TenantConfig, ZPAResource
 from services import audit_service
 
 
@@ -88,9 +88,12 @@ class ZPAImportService:
         Returns:
             The completed SyncLog ORM object.
         """
-        defs = [d for d in RESOURCE_DEFINITIONS
-                if resource_types is None or d.resource_type in resource_types]
-        total = len(defs)
+        all_defs = [d for d in RESOURCE_DEFINITIONS
+                    if resource_types is None or d.resource_type in resource_types]
+        total = len(all_defs)
+
+        # Resource types previously auto-disabled due to 401 — skip without calling API
+        disabled_types = set(self._get_disabled_resource_types())
 
         with get_session() as session:
             sync = SyncLog(
@@ -109,12 +112,23 @@ class ZPAImportService:
 
         synced = updated = deleted = 0
         errors = []
+        newly_disabled = []
 
-        for idx, defn in enumerate(defs, start=1):
+        for idx, defn in enumerate(all_defs, start=1):
+            if defn.resource_type in disabled_types:
+                if progress_callback:
+                    progress_callback(defn.resource_type, idx, total)
+                continue
+
             try:
                 records = self._fetch(defn)
             except Exception as exc:
-                errors.append(f"{defn.resource_type}: {exc}")
+                if "401" in str(exc):
+                    self._disable_resource_type(defn.resource_type)
+                    disabled_types.add(defn.resource_type)
+                    newly_disabled.append(defn.resource_type)
+                else:
+                    errors.append(f"{defn.resource_type}: {exc}")
                 if progress_callback:
                     progress_callback(defn.resource_type, idx, total)
                 continue
@@ -129,7 +143,9 @@ class ZPAImportService:
         # Mark any resource no longer returned by the API as deleted
         deleted = self._mark_deleted(resource_types, run_start)
 
-        final_status = "FAILED" if len(errors) == total else (
+        all_skipped = sorted(disabled_types)
+        attempted = total - len([d for d in all_defs if d.resource_type in disabled_types and d.resource_type not in newly_disabled])
+        final_status = "FAILED" if (errors and len(errors) == attempted) else (
             "PARTIAL" if errors else "SUCCESS"
         )
 
@@ -141,6 +157,7 @@ class ZPAImportService:
             sync.resources_updated = updated
             sync.resources_deleted = deleted
             sync.error_message = "\n".join(errors) if errors else None
+            sync.details = {"skipped_na": all_skipped} if all_skipped else None
 
         # Write a FAILURE entry for each resource type that errored
         for error_msg in errors:
@@ -179,6 +196,26 @@ class ZPAImportService:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    def _get_disabled_resource_types(self) -> list:
+        with get_session() as session:
+            tenant = session.get(TenantConfig, self.tenant_id)
+            return list(tenant.zpa_disabled_resources or []) if tenant else []
+
+    def _disable_resource_type(self, resource_type: str) -> None:
+        with get_session() as session:
+            tenant = session.get(TenantConfig, self.tenant_id)
+            if tenant:
+                disabled = list(tenant.zpa_disabled_resources or [])
+                if resource_type not in disabled:
+                    disabled.append(resource_type)
+                    tenant.zpa_disabled_resources = disabled
+
+    def clear_disabled_resource_types(self) -> None:
+        with get_session() as session:
+            tenant = session.get(TenantConfig, self.tenant_id)
+            if tenant:
+                tenant.zpa_disabled_resources = []
 
     def _fetch(self, defn: ResourceDef) -> list:
         """Call the appropriate ZPAClient list method."""

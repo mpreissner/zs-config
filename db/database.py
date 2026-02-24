@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator, Optional
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from .models import Base
@@ -37,6 +37,21 @@ def init_db(db_url: Optional[str] = None) -> None:
     )
     _SessionFactory = sessionmaker(bind=_engine, expire_on_commit=False)
     Base.metadata.create_all(_engine)
+    _migrate(_engine)
+
+
+def _migrate(engine) -> None:
+    """Apply additive column migrations for existing databases."""
+    migrations = [
+        "ALTER TABLE tenant_configs ADD COLUMN zpa_disabled_resources JSON",
+    ]
+    with engine.connect() as conn:
+        for stmt in migrations:
+            try:
+                conn.execute(text(stmt))
+                conn.commit()
+            except Exception:
+                pass  # Column already exists
 
 
 def _ensure_init() -> None:

@@ -27,6 +27,7 @@ class TenantConfig(Base):
     zpa_customer_id = Column(String(255), nullable=True)
     notes = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    zpa_disabled_resources = Column(JSON, nullable=True)   # resource types auto-disabled after 401
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

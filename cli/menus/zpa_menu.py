@@ -20,6 +20,7 @@ def zpa_menu():
             choices=[
                 questionary.Choice("Certificate Management", value="certs"),
                 questionary.Choice("Import Config", value="import"),
+                questionary.Choice("Reset N/A Resource Types", value="reset_na"),
                 questionary.Separator(),
                 questionary.Choice("Application Segments  [coming soon]", value="apps"),
                 questionary.Choice("PRA Portals           [coming soon]", value="pra"),
@@ -34,6 +35,8 @@ def zpa_menu():
             cert_menu(client, tenant)
         elif choice == "import":
             _import_config(client, tenant)
+        elif choice == "reset_na":
+            _reset_na_resources(client, tenant)
         elif choice in ("apps", "pra", "connectors"):
             console.print("[yellow]Coming soon.[/yellow]")
         elif choice in ("back", None):
@@ -152,15 +155,28 @@ def _rotate_certificate(client, tenant):
 # Config Import
 # ------------------------------------------------------------------
 
+def _reset_na_resources(client, tenant):
+    from services.zpa_import_service import ZPAImportService
+    service = ZPAImportService(client, tenant_id=tenant.id)
+    disabled = service._get_disabled_resource_types()
+    if not disabled:
+        console.print("[dim]No N/A resource types recorded for this tenant.[/dim]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+    console.print(f"\n[yellow]N/A resource types:[/yellow] {', '.join(disabled)}")
+    confirmed = questionary.confirm("Clear the N/A list? They will be retried on the next import.", default=False).ask()
+    if confirmed:
+        service.clear_disabled_resource_types()
+        console.print("[green]✓ N/A list cleared.[/green]")
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
 def _import_config(client, tenant):
     from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn
     from services.zpa_import_service import ZPAImportService, RESOURCE_DEFINITIONS
 
     console.print("\n[bold]Import ZPA Config[/bold]")
-    console.print(
-        f"[dim]Fetching {len(RESOURCE_DEFINITIONS)} resource types from ZPA.  "
-        "Rate-limited to ~15 req/10 s — this may take ~60 s for a typical tenant.[/dim]\n"
-    )
+    console.print(f"[dim]Fetching {len(RESOURCE_DEFINITIONS)} resource types from ZPA.[/dim]\n")
 
     confirmed = questionary.confirm("Start import?", default=True).ask()
     if not confirmed:
@@ -193,6 +209,9 @@ def _import_config(client, tenant):
     console.print(f"  Resources synced:  {sync.resources_synced}")
     console.print(f"  Records updated:   {sync.resources_updated}")
     console.print(f"  Marked deleted:    {sync.resources_deleted}")
+    skipped = (sync.details or {}).get("skipped_na", [])
+    if skipped:
+        console.print(f"\n[dim]N/A (not entitled):[/dim] {', '.join(skipped)}")
     if sync.error_message:
         console.print(f"\n[yellow]Warnings:[/yellow]\n{sync.error_message}")
 
