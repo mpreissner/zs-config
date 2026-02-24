@@ -87,15 +87,15 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_applications(self, app_type: str = "BROWSER_ACCESS") -> List[Dict]:
-        result, resp, err = self._sdk.zpa.app_segments.list_segments()
+        result, resp, err = self._sdk.zpa.application_segment.list_segments()
         return _to_dicts(_unwrap(result, resp, err))
 
     def get_application(self, app_id: str) -> Dict:
-        result, resp, err = self._sdk.zpa.app_segments.get_segment(app_id)
+        result, resp, err = self._sdk.zpa.application_segment.get_segment(app_id)
         return _to_dict(_unwrap(result, resp, err))
 
     def update_application(self, app_id: str, config: Dict) -> bool:
-        result, resp, err = self._sdk.zpa.app_segments.update_segment(app_id, **config)
+        result, resp, err = self._sdk.zpa.application_segment.update_segment(app_id, **config)
         _unwrap(result, resp, err)
         return True
 
@@ -145,11 +145,11 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_connector_groups(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.connectors.list_connector_groups()
+        result, resp, err = self._sdk.zpa.app_connector_groups.list_connector_groups()
         return _to_dicts(_unwrap(result, resp, err))
 
     def list_connectors(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.connectors.list_connectors()
+        result, resp, err = self._sdk.zpa.app_connectors.list_connectors()
         return _to_dicts(_unwrap(result, resp, err))
 
     # ------------------------------------------------------------------
@@ -181,7 +181,7 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_enrollment_certificates(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.certificates.list_enrolment()
+        result, resp, err = self._sdk.zpa.enrollment_certificates.list_enrolment()
         return _to_dicts(_unwrap(result, resp, err))
 
     # ------------------------------------------------------------------
