@@ -51,6 +51,8 @@ def settings_menu():
                 questionary.Choice("Manage Tenants", value="tenants"),
                 questionary.Choice("Generate Encryption Key", value="genkey"),
                 questionary.Separator(),
+                questionary.Choice("Configure Server Credentials File", value="conffile"),
+                questionary.Separator(),
                 questionary.Choice("← Back", value="back"),
             ],
         ).ask()
@@ -59,6 +61,8 @@ def settings_menu():
             tenant_management_menu()
         elif choice == "genkey":
             _generate_key()
+        elif choice == "conffile":
+            _configure_conf_file()
         elif choice in ("back", None):
             break
 
@@ -176,6 +180,73 @@ def _remove_tenant():
     if confirmed:
         deactivate_tenant(tenant.name)
         console.print(f"[green]✓ Tenant '{tenant.name}' removed.[/green]")
+
+
+def _configure_conf_file():
+    from lib.conf_writer import DEFAULT_CONF_PATH, build_zidentity_url, test_credentials, write_conf
+
+    console.print("\n[bold]Configure Server Credentials File[/bold]")
+    console.print("[dim]Writes zscaler-oneapi.conf with chmod 600 for use with server-deployed scripts.[/dim]\n")
+
+    subdomain = questionary.text(
+        "Vanity subdomain:",
+        instruction="e.g.  acme  →  https://acme.zslogin.net",
+    ).ask()
+    if not subdomain:
+        return
+
+    subdomain = subdomain.strip().lower()
+    console.print(f"  [dim]ZIdentity URL: {build_zidentity_url(subdomain)}[/dim]\n")
+
+    client_id = questionary.text("Client ID:").ask()
+    if not client_id:
+        return
+
+    client_secret = questionary.password("Client Secret:").ask()
+    if not client_secret:
+        return
+
+    customer_id = questionary.text(
+        "ZPA Customer ID:",
+        instruction="Press Enter to skip if not using ZPA",
+    ).ask()
+
+    conf_path = questionary.text(
+        "Output path:",
+        default=DEFAULT_CONF_PATH,
+    ).ask()
+    if not conf_path:
+        return
+
+    if questionary.confirm("Test credentials before writing?", default=True).ask():
+        with console.status("Verifying credentials with ZIdentity..."):
+            try:
+                test_credentials(subdomain, client_id, client_secret)
+                console.print("[green]✓ Credentials verified[/green]\n")
+            except Exception as e:
+                console.print(f"[red]✗ Credential test failed:[/red] {e}\n")
+                if not questionary.confirm("Write configuration anyway?", default=False).ask():
+                    return
+
+    try:
+        written_path = write_conf(
+            path=conf_path,
+            vanity_subdomain=subdomain,
+            client_id=client_id,
+            client_secret=client_secret,
+            zpa_customer_id=customer_id or None,
+        )
+        console.print(f"\n[green]✓ Written:[/green]      {written_path}")
+        console.print("[green]✓ Permissions:[/green]  600 (owner read/write only)")
+    except PermissionError:
+        console.print(
+            f"[red]✗ Permission denied writing to {conf_path}[/red]\n"
+            "[yellow]Tip: run the CLI with sudo, or choose a path you own.[/yellow]"
+        )
+    except Exception as e:
+        console.print(f"[red]✗ Error: {e}[/red]")
+
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
 
 
 def _generate_key():

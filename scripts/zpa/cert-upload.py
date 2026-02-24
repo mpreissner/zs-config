@@ -11,11 +11,11 @@ Usage (manual / database config):
     python cert-upload.py <cert_path> <key_path> <domain> --tenant <name>
 
 Environment variables (acme.sh / server mode):
-    ZIDENTITY_BASE_URL  — required
-    ZPA_CLIENT_ID       — required
-    ZPA_CLIENT_SECRET   — required
-    ZPA_CUSTOMER_ID     — required
-    ONEAPI_BASE_URL     — optional, defaults to https://api.zsapi.net
+    ZIDENTITY_BASE_URL   — required
+    ZSCALER_CLIENT_ID    — required
+    ZSCALER_CLIENT_SECRET — required
+    ZPA_CUSTOMER_ID      — required
+    ONEAPI_BASE_URL      — optional, defaults to https://api.zsapi.net
     CERT_FULLCHAIN_PATH — set by acme.sh (overrides positional arg 1)
     CERT_KEY_PATH       — set by acme.sh (overrides positional arg 2)
     DOMAIN              — set by acme.sh (overrides positional arg 3)
@@ -35,7 +35,7 @@ from services.zpa_service import ZPAService
 
 def _load_from_env():
     """Return (auth, customer_id, oneapi_url) from environment variables."""
-    missing = [v for v in ("ZIDENTITY_BASE_URL", "ZPA_CLIENT_ID", "ZPA_CLIENT_SECRET", "ZPA_CUSTOMER_ID")
+    missing = [v for v in ("ZIDENTITY_BASE_URL", "ZSCALER_CLIENT_ID", "ZSCALER_CLIENT_SECRET", "ZPA_CUSTOMER_ID")
                if not os.environ.get(v)]
     if missing:
         print(f"ERROR: Missing required environment variables: {', '.join(missing)}")
@@ -43,8 +43,8 @@ def _load_from_env():
 
     auth = ZscalerAuth(
         os.environ["ZIDENTITY_BASE_URL"],
-        os.environ["ZPA_CLIENT_ID"],
-        os.environ["ZPA_CLIENT_SECRET"],
+        os.environ["ZSCALER_CLIENT_ID"],
+        os.environ["ZSCALER_CLIENT_SECRET"],
     )
     return auth, os.environ["ZPA_CUSTOMER_ID"], os.environ.get("ONEAPI_BASE_URL", "https://api.zsapi.net"), None
 
