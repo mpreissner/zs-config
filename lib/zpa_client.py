@@ -99,6 +99,20 @@ class ZPAClient:
         _unwrap(result, resp, err)
         return True
 
+    def create_application(self, **kwargs) -> Dict:
+        result, resp, err = self._sdk.zpa.application_segment.add_segment(**kwargs)
+        return _to_dict(_unwrap(result, resp, err))
+
+    def enable_application(self, app_id: str) -> bool:
+        config = self.get_application(app_id)
+        config["enabled"] = True
+        return self.update_application(app_id, config)
+
+    def disable_application(self, app_id: str) -> bool:
+        config = self.get_application(app_id)
+        config["enabled"] = False
+        return self.update_application(app_id, config)
+
     # ------------------------------------------------------------------
     # PRA Portals
     # ------------------------------------------------------------------
@@ -132,6 +146,10 @@ class ZPAClient:
         result, resp, err = self._sdk.zpa.segment_groups.list_groups()
         return _to_dicts(_unwrap(result, resp, err))
 
+    def create_segment_group(self, name: str, enabled: bool = True) -> Dict:
+        result, resp, err = self._sdk.zpa.segment_groups.add_group(name=name, enabled=enabled)
+        return _to_dict(_unwrap(result, resp, err))
+
     # ------------------------------------------------------------------
     # Server Groups
     # ------------------------------------------------------------------
@@ -139,6 +157,10 @@ class ZPAClient:
     def list_server_groups(self) -> List[Dict]:
         result, resp, err = self._sdk.zpa.server_groups.list_groups()
         return _to_dicts(_unwrap(result, resp, err))
+
+    def create_server_group(self, name: str, enabled: bool = True) -> Dict:
+        result, resp, err = self._sdk.zpa.server_groups.add_group(name=name, enabled=enabled)
+        return _to_dict(_unwrap(result, resp, err))
 
     # ------------------------------------------------------------------
     # App Connectors & Connector Groups

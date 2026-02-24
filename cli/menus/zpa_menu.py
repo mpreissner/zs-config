@@ -22,7 +22,7 @@ def zpa_menu():
                 questionary.Choice("Import Config", value="import"),
                 questionary.Choice("Reset N/A Resource Types", value="reset_na"),
                 questionary.Separator(),
-                questionary.Choice("Application Segments  [coming soon]", value="apps"),
+                questionary.Choice("Application Segments", value="apps"),
                 questionary.Choice("PRA Portals           [coming soon]", value="pra"),
                 questionary.Choice("Connectors            [coming soon]", value="connectors"),
                 questionary.Separator(),
@@ -37,7 +37,9 @@ def zpa_menu():
             _import_config(client, tenant)
         elif choice == "reset_na":
             _reset_na_resources(client, tenant)
-        elif choice in ("apps", "pra", "connectors"):
+        elif choice == "apps":
+            app_segments_menu(client, tenant)
+        elif choice in ("pra", "connectors"):
             console.print("[yellow]Coming soon.[/yellow]")
         elif choice in ("back", None):
             break
@@ -215,6 +217,469 @@ def _import_config(client, tenant):
     if sync.error_message:
         console.print(f"\n[yellow]Warnings:[/yellow]\n{sync.error_message}")
 
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+# ------------------------------------------------------------------
+# Application Segments
+# ------------------------------------------------------------------
+
+def app_segments_menu(client, tenant):
+    while True:
+        render_banner()
+        choice = questionary.select(
+            "Application Segments",
+            choices=[
+                questionary.Choice("List Segments", value="list"),
+                questionary.Choice("Search by Domain", value="search"),
+                questionary.Choice("Enable / Disable", value="toggle"),
+                questionary.Choice("Bulk Create from CSV", value="bulk"),
+                questionary.Choice("Export CSV Template", value="template"),
+                questionary.Separator(),
+                questionary.Choice("← Back", value="back"),
+            ],
+            use_indicator=True,
+        ).ask()
+
+        if choice == "list":
+            _list_segments(tenant)
+        elif choice == "search":
+            _search_by_domain(tenant)
+        elif choice == "toggle":
+            _toggle_enable(client, tenant)
+        elif choice == "bulk":
+            _bulk_create(client, tenant)
+        elif choice == "template":
+            _export_template()
+        elif choice in ("back", None):
+            break
+
+
+def _list_segments(tenant):
+    from db.database import get_session
+    from db.models import ZPAResource
+
+    with get_session() as session:
+        resources = (
+            session.query(ZPAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="application", is_deleted=False)
+            .order_by(ZPAResource.name)
+            .all()
+        )
+        # Detach data before session closes
+        rows = [
+            {
+                "name": r.name,
+                "zpa_id": r.zpa_id,
+                "raw_config": r.raw_config or {},
+            }
+            for r in resources
+        ]
+
+    if not rows:
+        console.print(
+            "[yellow]No application segments in local DB. "
+            "Run [bold]Import Config[/bold] first.[/yellow]"
+        )
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    filter_choice = questionary.select(
+        "Show:",
+        choices=[
+            questionary.Choice("All", value="all"),
+            questionary.Choice("Enabled only", value="enabled"),
+            questionary.Choice("Disabled only", value="disabled"),
+        ],
+    ).ask()
+    if filter_choice is None:
+        return
+
+    if filter_choice == "enabled":
+        rows = [r for r in rows if r["raw_config"].get("enabled") is not False]
+    elif filter_choice == "disabled":
+        rows = [r for r in rows if r["raw_config"].get("enabled") is False]
+
+    if not rows:
+        console.print("[yellow]No segments match that filter.[/yellow]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    table = Table(
+        title=f"Application Segments ({len(rows)} shown)",
+        show_lines=False,
+    )
+    table.add_column("Name")
+    table.add_column("Domains")
+    table.add_column("Segment Group")
+    table.add_column("Enabled")
+
+    for r in rows:
+        cfg = r["raw_config"]
+        domains = cfg.get("domainNames") or cfg.get("domain_names") or []
+        domain_str = "; ".join(domains[:2])
+        if len(domains) > 2:
+            domain_str += f" [dim]+{len(domains) - 2} more[/dim]"
+
+        seg_group = ""
+        sg = cfg.get("segmentGroup") or cfg.get("segment_group") or {}
+        if isinstance(sg, dict):
+            seg_group = sg.get("name", "")
+        elif isinstance(sg, str):
+            seg_group = sg
+
+        enabled = cfg.get("enabled", True)
+        enabled_str = "[green]Yes[/green]" if enabled else "[red]No[/red]"
+
+        table.add_row(r["name"], domain_str, seg_group, enabled_str)
+
+    console.print(table)
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def _search_by_domain(tenant):
+    from db.database import get_session
+    from db.models import ZPAResource
+
+    search = questionary.text("Search string (domain or partial):").ask()
+    if not search:
+        return
+    search = search.lower()
+
+    with get_session() as session:
+        resources = (
+            session.query(ZPAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="application", is_deleted=False)
+            .all()
+        )
+        rows = [
+            {
+                "name": r.name,
+                "zpa_id": r.zpa_id,
+                "raw_config": r.raw_config or {},
+            }
+            for r in resources
+            if search in " ".join(
+                (r.raw_config or {}).get("domainNames")
+                or (r.raw_config or {}).get("domain_names")
+                or []
+            ).lower()
+        ]
+
+    if not rows:
+        console.print(f"[yellow]No segments matching '{search}'.[/yellow]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    table = Table(title=f"Matching Segments ({len(rows)})", show_lines=False)
+    table.add_column("Name")
+    table.add_column("Domains")
+    table.add_column("Enabled")
+
+    for r in rows:
+        cfg = r["raw_config"]
+        domains = cfg.get("domainNames") or cfg.get("domain_names") or []
+        domain_str = "; ".join(domains[:3])
+        if len(domains) > 3:
+            domain_str += f" [dim]+{len(domains) - 3} more[/dim]"
+        enabled = cfg.get("enabled", True)
+        enabled_str = "[green]Yes[/green]" if enabled else "[red]No[/red]"
+        table.add_row(r["name"], domain_str, enabled_str)
+
+    console.print(table)
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def _toggle_enable(client, tenant):
+    from db.database import get_session
+    from db.models import ZPAResource
+    from services import audit_service
+
+    with get_session() as session:
+        resources = (
+            session.query(ZPAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="application", is_deleted=False)
+            .order_by(ZPAResource.name)
+            .all()
+        )
+        rows = [
+            {
+                "name": r.name,
+                "zpa_id": r.zpa_id,
+                "enabled": (r.raw_config or {}).get("enabled", True),
+            }
+            for r in resources
+        ]
+
+    if not rows:
+        console.print(
+            "[yellow]No application segments in local DB. "
+            "Run [bold]Import Config[/bold] first.[/yellow]"
+        )
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    seg = questionary.select(
+        "Select segment:",
+        choices=[
+            questionary.Choice(
+                f"{r['name']}  [{'green' if r['enabled'] else 'red'}]"
+                f"({'enabled' if r['enabled'] else 'disabled'})[/]",
+                value=r,
+            )
+            for r in rows
+        ],
+    ).ask()
+    if seg is None:
+        return
+
+    current = seg["enabled"]
+    action_label = "Disable" if current else "Enable"
+
+    confirmed = questionary.confirm(
+        f"{action_label} [bold]{seg['name']}[/bold]?", default=True
+    ).ask()
+    if not confirmed:
+        return
+
+    try:
+        if current:
+            client.disable_application(seg["zpa_id"])
+        else:
+            client.enable_application(seg["zpa_id"])
+        console.print(f"[green]✓ {seg['name']} {action_label.lower()}d.[/green]")
+        audit_service.log(
+            product="ZPA",
+            operation="toggle_application",
+            action="UPDATE",
+            status="SUCCESS",
+            tenant_id=tenant.id,
+            resource_type="application",
+            resource_id=seg["zpa_id"],
+            resource_name=seg["name"],
+            details={"enabled": not current},
+        )
+    except Exception as exc:
+        console.print(f"[red]✗ Error: {exc}[/red]")
+        audit_service.log(
+            product="ZPA",
+            operation="toggle_application",
+            action="UPDATE",
+            status="FAILURE",
+            tenant_id=tenant.id,
+            resource_type="application",
+            resource_id=seg["zpa_id"],
+            resource_name=seg["name"],
+            error_message=str(exc),
+        )
+
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def _bulk_create(client, tenant):
+    from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn
+    from services.zpa_segment_service import (
+        parse_csv, dry_run, bulk_create, create_missing_groups,
+    )
+
+    console.print("\n[bold]Bulk Create Application Segments from CSV[/bold]\n")
+
+    # 1. Prompt for CSV path
+    csv_path = questionary.path("Path to CSV file:").ask()
+    if not csv_path:
+        return
+
+    # 2. Parse and validate CSV
+    try:
+        rows = parse_csv(csv_path)
+    except ValueError as exc:
+        console.print(f"\n[red]CSV validation errors:[/red]\n{exc}")
+        proceed = questionary.confirm(
+            "Skip invalid rows and continue with valid rows?", default=False
+        ).ask()
+        if not proceed:
+            return
+        # Re-parse skipping invalid: re-read without raising
+        import csv as _csv
+        rows = []
+        with open(csv_path, newline="", encoding="utf-8-sig") as fh:
+            for row in _csv.DictReader(fh):
+                if (
+                    row.get("name", "").strip()
+                    and row.get("domain_names", "").strip()
+                    and row.get("segment_group", "").strip()
+                    and row.get("server_groups", "").strip()
+                    and (row.get("tcp_ports", "").strip() or row.get("udp_ports", "").strip())
+                ):
+                    rows.append(dict(row))
+        if not rows:
+            console.print("[red]No valid rows to process.[/red]")
+            return
+
+    # 3. Dry run — show status table
+    console.print(f"\n[dim]Validating {len(rows)} rows...[/dim]")
+    annotated = dry_run(tenant.id, rows)
+
+    dry_table = Table(title="Dry Run", show_lines=False)
+    dry_table.add_column("#", style="dim", width=4)
+    dry_table.add_column("Name")
+    dry_table.add_column("Domains")
+    dry_table.add_column("Seg Group")
+    dry_table.add_column("Server Groups")
+    dry_table.add_column("Ports")
+    dry_table.add_column("Status")
+
+    for idx, row in enumerate(annotated, start=1):
+        status = row.get("_status", "")
+        if status == "READY":
+            status_cell = "[green]READY[/green]"
+        elif status == "MISSING_DEPENDENCY":
+            status_cell = "[yellow]MISSING_DEP[/yellow]"
+        else:
+            status_cell = "[red]INVALID[/red]"
+
+        domains = [d.strip() for d in row.get("domain_names", "").split(";") if d.strip()]
+        domain_str = "; ".join(domains[:2])
+        if len(domains) > 2:
+            domain_str += f" +{len(domains) - 2}"
+
+        ports = []
+        if row.get("tcp_ports", "").strip():
+            ports.append(f"TCP:{row['tcp_ports']}")
+        if row.get("udp_ports", "").strip():
+            ports.append(f"UDP:{row['udp_ports']}")
+
+        dry_table.add_row(
+            str(idx),
+            row.get("name", ""),
+            domain_str,
+            row.get("segment_group", ""),
+            row.get("server_groups", ""),
+            " ".join(ports),
+            status_cell,
+        )
+
+    console.print(dry_table)
+
+    # Show per-row issues
+    for row in annotated:
+        for issue in row.get("_issues", []):
+            console.print(f"  [yellow]⚠ {row['name']}:[/yellow] {issue}")
+
+    # 4. Offer to fix missing dependencies
+    missing_dep_rows = [r for r in annotated if r.get("_status") == "MISSING_DEPENDENCY"]
+    if missing_dep_rows:
+        missing: dict = {"segment_group": [], "server_group": []}
+        for row in missing_dep_rows:
+            for issue in row.get("_issues", []):
+                if "segment_group" in issue:
+                    name = row["segment_group"].strip()
+                    if name not in missing["segment_group"]:
+                        missing["segment_group"].append(name)
+                if "server_group" in issue:
+                    for sg in row["server_groups"].split(";"):
+                        sg = sg.strip()
+                        if sg and sg not in missing["server_group"]:
+                            missing["server_group"].append(sg)
+
+        fix = questionary.confirm(
+            f"Fix {len(missing_dep_rows)} rows with missing dependencies "
+            f"(create missing groups)?",
+            default=True,
+        ).ask()
+        if fix:
+            with console.status("Creating missing groups..."):
+                fix_result = create_missing_groups(client, tenant.id, missing)
+
+            for name in fix_result["created"]:
+                console.print(f"  [green]✓ Created {name}[/green]")
+            for name in fix_result["failed"]:
+                console.print(f"  [red]✗ Failed: {name}[/red]")
+            for warn in fix_result["warnings"]:
+                console.print(f"  [yellow]⚠ {warn}[/yellow]")
+
+            # Re-run dry run after creating groups
+            console.print("\n[dim]Re-validating...[/dim]")
+            annotated = dry_run(tenant.id, rows)
+            for row in annotated:
+                tag = "[green]READY[/green]" if row["_status"] == "READY" else f"[yellow]{row['_status']}[/yellow]"
+                console.print(f"  {tag}  {row['name']}")
+
+    # 5. Count ready rows and confirm
+    ready = [r for r in annotated if r.get("_status") == "READY"]
+    not_ready = [r for r in annotated if r.get("_status") != "READY"]
+
+    if not ready:
+        console.print("\n[yellow]No READY rows — nothing to create.[/yellow]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    confirmed = questionary.confirm(
+        f"\nCreate {len(ready)} segment(s)? "
+        f"({len(not_ready)} will be skipped)",
+        default=True,
+    ).ask()
+    if not confirmed:
+        return
+
+    # 6. Bulk create with progress bar
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total}"),
+        TimeElapsedColumn(),
+        console=console,
+        transient=True,
+    ) as progress:
+        task = progress.add_task("Creating segments...", total=len(ready))
+
+        def on_progress(done, total):
+            progress.update(task, completed=done)
+
+        result = bulk_create(client, tenant.id, annotated, progress_callback=on_progress)
+
+    # 7. Summary
+    console.print(
+        f"\n[green]✓ Created {result.created}[/green]  "
+        f"[red]✗ Failed {result.failed}[/red]  "
+        f"[dim]— Skipped {result.skipped}[/dim]"
+    )
+
+    # 8. Per-row errors with hints
+    for detail in result.rows_detail:
+        if detail["status"] == "FAILED":
+            err = detail["error"] or ""
+            hint = ""
+            if "already exists" in err.lower():
+                hint = " → segment with this name already exists in ZPA"
+            elif "segment_group" in err.lower():
+                hint = " → check segment group ID"
+            elif "server_group" in err.lower():
+                hint = " → check server group ID"
+            console.print(f"  [red]{detail['name']}:[/red] {err}{hint}")
+
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def _export_template():
+    import os
+    from services.zpa_segment_service import CSV_FIELDNAMES, TEMPLATE_ROWS
+
+    default_path = os.path.expanduser("~/app_segment_template.csv")
+    out_path = questionary.path(
+        "Output path:", default=default_path
+    ).ask()
+    if not out_path:
+        return
+
+    import csv as _csv
+    with open(out_path, "w", newline="", encoding="utf-8") as fh:
+        writer = _csv.DictWriter(fh, fieldnames=CSV_FIELDNAMES)
+        writer.writeheader()
+        writer.writerows(TEMPLATE_ROWS)
+
+    console.print(f"[green]✓ Template written to {out_path}[/green]")
     questionary.press_any_key_to_continue("Press any key to continue...").ask()
 
 
