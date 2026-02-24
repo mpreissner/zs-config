@@ -127,6 +127,15 @@ class ZPAImportService:
                     self._disable_resource_type(defn.resource_type)
                     disabled_types.add(defn.resource_type)
                     newly_disabled.append(defn.resource_type)
+                    audit_service.log(
+                        product="ZPA",
+                        operation="import_config",
+                        action="DISABLE",
+                        status="N/A",
+                        tenant_id=self.tenant_id,
+                        resource_type=defn.resource_type,
+                        details={"reason": "401 Unauthorized — auto-disabled as N/A for this tenant"},
+                    )
                 else:
                     errors.append(f"{defn.resource_type}: {exc}")
                 if progress_callback:
