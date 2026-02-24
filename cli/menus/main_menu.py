@@ -310,14 +310,14 @@ def audit_menu():
     from services import audit_service
 
     with console.status("Loading audit log..."):
-        logs = audit_service.get_recent(limit=50)
+        logs = audit_service.get_recent(limit=200)
 
     if not logs:
         console.print("[yellow]No audit log entries yet.[/yellow]")
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    table = Table(title="Audit Log (last 50 entries)", show_lines=False)
+    table = Table(title=f"Audit Log (last {len(logs)} entries)", show_lines=False)
     table.add_column("Timestamp", style="dim", no_wrap=True)
     table.add_column("Product", style="cyan")
     table.add_column("Operation")

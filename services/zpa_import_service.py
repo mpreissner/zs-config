@@ -23,6 +23,7 @@ from typing import Callable, List, Optional
 from db.database import get_session
 from db.models import SyncLog, ZPAResource
 from lib.rate_limiter import ZPA_READ_LIMITER
+from services import audit_service
 
 
 @dataclass
@@ -142,6 +143,22 @@ class ZPAImportService:
             sync.resources_deleted = deleted
             sync.error_message = "\n".join(errors) if errors else None
 
+        audit_service.log(
+            product="ZPA",
+            operation="import_config",
+            action="READ",
+            status=final_status,
+            tenant_id=self.tenant_id,
+            resource_type="sync_log",
+            resource_id=str(sync_id),
+            details={
+                "resources_synced": synced,
+                "resources_updated": updated,
+                "resources_deleted": deleted,
+                "errors": errors or None,
+            },
+        )
+
         # Return a detached copy
         with get_session() as session:
             return session.get(SyncLog, sync_id)
@@ -214,6 +231,16 @@ class ZPAImportService:
                         synced_at=run_start,
                         is_deleted=False,
                     ))
+                    audit_service.log(
+                        product="ZPA",
+                        operation="import_config",
+                        action="CREATE",
+                        status="SUCCESS",
+                        tenant_id=self.tenant_id,
+                        resource_type=defn.resource_type,
+                        resource_id=zpa_id,
+                        resource_name=name,
+                    )
                     synced += 1
                 else:
                     # Always update synced_at; only update data when changed
@@ -223,6 +250,16 @@ class ZPAImportService:
                         existing.name = name
                         existing.raw_config = record
                         existing.config_hash = new_hash
+                        audit_service.log(
+                            product="ZPA",
+                            operation="import_config",
+                            action="UPDATE",
+                            status="SUCCESS",
+                            tenant_id=self.tenant_id,
+                            resource_type=defn.resource_type,
+                            resource_id=zpa_id,
+                            resource_name=name,
+                        )
                         updated += 1
                     synced += 1
 
@@ -250,6 +287,16 @@ class ZPAImportService:
             )
             for row in stale:
                 row.is_deleted = True
+                audit_service.log(
+                    product="ZPA",
+                    operation="import_config",
+                    action="DELETE",
+                    status="SUCCESS",
+                    tenant_id=self.tenant_id,
+                    resource_type=row.resource_type,
+                    resource_id=row.zpa_id,
+                    resource_name=row.name,
+                )
                 deleted += 1
 
         return deleted
