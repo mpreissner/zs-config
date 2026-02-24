@@ -11,7 +11,7 @@ from rich.text import Text
 
 console = Console()
 
-VERSION = "1.0.0"
+VERSION = "0.0.1"
 
 ASCII_LOGO = r"""
  _____        ____             __ _
