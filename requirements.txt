@@ -4,6 +4,7 @@ requests>=2.31.0
 # Rich TUI (CLI)
 rich>=13.7.0
 questionary>=2.0.0
+pyfiglet>=1.0.2
 
 # Database
 sqlalchemy>=2.0.0

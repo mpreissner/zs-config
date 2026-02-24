@@ -13,14 +13,20 @@ console = Console()
 
 VERSION = "0.0.1"
 
-ASCII_LOGO = r"""
- _____        ____             __ _
-|__  /  ___  / ___|___  _ __  / _(_) __ _
-  / /  |___|| |   / _ \| '_ \| |_| |/ _` |
- / /__      | |__| (_) | | | |  _| | (_| |
-/____|       \____\___/|_| |_|_| |_|\__, |
-                                      |___/
-"""
+# Generate the logo once at import time using pyfiglet (slant font).
+# Falls back to the hand-drawn art if pyfiglet isn't installed.
+try:
+    import pyfiglet
+    _LOGO_TEXT = pyfiglet.figlet_format("Z-Config", font="slant").rstrip()
+except Exception:
+    _LOGO_TEXT = (
+        " _____        ____             __ _\n"
+        "|__  /  ___  / ___|___  _ __  / _(_) __ _\n"
+        "  / /  |___|| |   / _ \\| '_ \\| |_| |/ _` |\n"
+        " / /__      | |__| (_) | | | |  _| | (_| |\n"
+        "/____|       \\____\\___/|_| |_|_| |_|\\__, |\n"
+        "                                      |___/"
+    )
 
 
 def render_banner() -> None:
@@ -39,7 +45,7 @@ def render_banner() -> None:
         else f"v{VERSION}  |  Zscaler OneAPI Automation"
     )
 
-    _lines = ASCII_LOGO.strip().split("\n")
+    _lines = _LOGO_TEXT.split("\n")
     _w = max(len(l) for l in _lines)
     _logo = "\n".join(l.ljust(_w) for l in _lines)
 

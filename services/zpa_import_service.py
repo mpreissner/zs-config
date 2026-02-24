@@ -143,6 +143,20 @@ class ZPAImportService:
             sync.resources_deleted = deleted
             sync.error_message = "\n".join(errors) if errors else None
 
+        # Write a FAILURE entry for each resource type that errored
+        for error_msg in errors:
+            # error format is "resource_type: exception message"
+            rtype = error_msg.split(":", 1)[0].strip()
+            audit_service.log(
+                product="ZPA",
+                operation="import_config",
+                action="READ",
+                status="FAILURE",
+                tenant_id=self.tenant_id,
+                resource_type=rtype,
+                error_message=error_msg,
+            )
+
         audit_service.log(
             product="ZPA",
             operation="import_config",
@@ -195,9 +209,13 @@ class ZPAImportService:
     def _upsert(self, defn: ResourceDef, records: list, run_start: datetime):
         """Insert or update ZPAResource rows for the fetched records.
 
-        Returns (synced_count, updated_count).
+        Returns (synced_count, updated_count, pending_audit_events).
+        Audit events are returned rather than written inline so the caller can
+        write them AFTER the session closes — writing inside the session would
+        create a nested session that blocks on the SQLite write lock.
         """
         synced = updated = 0
+        pending_audit: list = []
 
         with get_session() as session:
             for record in records:
@@ -231,16 +249,10 @@ class ZPAImportService:
                         synced_at=run_start,
                         is_deleted=False,
                     ))
-                    audit_service.log(
-                        product="ZPA",
-                        operation="import_config",
-                        action="CREATE",
-                        status="SUCCESS",
-                        tenant_id=self.tenant_id,
-                        resource_type=defn.resource_type,
-                        resource_id=zpa_id,
-                        resource_name=name,
-                    )
+                    pending_audit.append(dict(
+                        action="CREATE", resource_type=defn.resource_type,
+                        resource_id=zpa_id, resource_name=name,
+                    ))
                     synced += 1
                 else:
                     # Always update synced_at; only update data when changed
@@ -250,18 +262,22 @@ class ZPAImportService:
                         existing.name = name
                         existing.raw_config = record
                         existing.config_hash = new_hash
-                        audit_service.log(
-                            product="ZPA",
-                            operation="import_config",
-                            action="UPDATE",
-                            status="SUCCESS",
-                            tenant_id=self.tenant_id,
-                            resource_type=defn.resource_type,
-                            resource_id=zpa_id,
-                            resource_name=name,
-                        )
+                        pending_audit.append(dict(
+                            action="UPDATE", resource_type=defn.resource_type,
+                            resource_id=zpa_id, resource_name=name,
+                        ))
                         updated += 1
                     synced += 1
+
+        # Session is closed — safe to write audit events now
+        for evt in pending_audit:
+            audit_service.log(
+                product="ZPA",
+                operation="import_config",
+                status="SUCCESS",
+                tenant_id=self.tenant_id,
+                **evt,
+            )
 
         return synced, updated
 
@@ -273,6 +289,7 @@ class ZPAImportService:
         """
         deleted = 0
         type_filter = resource_types or [d.resource_type for d in RESOURCE_DEFINITIONS]
+        pending_audit: list = []
 
         with get_session() as session:
             stale = (
@@ -287,16 +304,22 @@ class ZPAImportService:
             )
             for row in stale:
                 row.is_deleted = True
-                audit_service.log(
-                    product="ZPA",
-                    operation="import_config",
-                    action="DELETE",
-                    status="SUCCESS",
-                    tenant_id=self.tenant_id,
+                pending_audit.append(dict(
                     resource_type=row.resource_type,
                     resource_id=row.zpa_id,
                     resource_name=row.name,
-                )
+                ))
                 deleted += 1
+
+        # Session is closed — safe to write audit events now
+        for evt in pending_audit:
+            audit_service.log(
+                product="ZPA",
+                operation="import_config",
+                action="DELETE",
+                status="SUCCESS",
+                tenant_id=self.tenant_id,
+                **evt,
+            )
 
         return deleted
