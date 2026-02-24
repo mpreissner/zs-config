@@ -15,6 +15,7 @@ import sys
 # Ensure repo root is importable regardless of working directory
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from rich.align import Align
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
@@ -55,9 +56,15 @@ def main():
     # Initialise database (creates tables if needed)
     init_db()
 
+    # Pad all logo lines to the same width so Align centres the block as a unit
+    # (justify="center" would centre each line independently against the panel width)
+    _lines = ASCII_LOGO.strip().split("\n")
+    _w = max(len(l) for l in _lines)
+    _logo = "\n".join(l.ljust(_w) for l in _lines)
+
     console.print(
         Panel(
-            Text(ASCII_LOGO.strip(), justify="center", style="bold cyan"),
+            Align(Text(_logo, style="bold cyan", no_wrap=True), align="center"),
             subtitle=f"v{VERSION}  |  Zscaler OneAPI Automation",
             border_style="cyan",
             padding=(0, 4),
