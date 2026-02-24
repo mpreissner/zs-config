@@ -155,6 +155,10 @@ class ZPAClient:
         data = self._get(f"{self._v1}/appConnectorGroup")
         return data.get("list", [])
 
+    def list_server_groups(self) -> List[Dict]:
+        data = self._get(f"{self._v1}/serverGroup")
+        return data.get("list", [])
+
     def get_connector_group(self, group_id: str) -> Dict:
         return self._get(f"{self._v1}/appConnectorGroup/{group_id}")
 

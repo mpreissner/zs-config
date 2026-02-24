@@ -46,7 +46,7 @@ RESOURCE_DEFINITIONS: List[ResourceDef] = [
     ResourceDef("pra_credential",       "list_credentials"),
     ResourceDef("idp",                  "list_idp"),
     ResourceDef("saml_attribute",       "list_saml_attributes"),
-    ResourceDef("scim_group",           "list_scim_groups"),
+    ResourceDef("scim_group",           "_scim_groups_all"),  # handled specially in _fetch
     ResourceDef("microtenant",          "list_microtenants"),
     ResourceDef("enrollment_cert",      "list_enrollment_certificates"),
     ResourceDef("policy_access",        "list_policy_rules", list_args={"policy_type": "ACCESS_POLICY"}),
@@ -102,6 +102,11 @@ class ZPAImportService:
             session.flush()
             sync_id = sync.id
 
+        # Capture run start once so _upsert and _mark_deleted use the same
+        # timestamp — rows written this run get synced_at == run_start, and
+        # _mark_deleted looks for synced_at < run_start to find stale rows.
+        run_start = datetime.utcnow()
+
         synced = updated = deleted = 0
         errors = []
 
@@ -114,7 +119,7 @@ class ZPAImportService:
                     progress_callback(defn.resource_type, idx, total)
                 continue
 
-            s, u = self._upsert(defn, records)
+            s, u = self._upsert(defn, records, run_start)
             synced += s
             updated += u
 
@@ -122,7 +127,7 @@ class ZPAImportService:
                 progress_callback(defn.resource_type, idx, total)
 
         # Mark any resource no longer returned by the API as deleted
-        deleted = self._mark_deleted(resource_types)
+        deleted = self._mark_deleted(resource_types, run_start)
 
         final_status = "FAILED" if len(errors) == total else (
             "PARTIAL" if errors else "SUCCESS"
@@ -147,18 +152,35 @@ class ZPAImportService:
 
     def _fetch(self, defn: ResourceDef) -> list:
         """Call the appropriate ZPAClient list method with rate limiting."""
+        if defn.list_method == "_scim_groups_all":
+            return self._fetch_scim_groups_all()
         ZPA_READ_LIMITER.acquire()
         method = getattr(self.client, defn.list_method)
         result = method(**defn.list_args) if defn.list_args else method()
         return result or []
 
-    def _upsert(self, defn: ResourceDef, records: list):
+    def _fetch_scim_groups_all(self) -> list:
+        """Fetch SCIM groups across all IdPs, rate-limiting each call."""
+        ZPA_READ_LIMITER.acquire()
+        idps = self.client.list_idp()
+        groups = []
+        for idp in idps:
+            idp_id = str(idp.get("id", ""))
+            if not idp_id:
+                continue
+            ZPA_READ_LIMITER.acquire()
+            try:
+                groups.extend(self.client.list_scim_groups(idp_id) or [])
+            except Exception:
+                pass
+        return groups
+
+    def _upsert(self, defn: ResourceDef, records: list, run_start: datetime):
         """Insert or update ZPAResource rows for the fetched records.
 
         Returns (synced_count, updated_count).
         """
         synced = updated = 0
-        now = datetime.utcnow()
 
         with get_session() as session:
             for record in records:
@@ -189,13 +211,13 @@ class ZPAImportService:
                         name=name,
                         raw_config=record,
                         config_hash=new_hash,
-                        synced_at=now,
+                        synced_at=run_start,
                         is_deleted=False,
                     ))
                     synced += 1
                 else:
                     # Always update synced_at; only update data when changed
-                    existing.synced_at = now
+                    existing.synced_at = run_start
                     existing.is_deleted = False
                     if existing.config_hash != new_hash:
                         existing.name = name
@@ -206,11 +228,13 @@ class ZPAImportService:
 
         return synced, updated
 
-    def _mark_deleted(self, resource_types: Optional[List[str]]) -> int:
-        """Mark rows not touched in this sync run as deleted."""
-        now = datetime.utcnow()
-        deleted = 0
+    def _mark_deleted(self, resource_types: Optional[List[str]], run_start: datetime) -> int:
+        """Mark rows not touched in this sync run as deleted.
 
+        Rows written during this run have synced_at == run_start.  Any row
+        with synced_at < run_start was not returned by the API this time.
+        """
+        deleted = 0
         type_filter = resource_types or [d.resource_type for d in RESOURCE_DEFINITIONS]
 
         with get_session() as session:
@@ -220,8 +244,7 @@ class ZPAImportService:
                     ZPAResource.tenant_id == self.tenant_id,
                     ZPAResource.resource_type.in_(type_filter),
                     ZPAResource.is_deleted == False,
-                    # synced_at not refreshed in this run means it wasn't returned
-                    ZPAResource.synced_at < now,
+                    ZPAResource.synced_at < run_start,
                 )
                 .all()
             )
