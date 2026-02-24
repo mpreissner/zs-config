@@ -60,7 +60,7 @@ def cert_menu(client, tenant):
         ).ask()
 
         if choice == "list":
-            _list_certificates(client)
+            _list_certificates(client, tenant)
         elif choice == "rotate":
             _rotate_certificate(client, tenant)
         elif choice == "delete":
@@ -69,10 +69,12 @@ def cert_menu(client, tenant):
             break
 
 
-def _list_certificates(client):
+def _list_certificates(client, tenant):
+    from services.zpa_service import ZPAService
+    service = ZPAService(client, tenant_id=tenant.id)
     with console.status("Fetching certificates..."):
         try:
-            certs = client.list_certificates()
+            certs = service.list_certificates()
         except Exception as e:
             console.print(f"[red]✗ {e}[/red]")
             return

@@ -33,7 +33,7 @@ def zia_menu():
         if choice == "activation":
             _activation_menu(client, tenant)
         elif choice == "url_lookup":
-            _url_lookup(client)
+            _url_lookup(client, tenant)
         elif choice in ("url_cats", "url_rules", "users", "locations"):
             console.print("[yellow]Coming soon.[/yellow]")
         elif choice in ("back", None):
@@ -45,11 +45,13 @@ def zia_menu():
 # ------------------------------------------------------------------
 
 def _activation_menu(client, tenant):
+    from services.zia_service import ZIAService
+    service = ZIAService(client, tenant_id=tenant.id)
     while True:
         render_banner()
         with console.status("Checking activation status..."):
             try:
-                status = client.get_activation_status()
+                status = service.get_activation_status()
             except Exception as e:
                 console.print(f"[red]✗ Could not fetch status: {e}[/red]")
                 return
@@ -101,7 +103,10 @@ def _activate(client, tenant):
 # URL Lookup
 # ------------------------------------------------------------------
 
-def _url_lookup(client):
+def _url_lookup(client, tenant):
+    from services.zia_service import ZIAService
+    service = ZIAService(client, tenant_id=tenant.id)
+
     console.print("\n[bold]URL Category Lookup[/bold]")
     console.print("[dim]Enter URLs to look up (one per line, blank line to submit).[/dim]\n")
 
@@ -117,7 +122,7 @@ def _url_lookup(client):
 
     with console.status("Looking up URLs..."):
         try:
-            results = client.url_lookup(urls)
+            results = service.url_lookup(urls)
         except Exception as e:
             console.print(f"[red]✗ {e}[/red]")
             return

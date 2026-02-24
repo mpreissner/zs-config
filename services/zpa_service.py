@@ -163,7 +163,13 @@ class ZPAService:
     # ------------------------------------------------------------------
 
     def list_certificates(self) -> List[Dict]:
-        return self.client.list_certificates()
+        result = self.client.list_certificates()
+        audit_service.log(
+            product="ZPA", operation="list_certificates", action="READ", status="SUCCESS",
+            tenant_id=self.tenant_id, resource_type="certificate",
+            details={"count": len(result)},
+        )
+        return result
 
     def get_certificate(self, cert_id: str) -> Optional[Dict]:
         return self.client.get_certificate(cert_id)
@@ -187,14 +193,26 @@ class ZPAService:
     # ------------------------------------------------------------------
 
     def list_applications(self, app_type: str = "BROWSER_ACCESS") -> List[Dict]:
-        return self.client.list_applications(app_type)
+        result = self.client.list_applications(app_type)
+        audit_service.log(
+            product="ZPA", operation="list_applications", action="READ", status="SUCCESS",
+            tenant_id=self.tenant_id, resource_type="application",
+            details={"count": len(result), "app_type": app_type},
+        )
+        return result
 
     # ------------------------------------------------------------------
     # PRA Portal helpers
     # ------------------------------------------------------------------
 
     def list_pra_portals(self) -> List[Dict]:
-        return self.client.list_pra_portals()
+        result = self.client.list_pra_portals()
+        audit_service.log(
+            product="ZPA", operation="list_pra_portals", action="READ", status="SUCCESS",
+            tenant_id=self.tenant_id, resource_type="pra_portal",
+            details={"count": len(result) if isinstance(result, list) else None},
+        )
+        return result
 
     # ------------------------------------------------------------------
     # Internal utilities
