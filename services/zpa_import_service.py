@@ -49,11 +49,11 @@ RESOURCE_DEFINITIONS: List[ResourceDef] = [
     ResourceDef("scim_group",           "_scim_groups_all"),  # handled specially in _fetch
     ResourceDef("microtenant",          "list_microtenants"),
     ResourceDef("enrollment_cert",      "list_enrollment_certificates"),
-    ResourceDef("policy_access",        "list_policy_rules", list_args={"policy_type": "ACCESS_POLICY"}),
-    ResourceDef("policy_timeout",       "list_policy_rules", list_args={"policy_type": "TIMEOUT_POLICY"}),
-    ResourceDef("policy_forwarding",    "list_policy_rules", list_args={"policy_type": "CLIENT_FORWARDING_POLICY"}),
-    ResourceDef("policy_inspection",    "list_policy_rules", list_args={"policy_type": "INSPECTION_POLICY"}),
-    ResourceDef("policy_isolation",     "list_policy_rules", list_args={"policy_type": "ISOLATION_POLICY"}),
+    ResourceDef("policy_access",        "list_policy_rules", list_args={"policy_type": "access"}),
+    ResourceDef("policy_timeout",       "list_policy_rules", list_args={"policy_type": "timeout"}),
+    ResourceDef("policy_forwarding",    "list_policy_rules", list_args={"policy_type": "client_forwarding"}),
+    ResourceDef("policy_inspection",    "list_policy_rules", list_args={"policy_type": "inspection"}),
+    ResourceDef("policy_isolation",     "list_policy_rules", list_args={"policy_type": "isolation"}),
     ResourceDef("certificate",          "list_certificates"),
 ]
 

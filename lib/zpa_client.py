@@ -87,17 +87,15 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_applications(self, app_type: str = "BROWSER_ACCESS") -> List[Dict]:
-        result, resp, err = self._sdk.zpa.application_segment.list_application_segments(
-            {"application_type": app_type}
-        )
+        result, resp, err = self._sdk.zpa.app_segments.list_segments()
         return _to_dicts(_unwrap(result, resp, err))
 
     def get_application(self, app_id: str) -> Dict:
-        result, resp, err = self._sdk.zpa.application_segment.get_application_segment(app_id)
+        result, resp, err = self._sdk.zpa.app_segments.get_segment(app_id)
         return _to_dict(_unwrap(result, resp, err))
 
     def update_application(self, app_id: str, config: Dict) -> bool:
-        result, resp, err = self._sdk.zpa.application_segment.update_application_segment(app_id, **config)
+        result, resp, err = self._sdk.zpa.app_segments.update_segment(app_id, **config)
         _unwrap(result, resp, err)
         return True
 
@@ -106,15 +104,15 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_pra_portals(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.pra_portal.list_pra_portals()
+        result, resp, err = self._sdk.zpa.pra_portal.list_portals()
         return _to_dicts(_unwrap(result, resp, err))
 
     def get_pra_portal(self, portal_id: str) -> Dict:
-        result, resp, err = self._sdk.zpa.pra_portal.get_pra_portal(portal_id)
+        result, resp, err = self._sdk.zpa.pra_portal.get_portal(portal_id)
         return _to_dict(_unwrap(result, resp, err))
 
     def update_pra_portal(self, portal_id: str, config: Dict) -> bool:
-        result, resp, err = self._sdk.zpa.pra_portal.update_pra_portal(portal_id, **config)
+        result, resp, err = self._sdk.zpa.pra_portal.update_portal(portal_id, **config)
         _unwrap(result, resp, err)
         return True
 
@@ -131,7 +129,7 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_segment_groups(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.segment_groups.list_segment_groups()
+        result, resp, err = self._sdk.zpa.segment_groups.list_groups()
         return _to_dicts(_unwrap(result, resp, err))
 
     # ------------------------------------------------------------------
@@ -139,7 +137,7 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_server_groups(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.server_groups.list_server_groups()
+        result, resp, err = self._sdk.zpa.server_groups.list_groups()
         return _to_dicts(_unwrap(result, resp, err))
 
     # ------------------------------------------------------------------
@@ -147,11 +145,11 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_connector_groups(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.app_connector_groups.list_app_connector_groups()
+        result, resp, err = self._sdk.zpa.connectors.list_connector_groups()
         return _to_dicts(_unwrap(result, resp, err))
 
     def list_connectors(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.app_connectors.list_app_connectors()
+        result, resp, err = self._sdk.zpa.connectors.list_connectors()
         return _to_dicts(_unwrap(result, resp, err))
 
     # ------------------------------------------------------------------
@@ -183,7 +181,7 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_enrollment_certificates(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.enrollment_certificates.list_enrollment_certificates()
+        result, resp, err = self._sdk.zpa.certificates.list_enrolment()
         return _to_dicts(_unwrap(result, resp, err))
 
     # ------------------------------------------------------------------
