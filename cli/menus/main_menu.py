@@ -11,11 +11,12 @@ console = Console()
 def _active_tenant_label() -> str:
     from cli.session import get_active_tenant
     t = get_active_tenant()
-    return f"  Switch Tenant  [dim](active: {t.name})[/dim]" if t else "  Switch Tenant"
+    return f"  Switch Tenant  (active: {t.name})" if t else "  Switch Tenant"
 
 
 def main_menu():
     while True:
+        console.clear()
         choice = questionary.select(
             "Main Menu",
             choices=[
@@ -51,6 +52,13 @@ def main_menu():
 def _switch_tenant():
     from cli.menus import select_tenant
     from cli.session import set_active_tenant
+    from services.config_service import list_tenants
+
+    if not list_tenants():
+        console.print("[yellow]No tenants configured yet.[/yellow]")
+        if questionary.confirm("Add a tenant now?", default=True).ask():
+            _add_tenant()
+        return
 
     tenant = select_tenant()
     if tenant:
@@ -64,6 +72,7 @@ def _switch_tenant():
 
 def settings_menu():
     while True:
+        console.clear()
         choice = questionary.select(
             "Settings",
             choices=[
@@ -88,6 +97,7 @@ def settings_menu():
 
 def tenant_management_menu():
     while True:
+        console.clear()
         choice = questionary.select(
             "Manage Tenants",
             choices=[
@@ -115,16 +125,20 @@ def _add_tenant():
     if not name:
         return
 
-    zidentity_url = questionary.text(
-        "ZIdentity URL:", placeholder="https://vanity.zslogin.net"
+    subdomain = questionary.text(
+        "Vanity subdomain:",
+        instruction="e.g.  acme  →  https://acme.zslogin.net",
     ).ask()
+    if not subdomain:
+        return
+    subdomain = subdomain.strip().lower()
+    zidentity_url = f"https://{subdomain}.zslogin.net"
+    console.print(f"  [dim]ZIdentity URL: {zidentity_url}[/dim]")
+
     client_id = questionary.text("Client ID:").ask()
     client_secret = questionary.password("Client Secret:").ask()
     customer_id = questionary.text(
         "ZPA Customer ID (leave blank if not using ZPA):"
-    ).ask()
-    oneapi_url = questionary.text(
-        "OneAPI Base URL:", default="https://api.zsapi.net"
     ).ask()
     notes = questionary.text("Notes (optional):").ask()
 
@@ -139,7 +153,7 @@ def _add_tenant():
             zidentity_base_url=zidentity_url,
             client_id=client_id,
             client_secret=client_secret,
-            oneapi_base_url=oneapi_url or "https://api.zsapi.net",
+            oneapi_base_url="https://api.zsapi.net",
             zpa_customer_id=customer_id or None,
             notes=notes or None,
         )

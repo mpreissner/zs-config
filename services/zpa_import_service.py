@@ -162,6 +162,8 @@ class ZPAImportService:
 
         with get_session() as session:
             for record in records:
+                if not isinstance(record, dict):
+                    continue
                 zpa_id = str(record.get(defn.id_field, ""))
                 if not zpa_id:
                     continue

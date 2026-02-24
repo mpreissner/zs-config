@@ -12,9 +12,9 @@ def zpa_menu():
     if client is None:
         return
 
-    console.print(f"[dim]Connected: [bold]{tenant.name}[/bold][/dim]")
-
     while True:
+        console.clear()
+        console.print(f"[dim]Connected: [bold]{tenant.name}[/bold][/dim]")
         choice = questionary.select(
             "ZPA",
             choices=[
@@ -46,6 +46,7 @@ def zpa_menu():
 
 def cert_menu(client, tenant):
     while True:
+        console.clear()
         choice = questionary.select(
             "Certificate Management",
             choices=[

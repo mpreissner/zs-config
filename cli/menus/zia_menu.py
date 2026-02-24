@@ -12,9 +12,9 @@ def zia_menu():
     if client is None:
         return
 
-    console.print(f"[dim]Connected: [bold]{tenant.name}[/bold][/dim]")
-
     while True:
+        console.clear()
+        console.print(f"[dim]Connected: [bold]{tenant.name}[/bold][/dim]")
         choice = questionary.select(
             "ZIA",
             choices=[
@@ -46,6 +46,7 @@ def zia_menu():
 
 def _activation_menu(client, tenant):
     while True:
+        console.clear()
         with console.status("Checking activation status..."):
             try:
                 status = client.get_activation_status()
