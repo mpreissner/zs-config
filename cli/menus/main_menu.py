@@ -82,6 +82,8 @@ def settings_menu():
                 questionary.Separator(),
                 questionary.Choice("Configure Server Credentials File", value="conffile"),
                 questionary.Separator(),
+                questionary.Choice("Clear Imported Data & Audit Log", value="cleardata"),
+                questionary.Separator(),
                 questionary.Choice("← Back", value="back"),
             ],
         ).ask()
@@ -92,6 +94,8 @@ def settings_menu():
             _generate_key()
         elif choice == "conffile":
             _configure_conf_file()
+        elif choice == "cleardata":
+            _clear_imported_data()
         elif choice in ("back", None):
             break
 
@@ -303,6 +307,39 @@ def _generate_key():
 
 
 # ------------------------------------------------------------------
+# Clear imported data
+# ------------------------------------------------------------------
+
+def _clear_imported_data():
+    console.print(
+        "\n[bold]Clear Imported Data & Audit Log[/bold]\n"
+        "[dim]Deletes all ZPA resources, sync logs, and audit log entries.\n"
+        "Tenant configuration is preserved.[/dim]\n"
+    )
+    confirmed = questionary.confirm(
+        "This cannot be undone. Proceed?", default=False
+    ).ask()
+    if not confirmed:
+        return
+
+    from db.database import get_session
+    from db.models import AuditLog, SyncLog, ZPAResource
+
+    with get_session() as session:
+        zpa_count  = session.query(ZPAResource).delete()
+        sync_count = session.query(SyncLog).delete()
+        audit_count = session.query(AuditLog).delete()
+
+    console.print(
+        f"[green]✓ Cleared:[/green] "
+        f"{zpa_count} ZPA resources, "
+        f"{sync_count} sync logs, "
+        f"{audit_count} audit entries."
+    )
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+# ------------------------------------------------------------------
 # Audit Log
 # ------------------------------------------------------------------
 
@@ -310,14 +347,18 @@ def audit_menu():
     from services import audit_service
 
     with console.status("Loading audit log..."):
-        logs = audit_service.get_recent(limit=200)
+        logs = audit_service.get_recent(limit=500)
 
     if not logs:
         console.print("[yellow]No audit log entries yet.[/yellow]")
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    table = Table(title=f"Audit Log (last {len(logs)} entries)", show_lines=False)
+    table = Table(
+        title=f"Audit Log — {len(logs)} entries, newest first",
+        show_lines=False,
+        caption="q to quit  •  / to search  •  arrows or j/k to scroll",
+    )
     table.add_column("Timestamp", style="dim", no_wrap=True)
     table.add_column("Product", style="cyan")
     table.add_column("Operation")
@@ -335,5 +376,5 @@ def audit_menu():
             f"[{status_style}]{entry.status or ''}[/{status_style}]",
         )
 
-    console.print(table)
-    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+    with console.pager(styles=True):
+        console.print(table)
