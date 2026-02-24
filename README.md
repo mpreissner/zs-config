@@ -8,19 +8,22 @@ Automation toolset for Zscaler OneAPI — headless scripts, interactive TUI, and
 zscaler-scripts/
 │
 ├── lib/               # Low-level API clients (auth + per-product HTTP wrappers)
-│   ├── auth.py        # Shared OAuth2 client_credentials token manager
-│   ├── zpa_client.py  # ZPA raw API methods
-│   └── zia_client.py  # ZIA raw API methods
+│   ├── auth.py          # Shared OAuth2 client_credentials token manager
+│   ├── zpa_client.py    # ZPA raw API methods
+│   ├── zia_client.py    # ZIA raw API methods
+│   ├── rate_limiter.py  # Rolling-window rate limiter (respects API limits)
+│   └── conf_writer.py   # zscaler-oneapi.conf writer (chmod 600)
 │
 ├── db/                # Database layer (SQLAlchemy + SQLite by default)
-│   ├── models.py      # TenantConfig, AuditLog, Certificate
+│   ├── models.py      # TenantConfig, AuditLog, Certificate, ZPAResource, SyncLog
 │   └── database.py    # Engine setup, session context manager
 │
 ├── services/          # Business logic — shared by CLI, scripts, and API
-│   ├── config_service.py  # Tenant CRUD with encrypted secret storage
-│   ├── audit_service.py   # Operation audit logging
-│   ├── zpa_service.py     # ZPA workflows (cert rotation, etc.)
-│   └── zia_service.py     # ZIA workflows (activation, etc.)
+│   ├── config_service.py      # Tenant CRUD with encrypted secret storage
+│   ├── audit_service.py       # Operation audit logging
+│   ├── zpa_service.py         # ZPA workflows (cert rotation, etc.)
+│   ├── zpa_import_service.py  # ZPA config import (pulls live config into DB)
+│   └── zia_service.py         # ZIA workflows (activation, etc.)
 │
 ├── scripts/           # Headless automation scripts (server-deployed)
 │   ├── zpa/
@@ -30,9 +33,10 @@ zscaler-scripts/
 │
 ├── cli/               # Interactive Rich TUI
 │   ├── zscaler-cli.py
+│   ├── session.py         # Process-level active tenant state
 │   └── menus/
 │       ├── main_menu.py   # Main menu + settings + audit log viewer
-│       ├── zpa_menu.py    # ZPA certificate management
+│       ├── zpa_menu.py    # ZPA certificate management + config import
 │       └── zia_menu.py    # ZIA activation + URL lookup
 │
 ├── api/               # FastAPI REST API (future GUI backend)
@@ -91,6 +95,20 @@ python scripts/zpa/cert-upload.py /path/to/cert.pem /path/to/key.pem "*.example.
 
 ---
 
+## Config Import (ZPA)
+
+The CLI can pull a full snapshot of your ZPA configuration into the local database.
+
+Launch the CLI, select a tenant, then go to **ZPA → Import Config**.
+
+The import fetches 18 resource types (applications, segment groups, connectors, PRA portals, policies, certificates, etc.) and stores each as a `ZPAResource` row with the full JSON payload.  Subsequent imports only write rows whose content has changed (SHA-256 comparison), so re-runs are fast.
+
+Rate limiting is applied automatically (conservative 15 req/10 s) so the import won't trigger API throttling.  A typical tenant with ~80 resources takes roughly 60 seconds on first run.
+
+Once imported, resources can be queried directly from the SQLite database or (in future) compared across tenants, replayed to a new environment, or diffed between snapshots.
+
+---
+
 ## REST API (future GUI)
 
 ```bash
@@ -111,6 +129,8 @@ The database stores:
 - **TenantConfig** — connection details per Zscaler tenant (secrets encrypted at rest)
 - **AuditLog** — immutable record of every operation performed
 - **Certificate** — lifecycle tracking for certs managed by this toolset
+- **ZPAResource** — full JSON snapshot of every ZPA resource (one row per `tenant × type × id`); SHA-256 hash enables fast change detection on re-import
+- **SyncLog** — outcome of each config-import run (status, counters, error messages)
 
 ---
 

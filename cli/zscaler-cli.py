@@ -49,6 +49,8 @@ def check_secret_key() -> bool:
 def main():
     from db.database import init_db
     from cli.menus.main_menu import main_menu
+    from cli.menus import select_tenant
+    from cli.session import set_active_tenant
 
     # Initialise database (creates tables if needed)
     init_db()
@@ -63,6 +65,15 @@ def main():
     )
 
     check_secret_key()
+
+    # Select active tenant at startup (skipped if none are configured yet)
+    from services.config_service import list_tenants
+    if list_tenants():
+        tenant = select_tenant()
+        if tenant:
+            set_active_tenant(tenant)
+            console.print(f"[dim]Active tenant: [bold cyan]{tenant.name}[/bold cyan][/dim]\n")
+
     main_menu()
 
 

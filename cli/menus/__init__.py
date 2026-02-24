@@ -28,11 +28,17 @@ def select_tenant():
 
 
 def get_zpa_client(tenant=None):
-    """Return (ZPAClient, tenant) or (None, None) if setup is incomplete."""
+    """Return (ZPAClient, tenant) or (None, None) if setup is incomplete.
+
+    Uses the session's active tenant when no tenant is explicitly supplied.
+    """
+    from cli.session import get_active_tenant
     from lib.auth import ZscalerAuth
     from lib.zpa_client import ZPAClient
     from services.config_service import decrypt_secret
 
+    if tenant is None:
+        tenant = get_active_tenant()
     if tenant is None:
         tenant = select_tenant()
     if tenant is None:
@@ -46,11 +52,17 @@ def get_zpa_client(tenant=None):
 
 
 def get_zia_client(tenant=None):
-    """Return (ZIAClient, tenant) or (None, None) if setup is incomplete."""
+    """Return (ZIAClient, tenant) or (None, None) if setup is incomplete.
+
+    Uses the session's active tenant when no tenant is explicitly supplied.
+    """
+    from cli.session import get_active_tenant
     from lib.auth import ZscalerAuth
     from lib.zia_client import ZIAClient
     from services.config_service import decrypt_secret
 
+    if tenant is None:
+        tenant = get_active_tenant()
     if tenant is None:
         tenant = select_tenant()
     if tenant is None:

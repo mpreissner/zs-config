@@ -8,6 +8,12 @@ from cli.menus import select_tenant
 console = Console()
 
 
+def _active_tenant_label() -> str:
+    from cli.session import get_active_tenant
+    t = get_active_tenant()
+    return f"  Switch Tenant  [dim](active: {t.name})[/dim]" if t else "  Switch Tenant"
+
+
 def main_menu():
     while True:
         choice = questionary.select(
@@ -16,6 +22,7 @@ def main_menu():
                 questionary.Choice("  ZPA   Zscaler Private Access", value="zpa"),
                 questionary.Choice("  ZIA   Zscaler Internet Access", value="zia"),
                 questionary.Separator(),
+                questionary.Choice(_active_tenant_label(), value="switch_tenant"),
                 questionary.Choice("  Settings", value="settings"),
                 questionary.Choice("  Audit Log", value="audit"),
                 questionary.Separator(),
@@ -30,6 +37,8 @@ def main_menu():
         elif choice == "zia":
             from cli.menus.zia_menu import zia_menu
             zia_menu()
+        elif choice == "switch_tenant":
+            _switch_tenant()
         elif choice == "settings":
             settings_menu()
         elif choice == "audit":
@@ -37,6 +46,16 @@ def main_menu():
         elif choice in ("exit", None):
             console.print("[dim]Goodbye.[/dim]")
             break
+
+
+def _switch_tenant():
+    from cli.menus import select_tenant
+    from cli.session import set_active_tenant
+
+    tenant = select_tenant()
+    if tenant:
+        set_active_tenant(tenant)
+        console.print(f"[green]✓ Active tenant: [bold]{tenant.name}[/bold][/green]")
 
 
 # ------------------------------------------------------------------

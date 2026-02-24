@@ -19,6 +19,8 @@ def zpa_menu():
             "ZPA",
             choices=[
                 questionary.Choice("Certificate Management", value="certs"),
+                questionary.Choice("Import Config", value="import"),
+                questionary.Separator(),
                 questionary.Choice("Application Segments  [coming soon]", value="apps"),
                 questionary.Choice("PRA Portals           [coming soon]", value="pra"),
                 questionary.Choice("Connectors            [coming soon]", value="connectors"),
@@ -30,6 +32,8 @@ def zpa_menu():
 
         if choice == "certs":
             cert_menu(client, tenant)
+        elif choice == "import":
+            _import_config(client, tenant)
         elif choice in ("apps", "pra", "connectors"):
             console.print("[yellow]Coming soon.[/yellow]")
         elif choice in ("back", None):
@@ -137,6 +141,57 @@ def _rotate_certificate(client, tenant):
             f"\n[yellow]⚠ No resources matched domain '{domain}'. "
             "Certificate was uploaded but not assigned.[/yellow]"
         )
+
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+# ------------------------------------------------------------------
+# Config Import
+# ------------------------------------------------------------------
+
+def _import_config(client, tenant):
+    from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn
+    from services.zpa_import_service import ZPAImportService, RESOURCE_DEFINITIONS
+
+    console.print("\n[bold]Import ZPA Config[/bold]")
+    console.print(
+        f"[dim]Fetching {len(RESOURCE_DEFINITIONS)} resource types from ZPA.  "
+        "Rate-limited to ~15 req/10 s — this may take ~60 s for a typical tenant.[/dim]\n"
+    )
+
+    confirmed = questionary.confirm("Start import?", default=True).ask()
+    if not confirmed:
+        return
+
+    service = ZPAImportService(client, tenant_id=tenant.id)
+    total = len(RESOURCE_DEFINITIONS)
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total}"),
+        TimeElapsedColumn(),
+        console=console,
+        transient=True,
+    ) as progress:
+        task = progress.add_task("Importing...", total=total)
+
+        def on_progress(resource_type, done, _total):
+            progress.update(task, completed=done, description=f"[cyan]{resource_type}[/cyan]")
+
+        sync = service.run(progress_callback=on_progress)
+
+    # Summary
+    status_style = "green" if sync.status == "SUCCESS" else (
+        "yellow" if sync.status == "PARTIAL" else "red"
+    )
+    console.print(f"\n[{status_style}]■ Sync {sync.status}[/{status_style}]")
+    console.print(f"  Resources synced:  {sync.resources_synced}")
+    console.print(f"  Records updated:   {sync.resources_updated}")
+    console.print(f"  Marked deleted:    {sync.resources_deleted}")
+    if sync.error_message:
+        console.print(f"\n[yellow]Warnings:[/yellow]\n{sync.error_message}")
 
     questionary.press_any_key_to_continue("Press any key to continue...").ask()
 

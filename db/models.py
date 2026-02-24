@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 
@@ -32,6 +32,8 @@ class TenantConfig(Base):
 
     audit_logs = relationship("AuditLog", back_populates="tenant", lazy="select")
     certificates = relationship("Certificate", back_populates="tenant", lazy="select")
+    zpa_resources = relationship("ZPAResource", back_populates="tenant", lazy="select")
+    sync_logs = relationship("SyncLog", back_populates="tenant", lazy="select")
 
     def __repr__(self) -> str:
         return f"<TenantConfig name={self.name!r} active={self.is_active}>"
@@ -89,3 +91,58 @@ class Certificate(Base):
 
     def __repr__(self) -> str:
         return f"<Certificate name={self.name!r} domain={self.domain!r} active={self.is_active}>"
+
+
+class ZPAResource(Base):
+    """Snapshot of a ZPA resource fetched from the API.
+
+    One row per (tenant, resource_type, zpa_id).  raw_config holds the full
+    JSON payload from the API; config_hash is a SHA-256 of that payload so
+    subsequent syncs can skip unchanged records.
+    """
+
+    __tablename__ = "zpa_resources"
+    __table_args__ = (UniqueConstraint("tenant_id", "resource_type", "zpa_id", name="uq_zpa_resource"),)
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenant_configs.id"), nullable=False)
+    resource_type = Column(String(64), nullable=False)   # application, segment_group, pra_portal, etc.
+    zpa_id = Column(String(255), nullable=False)         # ID assigned by ZPA
+    name = Column(String(512), nullable=True)
+    raw_config = Column(JSON, nullable=False)
+    config_hash = Column(String(64), nullable=True)      # SHA-256 hex of raw_config for change detection
+    first_seen_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    synced_at = Column(DateTime, nullable=True)
+    is_deleted = Column(Boolean, default=False, nullable=False)
+
+    tenant = relationship("TenantConfig", back_populates="zpa_resources")
+
+    def __repr__(self) -> str:
+        return f"<ZPAResource type={self.resource_type!r} name={self.name!r} id={self.zpa_id!r}>"
+
+
+class SyncLog(Base):
+    """Records the outcome of each config-import run.
+
+    Tracks aggregate stats (resources synced/updated/deleted) and a final
+    status so the user can see when the last successful sync happened.
+    """
+
+    __tablename__ = "sync_logs"
+
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenant_configs.id"), nullable=False)
+    product = Column(String(32), nullable=False)         # ZPA, ZIA, etc.
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+    status = Column(String(16), nullable=True)           # RUNNING, SUCCESS, FAILED, PARTIAL
+    resources_synced = Column(Integer, default=0, nullable=False)
+    resources_updated = Column(Integer, default=0, nullable=False)
+    resources_deleted = Column(Integer, default=0, nullable=False)
+    error_message = Column(Text, nullable=True)
+    details = Column(JSON, nullable=True)
+
+    tenant = relationship("TenantConfig", back_populates="sync_logs")
+
+    def __repr__(self) -> str:
+        return f"<SyncLog [{self.started_at}] {self.product} {self.status}>"
