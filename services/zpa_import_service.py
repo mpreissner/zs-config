@@ -134,7 +134,7 @@ class ZPAImportService:
                         status="N/A",
                         tenant_id=self.tenant_id,
                         resource_type=defn.resource_type,
-                        details={"reason": "401 Unauthorized — auto-disabled as N/A for this tenant"},
+                        resource_name="marked as N/A — not entitled",
                     )
                 else:
                     errors.append(f"{defn.resource_type}: {exc}")
