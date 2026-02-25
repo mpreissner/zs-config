@@ -12,7 +12,7 @@ from typing import Optional
 
 if sys.platform == "win32":
     DEFAULT_CONF_PATH = str(
-        Path(os.environ.get("APPDATA", Path.home())) / "z-config" / "zscaler-oneapi.conf"
+        Path(os.environ.get("APPDATA", Path.home())) / "zs-config" / "zscaler-oneapi.conf"
     )
 else:
     DEFAULT_CONF_PATH = "/etc/zscaler-oneapi.conf"
