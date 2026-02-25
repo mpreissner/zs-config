@@ -27,7 +27,7 @@ TEMPLATE_ROWS = [
         "udp_ports": "",
         "description": "",
         "enabled": "true",
-        "app_type": "BROWSER_ACCESS",
+        "app_type": "",
         "bypass_type": "NEVER",
         "double_encrypt": "false",
         "health_check_type": "DEFAULT",

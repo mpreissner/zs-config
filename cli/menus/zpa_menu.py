@@ -679,7 +679,7 @@ def _csv_field_reference():
         ("udp_ports",                     "if no tcp", "",      "Same format as tcp_ports\n  e.g. 53;123"),
         ("description",                   "",  "(blank)",       "Free text"),
         ("enabled",                       "",  "true",          "true / false"),
-        ("app_type",                      "",  "BROWSER_ACCESS","BROWSER_ACCESS  |  SIPA  |  INSPECT  |  SECURE_REMOTE_ACCESS"),
+        ("app_type",                      "",  "(blank)",       "Leave blank for standard segments (ZPA Client Connector access)\n  BROWSER_ACCESS  |  SIPA  |  INSPECT  |  SECURE_REMOTE_ACCESS\n  Only applies to clientless/browser-based segment types"),
         ("bypass_type",                   "",  "NEVER",         "NEVER  |  ALWAYS  |  ON_NET"),
         ("double_encrypt",                "",  "false",         "true / false"),
         ("health_check_type",             "",  "DEFAULT",       "DEFAULT  |  NONE"),

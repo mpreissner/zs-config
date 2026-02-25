@@ -140,7 +140,7 @@ Use **Export CSV Template** to get a pre-filled starting point, or build your ow
 |---|---|---|
 | `description` | *(blank)* | Any string |
 | `enabled` | `true` | `true` / `false` |
-| `app_type` | `BROWSER_ACCESS` | `BROWSER_ACCESS` \| `SIPA` \| `INSPECT` \| `SECURE_REMOTE_ACCESS` |
+| `app_type` | *(blank)* | Leave blank for standard segments. `BROWSER_ACCESS` \| `SIPA` \| `INSPECT` \| `SECURE_REMOTE_ACCESS` — only applies to clientless/browser-based types |
 | `bypass_type` | `NEVER` | `NEVER` \| `ALWAYS` \| `ON_NET` |
 | `double_encrypt` | `false` | `true` / `false` |
 | `health_check_type` | `DEFAULT` | `DEFAULT` \| `NONE` |
