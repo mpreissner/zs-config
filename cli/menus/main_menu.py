@@ -369,7 +369,6 @@ def audit_menu():
     table = Table(
         title=f"Audit Log — {len(logs)} entries, newest first",
         show_lines=False,
-        caption="q to quit  •  / to search  •  arrows or j/k to scroll",
     )
     table.add_column("Timestamp", style="dim", no_wrap=True)
     table.add_column("Product", style="cyan")
@@ -388,5 +387,5 @@ def audit_menu():
             f"[{status_style}]{entry.status or ''}[/{status_style}]",
         )
 
-    with console.pager(styles=True):
-        console.print(table)
+    console.print(table)
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
