@@ -1423,15 +1423,15 @@ def _list_connectors(tenant):
 
     for r in rows:
         cfg = r["raw_config"]
-        group = cfg.get("appConnectorGroupName", "—") or "—"
-        status_val = cfg.get("controlChannelStatus", "—") or "—"
+        group = cfg.get("app_connector_group_name", "—") or "—"
+        status_val = cfg.get("control_channel_status", "—") or "—"
         status_str = (
             f"[green]{status_val}[/green]"
             if status_val == "ZPN_STATUS_AUTHENTICATED"
             else f"[red]{status_val}[/red]"
         )
-        private_ip = cfg.get("privateIp", "—") or "—"
-        version = cfg.get("currentVersion", "—") or "—"
+        private_ip = cfg.get("private_ip", "—") or "—"
+        version = cfg.get("current_version", "—") or "—"
         enabled = cfg.get("enabled", True)
         enabled_str = "[green]Yes[/green]" if enabled else "[red]No[/red]"
         table.add_row(r["name"], group, status_str, private_ip, version, enabled_str)
@@ -1480,15 +1480,15 @@ def _search_connectors(tenant):
 
     for r in rows:
         cfg = r["raw_config"]
-        group = cfg.get("appConnectorGroupName", "—") or "—"
-        status_val = cfg.get("controlChannelStatus", "—") or "—"
+        group = cfg.get("app_connector_group_name", "—") or "—"
+        status_val = cfg.get("control_channel_status", "—") or "—"
         status_str = (
             f"[green]{status_val}[/green]"
             if status_val == "ZPN_STATUS_AUTHENTICATED"
             else f"[red]{status_val}[/red]"
         )
-        private_ip = cfg.get("privateIp", "—") or "—"
-        version = cfg.get("currentVersion", "—") or "—"
+        private_ip = cfg.get("private_ip", "—") or "—"
+        version = cfg.get("current_version", "—") or "—"
         enabled = cfg.get("enabled", True)
         enabled_str = "[green]Yes[/green]" if enabled else "[red]No[/red]"
         table.add_row(r["name"], group, status_str, private_ip, version, enabled_str)
@@ -1514,7 +1514,7 @@ def _toggle_connector(client, tenant):
             {
                 "name": r.name,
                 "zpa_id": r.zpa_id,
-                "group": (r.raw_config or {}).get("appConnectorGroupName", ""),
+                "group": (r.raw_config or {}).get("app_connector_group_name", ""),
                 "enabled": (r.raw_config or {}).get("enabled", True),
             }
             for r in resources
@@ -1627,7 +1627,7 @@ def _rename_connector(client, tenant):
             {
                 "name": r.name,
                 "zpa_id": r.zpa_id,
-                "group": (r.raw_config or {}).get("appConnectorGroupName", ""),
+                "group": (r.raw_config or {}).get("app_connector_group_name", ""),
             }
             for r in resources
         ]
@@ -1734,7 +1734,7 @@ def _delete_connector(client, tenant):
             {
                 "name": r.name,
                 "zpa_id": r.zpa_id,
-                "group": (r.raw_config or {}).get("appConnectorGroupName", ""),
+                "group": (r.raw_config or {}).get("app_connector_group_name", ""),
             }
             for r in resources
         ]
@@ -1859,7 +1859,7 @@ def _list_connector_groups(tenant):
         )
         count_map: dict = defaultdict(int)
         for c in connector_rows:
-            gid = str((c.raw_config or {}).get("appConnectorGroupId", ""))
+            gid = str((c.raw_config or {}).get("app_connector_group_id", ""))
             if gid:
                 count_map[gid] += 1
 
@@ -1879,7 +1879,7 @@ def _list_connector_groups(tenant):
 
     for r in rows:
         cfg = r["raw_config"]
-        location = cfg.get("location") or cfg.get("cityCountry") or "—"
+        location = cfg.get("location") or cfg.get("city_country") or "—"
         connector_count = str(count_map.get(str(r["zpa_id"]), 0))
         enabled = cfg.get("enabled", True)
         enabled_str = "[green]Yes[/green]" if enabled else "[red]No[/red]"
@@ -1926,7 +1926,7 @@ def _search_connector_groups(tenant):
 
     for r in rows:
         cfg = r["raw_config"]
-        location = cfg.get("location") or cfg.get("cityCountry") or "—"
+        location = cfg.get("location") or cfg.get("city_country") or "—"
         enabled = cfg.get("enabled", True)
         enabled_str = "[green]Yes[/green]" if enabled else "[red]No[/red]"
         table.add_row(r["name"], location, enabled_str)
@@ -2010,7 +2010,7 @@ def _toggle_connector_group(client, tenant):
                 "name": r.name,
                 "zpa_id": r.zpa_id,
                 "location": (r.raw_config or {}).get("location")
-                    or (r.raw_config or {}).get("cityCountry", ""),
+                    or (r.raw_config or {}).get("city_country", ""),
                 "enabled": (r.raw_config or {}).get("enabled", True),
             }
             for r in resources
@@ -2131,7 +2131,7 @@ def _delete_connector_group(client, tenant):
         )
         count_map: dict = defaultdict(int)
         for c in connector_rows:
-            gid = str((c.raw_config or {}).get("appConnectorGroupId", ""))
+            gid = str((c.raw_config or {}).get("app_connector_group_id", ""))
             if gid:
                 count_map[gid] += 1
 
