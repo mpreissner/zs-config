@@ -31,6 +31,7 @@ TEMPLATE_ROWS = [
         "bypass_type": "NEVER",
         "double_encrypt": "false",
         "health_check_type": "DEFAULT",
+        "health_reporting": "NONE",
         "icmp_access_type": "PING_TRACEROUTING",
         "passive_health_enabled": "false",
         "is_cname_enabled": "false",
@@ -49,6 +50,7 @@ TEMPLATE_ROWS = [
         "bypass_type": "NEVER",
         "double_encrypt": "false",
         "health_check_type": "DEFAULT",
+        "health_reporting": "ON_ACCESS",
         "icmp_access_type": "PING_TRACEROUTING",
         "passive_health_enabled": "false",
         "is_cname_enabled": "false",
@@ -394,6 +396,8 @@ def bulk_create(
                 payload["bypass_type"] = row["bypass_type"]
             if row.get("health_check_type"):
                 payload["health_check_type"] = row["health_check_type"]
+            if row.get("health_reporting"):
+                payload["health_reporting"] = row["health_reporting"]
             if row.get("icmp_access_type"):
                 payload["icmp_access_type"] = row["icmp_access_type"]
 

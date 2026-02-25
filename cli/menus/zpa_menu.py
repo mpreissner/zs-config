@@ -233,8 +233,10 @@ def app_segments_menu(client, tenant):
                 questionary.Choice("List Segments", value="list"),
                 questionary.Choice("Search by Domain", value="search"),
                 questionary.Choice("Enable / Disable", value="toggle"),
+                questionary.Separator(),
                 questionary.Choice("Bulk Create from CSV", value="bulk"),
                 questionary.Choice("Export CSV Template", value="template"),
+                questionary.Choice("CSV Field Reference", value="csvhelp"),
                 questionary.Separator(),
                 questionary.Choice("← Back", value="back"),
             ],
@@ -251,6 +253,8 @@ def app_segments_menu(client, tenant):
             _bulk_create(client, tenant)
         elif choice == "template":
             _export_template()
+        elif choice == "csvhelp":
+            _csv_field_reference()
         elif choice in ("back", None):
             break
 
@@ -652,6 +656,51 @@ def _bulk_create(client, tenant):
                 hint = " → check server group ID"
             console.print(f"  [red]{detail['name']}:[/red] {err}{hint}")
 
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def _csv_field_reference():
+    from rich.table import Table as RichTable
+
+    console.print("\n[bold]CSV Field Reference — Application Segments[/bold]\n")
+
+    t = RichTable(show_lines=True, box=None, padding=(0, 1))
+    t.add_column("Field", style="bold cyan", no_wrap=True)
+    t.add_column("Required", justify="center")
+    t.add_column("Default", style="dim")
+    t.add_column("Accepted values / format")
+
+    rows = [
+        ("name",                          "✓", "",              "Any string — must be unique within the tenant"),
+        ("domain_names",                  "✓", "",              "Semicolon-separated FQDNs or wildcards\n  e.g. app.example.com;*.internal.example.com"),
+        ("segment_group",                 "✓", "",              "Exact name of an existing Segment Group\n  (must be in local DB — run Import Config first)"),
+        ("server_groups",                 "✓", "",              "Semicolon-separated Segment Group names\n  e.g. SG-East;SG-West"),
+        ("tcp_ports",                     "if no udp", "",      "Semicolon-separated ports or ranges\n  e.g. 443  or  80;443;8080-8090"),
+        ("udp_ports",                     "if no tcp", "",      "Same format as tcp_ports\n  e.g. 53;123"),
+        ("description",                   "",  "(blank)",       "Free text"),
+        ("enabled",                       "",  "true",          "true / false"),
+        ("app_type",                      "",  "BROWSER_ACCESS","BROWSER_ACCESS"),
+        ("bypass_type",                   "",  "NEVER",         "NEVER  |  ALWAYS  |  ON_NET"),
+        ("double_encrypt",                "",  "false",         "true / false"),
+        ("health_check_type",             "",  "DEFAULT",       "DEFAULT  |  NONE"),
+        ("health_reporting",              "",  "NONE",          "NONE  |  ON_ACCESS  |  CONTINUOUS"),
+        ("icmp_access_type",              "",  "PING_TRACEROUTING", "NONE  |  PING  |  PING_TRACEROUTING"),
+        ("passive_health_enabled",        "",  "false",         "true / false"),
+        ("is_cname_enabled",              "",  "false",         "true / false"),
+        ("select_connector_close_to_app", "",  "false",         "true / false"),
+    ]
+
+    for row in rows:
+        req_style = "green" if row[1] == "✓" else ("yellow" if row[1].startswith("if") else "dim")
+        t.add_row(row[0], f"[{req_style}]{row[1]}[/{req_style}]", row[2], row[3])
+
+    console.print(t)
+    console.print(
+        "\n[dim]Port format examples:[/dim]\n"
+        "  [cyan]443[/cyan]              single port\n"
+        "  [cyan]8080-8090[/cyan]        range (inclusive)\n"
+        "  [cyan]80;443;8080-8090[/cyan] multiple entries separated by semicolons\n"
+    )
     questionary.press_any_key_to_continue("Press any key to continue...").ask()
 
 
