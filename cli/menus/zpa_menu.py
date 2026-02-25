@@ -18,14 +18,14 @@ def zpa_menu():
         choice = questionary.select(
             "ZPA",
             choices=[
+                questionary.Choice("Application Segments", value="apps"),
                 questionary.Choice("Certificate Management", value="certs"),
+                questionary.Separator(),
+                questionary.Choice("Connectors            [coming soon]", value="connectors"),
+                questionary.Choice("PRA Portals           [coming soon]", value="pra"),
+                questionary.Separator(),
                 questionary.Choice("Import Config", value="import"),
                 questionary.Choice("Reset N/A Resource Types", value="reset_na"),
-                questionary.Separator(),
-                questionary.Choice("Application Segments", value="apps"),
-                questionary.Choice("PRA Portals           [coming soon]", value="pra"),
-                questionary.Choice("Connectors            [coming soon]", value="connectors"),
-                questionary.Separator(),
                 questionary.Choice("← Back", value="back"),
             ],
             use_indicator=True,
@@ -321,12 +321,10 @@ def _list_segments(tenant):
         if len(domains) > 2:
             domain_str += f" [dim]+{len(domains) - 2} more[/dim]"
 
-        seg_group = ""
-        sg = cfg.get("segmentGroup") or cfg.get("segment_group") or {}
-        if isinstance(sg, dict):
-            seg_group = sg.get("name", "")
-        elif isinstance(sg, str):
-            seg_group = sg
+        seg_group = cfg.get("segmentGroupName") or (
+            cfg.get("segmentGroup", {}).get("name", "")
+            if isinstance(cfg.get("segmentGroup"), dict) else ""
+        )
 
         enabled = cfg.get("enabled", True)
         enabled_str = "[green]Yes[/green]" if enabled else "[red]No[/red]"
