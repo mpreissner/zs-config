@@ -70,7 +70,7 @@ pip install -r requirements.txt
 ### 2. Launch the CLI
 
 ```bash
-python cli/zscaler-cli.py
+python cli/z_config.py
 ```
 
 On first launch an encryption key is generated automatically and saved to `~/.config/zscaler-cli/secret.key`. No manual setup required.
@@ -257,7 +257,7 @@ export ZSCALER_DB_URL="postgresql://user:pass@host/dbname"
 
 Tenant secrets are encrypted with [Fernet](https://cryptography.io/en/latest/fernet/) symmetric encryption.
 
-- **Auto-managed:** on first launch a key is generated and saved to `~/.config/zscaler-cli/secret.key` (chmod 600)
+- **Auto-managed:** on first launch a key is generated and saved to `~/.config/z-config/secret.key` (chmod 600)
 - **Env var override:** set `ZSCALER_SECRET_KEY` to use a specific key
 - **Rotation:** go to **Settings → Generate Encryption Key** — warning: rotating the key makes previously saved tenant secrets unreadable; re-add tenants after rotating
 

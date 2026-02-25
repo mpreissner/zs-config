@@ -5,12 +5,13 @@ being stored in the database.
 
 Key resolution order:
   1. ZSCALER_SECRET_KEY environment variable (explicit override)
-  2. Key file at ~/.config/zscaler-cli/secret.key (auto-created on first run)
+  2. Key file at ~/.config/z-config/secret.key (auto-created on first run)
 
 On first launch the key is generated automatically — no manual setup required.
 """
 
 import os
+import sys
 from pathlib import Path
 from typing import List, Optional
 
@@ -19,7 +20,14 @@ from cryptography.fernet import Fernet, InvalidToken
 from db.database import get_session
 from db.models import TenantConfig
 
-_KEY_FILE = Path.home() / ".config" / "zscaler-cli" / "secret.key"
+_KEY_FILE = Path.home() / ".config" / "z-config" / "secret.key"
+_KEY_FILE_LEGACY = Path.home() / ".config" / "zscaler-cli" / "secret.key"
+
+
+def _chmod_600(path: Path) -> None:
+    """Set file permissions to 600 on platforms that support it."""
+    if sys.platform != "win32":
+        path.chmod(0o600)
 
 
 def _get_fernet() -> Fernet:
@@ -28,16 +36,22 @@ def _get_fernet() -> Fernet:
     if key:
         return Fernet(key.encode() if isinstance(key, str) else key)
 
-    # 2. Persisted key file
+    # 2. Migrate from legacy key path (zscaler-cli → z-config) if needed
+    if not _KEY_FILE.exists() and _KEY_FILE_LEGACY.exists():
+        _KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _KEY_FILE.write_text(_KEY_FILE_LEGACY.read_text())
+        _chmod_600(_KEY_FILE)
+
+    # 3. Persisted key file
     if _KEY_FILE.exists():
         key = _KEY_FILE.read_text().strip()
         return Fernet(key.encode())
 
-    # 3. First run — auto-generate and save
+    # 4. First run — auto-generate and save
     key = Fernet.generate_key().decode()
     _KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
     _KEY_FILE.write_text(key)
-    _KEY_FILE.chmod(0o600)
+    _chmod_600(_KEY_FILE)
     return Fernet(key.encode())
 
 
@@ -46,7 +60,7 @@ def generate_key() -> str:
     key = Fernet.generate_key().decode()
     _KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
     _KEY_FILE.write_text(key)
-    _KEY_FILE.chmod(0o600)
+    _chmod_600(_KEY_FILE)
     return key
 
 
