@@ -748,14 +748,17 @@ def _csv_field_reference():
         req_style = "green" if row[1] == "✓" else ("yellow" if row[1].startswith("if") else "dim")
         t.add_row(row[0], f"[{req_style}]{row[1]}[/{req_style}]", row[2], row[3])
 
-    console.print(t)
-    console.print(
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+
+    lines = render_rich_to_lines(t)
+    lines += render_rich_to_lines(
         "\n[dim]Port format examples:[/dim]\n"
         "  [cyan]443[/cyan]              single port\n"
         "  [cyan]8080-8090[/cyan]        range (inclusive)\n"
         "  [cyan]80;443;8080-8090[/cyan] multiple entries separated by semicolons\n"
     )
-    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+    scroll_view(lines, header_ansi=capture_banner())
 
 
 def _export_template():
