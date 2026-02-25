@@ -67,7 +67,7 @@ class ZIAClient:
     # ------------------------------------------------------------------
 
     def list_url_categories(self, include_built_in: bool = False) -> List[Dict]:
-        result, resp, err = self._sdk.zia.url_categories.list_url_categories()
+        result, resp, err = self._sdk.zia.url_categories.list_categories()
         return _to_dicts(_unwrap(result, resp, err))
 
     def list_url_categories_lite(self) -> List[Dict]:
@@ -95,7 +95,7 @@ class ZIAClient:
     # ------------------------------------------------------------------
 
     def list_url_filtering_rules(self) -> List[Dict]:
-        result, resp, err = self._sdk.zia.url_filtering.list_url_filtering_rules()
+        result, resp, err = self._sdk.zia.url_filtering.list_rules()
         return _to_dicts(_unwrap(result, resp, err))
 
     # ------------------------------------------------------------------
@@ -148,3 +148,114 @@ class ZIAClient:
     def get_denylist(self) -> Dict:
         result, resp, err = self._sdk.zia.security_policy_settings.get_blacklist()
         return _to_dict(_unwrap(result, resp, err))
+
+    # ------------------------------------------------------------------
+    # Admin & Role Management
+    # ------------------------------------------------------------------
+
+    def list_admin_users(self) -> List[Dict]:
+        result, resp, err = self._sdk.zia.admin_users.list_admin_users()
+        return _to_dicts(_unwrap(result, resp, err))
+
+    def list_admin_roles(self) -> List[Dict]:
+        result, resp, err = self._sdk.zia.admin_roles.list_roles()
+        return _to_dicts(_unwrap(result, resp, err))
+
+    # ------------------------------------------------------------------
+    # Firewall Policy
+    # ------------------------------------------------------------------
+
+    def list_firewall_rules(self) -> List[Dict]:
+        result, resp, err = self._sdk.zia.cloud_firewall_rules.list_rules()
+        return _to_dicts(_unwrap(result, resp, err))
+
+    def list_firewall_dns_rules(self) -> List[Dict]:
+        result, resp, err = self._sdk.zia.cloud_firewall_dns.list_rules()
+        return _to_dicts(_unwrap(result, resp, err))
+
+    def list_firewall_ips_rules(self) -> List[Dict]:
+        result, resp, err = self._sdk.zia.cloud_firewall_ips.list_rules()
+        return _to_dicts(_unwrap(result, resp, err))
+
+    def get_firewall_rule(self, rule_id: str) -> Dict:
+        result, resp, err = self._sdk.zia.cloud_firewall_rules.get_rule(int(rule_id))
+        return _to_dict(_unwrap(result, resp, err))
+
+    def update_firewall_rule(self, rule_id: str, config: Dict) -> bool:
+        result, resp, err = self._sdk.zia.cloud_firewall_rules.update_rule(int(rule_id), **config)
+        _unwrap(result, resp, err)
+        return True
+
+    def get_firewall_dns_rule(self, rule_id: str) -> Dict:
+        result, resp, err = self._sdk.zia.cloud_firewall_dns.get_rule(int(rule_id))
+        return _to_dict(_unwrap(result, resp, err))
+
+    def update_firewall_dns_rule(self, rule_id: str, config: Dict) -> bool:
+        result, resp, err = self._sdk.zia.cloud_firewall_dns.update_rule(int(rule_id), **config)
+        _unwrap(result, resp, err)
+        return True
+
+    # ------------------------------------------------------------------
+    # Firewall Supporting Objects
+    # ------------------------------------------------------------------
+
+    def list_ip_destination_groups(self) -> List[Dict]:
+        result, resp, err = self._sdk.zia.cloud_firewall.list_ip_destination_groups()
+        return _to_dicts(_unwrap(result, resp, err))
+
+    def list_ip_source_groups(self) -> List[Dict]:
+        result, resp, err = self._sdk.zia.cloud_firewall.list_ip_source_groups()
+        return _to_dicts(_unwrap(result, resp, err))
+
+    def list_network_services(self) -> List[Dict]:
+        result, resp, err = self._sdk.zia.cloud_firewall.list_network_services()
+        return _to_dicts(_unwrap(result, resp, err))
+
+    def list_network_svc_groups(self) -> List[Dict]:
+        result, resp, err = self._sdk.zia.cloud_firewall.list_network_svc_groups()
+        return _to_dicts(_unwrap(result, resp, err))
+
+    # ------------------------------------------------------------------
+    # SSL Inspection
+    # ------------------------------------------------------------------
+
+    def list_ssl_inspection_rules(self) -> List[Dict]:
+        result, resp, err = self._sdk.zia.ssl_inspection_rules.list_rules()
+        return _to_dicts(_unwrap(result, resp, err))
+
+    def get_ssl_inspection_rule(self, rule_id: str) -> Dict:
+        result, resp, err = self._sdk.zia.ssl_inspection_rules.get_rule(int(rule_id))
+        return _to_dict(_unwrap(result, resp, err))
+
+    def update_ssl_inspection_rule(self, rule_id: str, config: Dict) -> bool:
+        result, resp, err = self._sdk.zia.ssl_inspection_rules.update_rule(int(rule_id), **config)
+        _unwrap(result, resp, err)
+        return True
+
+    # ------------------------------------------------------------------
+    # Traffic Forwarding
+    # ------------------------------------------------------------------
+
+    def list_forwarding_rules(self) -> List[Dict]:
+        result, resp, err = self._sdk.zia.forwarding_control.list_rules()
+        return _to_dicts(_unwrap(result, resp, err))
+
+    # ------------------------------------------------------------------
+    # Location Groups
+    # ------------------------------------------------------------------
+
+    def list_location_groups(self) -> List[Dict]:
+        result, resp, err = self._sdk.zia.locations.list_location_groups()
+        return _to_dicts(_unwrap(result, resp, err))
+
+    # ------------------------------------------------------------------
+    # Rule Labels & Time Intervals
+    # ------------------------------------------------------------------
+
+    def list_rule_labels(self) -> List[Dict]:
+        result, resp, err = self._sdk.zia.rule_labels.list_labels()
+        return _to_dicts(_unwrap(result, resp, err))
+
+    def list_time_intervals(self) -> List[Dict]:
+        result, resp, err = self._sdk.zia.time_intervals.list_time_intervals()
+        return _to_dicts(_unwrap(result, resp, err))
