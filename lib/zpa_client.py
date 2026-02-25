@@ -106,11 +106,17 @@ class ZPAClient:
     def enable_application(self, app_id: str) -> bool:
         config = self.get_application(app_id)
         config["enabled"] = True
+        # The GET response contains both tcp_port_range and tcp_port_ranges;
+        # passing both to the SDK raises a conflict error — strip the plural forms.
+        config.pop("tcp_port_ranges", None)
+        config.pop("udp_port_ranges", None)
         return self.update_application(app_id, config)
 
     def disable_application(self, app_id: str) -> bool:
         config = self.get_application(app_id)
         config["enabled"] = False
+        config.pop("tcp_port_ranges", None)
+        config.pop("udp_port_ranges", None)
         return self.update_application(app_id, config)
 
     # ------------------------------------------------------------------

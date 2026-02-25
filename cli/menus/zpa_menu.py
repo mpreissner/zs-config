@@ -124,7 +124,7 @@ def _rotate_certificate(client, tenant):
         return
 
     confirmed = questionary.confirm(
-        f"Rotate certificate for [bold]{domain}[/bold]?", default=True
+        f"Rotate certificate for '{domain}'?", default=True
     ).ask()
     if not confirmed:
         return
@@ -297,6 +297,7 @@ def _list_segments(tenant):
             questionary.Choice("Enabled only", value="enabled"),
             questionary.Choice("Disabled only", value="disabled"),
         ],
+        instruction="(Esc to cancel)",
     ).ask()
     if filter_choice is None:
         return
@@ -427,6 +428,7 @@ def _toggle_enable(client, tenant):
             )
             for r in rows
         ],
+        instruction="(Esc to cancel)",
     ).ask()
     if seg is None:
         return
@@ -435,7 +437,7 @@ def _toggle_enable(client, tenant):
     action_label = "Disable" if current else "Enable"
 
     confirmed = questionary.confirm(
-        f"{action_label} [bold]{seg['name']}[/bold]?", default=True
+        f"{action_label} '{seg['name']}'?", default=True
     ).ask()
     if not confirmed:
         return
@@ -750,18 +752,19 @@ def _delete_certificate(client, tenant):
         "Select certificate to delete:",
         choices=[
             questionary.Choice(
-                f"{c.get('name', 'unnamed')}  [dim](ID: {c.get('id')})[/dim]",
+                f"{c.get('name', 'unnamed')}  (ID: {c.get('id')})",
                 value=c,
             )
             for c in certs
         ],
+        instruction="(Esc to cancel)",
     ).ask()
 
     if not cert:
         return
 
     confirmed = questionary.confirm(
-        f"Delete [bold]{cert.get('name')}[/bold]? This cannot be undone.", default=False
+        f"Delete '{cert.get('name')}'? This cannot be undone.", default=False
     ).ask()
     if not confirmed:
         return

@@ -215,7 +215,7 @@ def _remove_tenant():
         return
 
     confirmed = questionary.confirm(
-        f"Remove tenant '[bold]{tenant.name}[/bold]'? This cannot be undone.", default=False
+        f"Remove tenant '{tenant.name}'? This cannot be undone.", default=False
     ).ask()
 
     if confirmed:
