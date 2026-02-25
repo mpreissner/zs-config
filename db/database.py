@@ -1,4 +1,5 @@
 import os
+import platform
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator, Optional
@@ -8,8 +9,13 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from .models import Base
 
-# Default SQLite path — override with ZSCALER_DB_URL for PostgreSQL etc.
-_DEFAULT_DB_PATH = Path(__file__).parent.parent / "data" / "zscaler.db"
+# Default SQLite path — stored in a user data directory so it survives
+# package upgrades and works correctly when installed via pip/pipx.
+# Override with ZSCALER_DB_URL (full SQLAlchemy URL) or ZSCALER_DB_PATH.
+if platform.system() == "Windows":
+    _DEFAULT_DB_PATH = Path(os.environ.get("APPDATA", Path.home())) / "z-config" / "zscaler.db"
+else:
+    _DEFAULT_DB_PATH = Path.home() / ".local" / "share" / "z-config" / "zscaler.db"
 
 _engine = None
 _SessionFactory = None

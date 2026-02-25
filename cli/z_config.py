@@ -1,15 +1,9 @@
 #!/usr/bin/env python3
 """z-config — interactive TUI for Zscaler OneAPI.
 
-Usage:
-    python cli/z_config.py
+Installed usage:  z-config
+Development:      pip install -e .  then  z-config
 """
-
-import os
-import sys
-
-# Ensure repo root is importable regardless of working directory
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 
 def main():

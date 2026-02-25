@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "z-config"
+version = "0.2.0"
+description = "Interactive TUI for Zscaler OneAPI automation"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.31.0",
+    "zscaler-sdk-python>=1.0.0",
+    "rich>=13.7.0",
+    "questionary>=2.0.0",
+    "pyfiglet>=1.0.2",
+    "sqlalchemy>=2.0.0",
+    "cryptography>=41.0.0",
+]
+
+[project.optional-dependencies]
+api = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.27.0",
+    "pydantic>=2.0.0",
+]
+
+[project.scripts]
+z-config = "cli.z_config:main"
+
+[tool.setuptools.packages.find]
+include = ["cli*", "db*", "lib*", "services*", "api*"]
