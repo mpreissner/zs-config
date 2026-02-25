@@ -1,6 +1,20 @@
 # z-config
 
-Automation toolset for Zscaler OneAPI — interactive TUI, headless scripts, and a REST API backend.
+Automation toolset for Zscaler OneAPI — interactive TUI with a local DB cache for fast lookups and bulk operations.
+
+---
+
+## Features
+
+- **Interactive TUI** — Rich terminal UI with a persistent banner, full-screen scrollable table views, and keyboard-driven navigation
+- **ZPA Application Segments** — list, search, bulk enable/disable, and bulk create from CSV with dry-run and dependency resolution
+- **ZPA Certificate Management** — upload, rotate across all matching resources, and delete certificates
+- **ZPA Config Import** — pull a full snapshot of 18 resource types into a local SQLite cache for fast lookups
+- **ZIA** — policy activation and URL category lookup
+- **Audit Log** — immutable record of every operation with local-timezone timestamps
+- **Zero-config encryption** — tenant secrets encrypted at rest; key auto-generated on first launch
+
+---
 
 ## Architecture
 
@@ -17,7 +31,7 @@ z-config/
 │   ├── models.py      # TenantConfig, AuditLog, Certificate, ZPAResource, SyncLog
 │   └── database.py    # Engine setup, session context manager
 │
-├── services/          # Business logic — shared by CLI, scripts, and API
+├── services/          # Business logic — shared by CLI and API
 │   ├── config_service.py        # Tenant CRUD with encrypted secret storage
 │   ├── audit_service.py         # Operation audit logging
 │   ├── zpa_service.py           # ZPA workflows (cert rotation, etc.)
@@ -25,24 +39,17 @@ z-config/
 │   ├── zpa_segment_service.py   # App segment bulk-create logic
 │   └── zia_service.py           # ZIA workflows
 │
-├── scripts/           # Headless automation scripts (server-deployed)
-│   └── zpa/
-│       ├── cert-upload.py  # Certificate rotation (acme.sh deploy hook)
-│       └── deploy.sh       # Shell wrapper for acme.sh
-│
 ├── cli/               # Interactive Rich TUI
 │   ├── zscaler-cli.py
+│   ├── banner.py
 │   ├── session.py
+│   ├── scroll_view.py     # Full-screen scrollable table viewer
 │   └── menus/
 │       ├── main_menu.py   # Main menu, settings, audit log viewer
-│       ├── zpa_menu.py    # ZPA — app segments, certificates, import
-│       └── zia_menu.py    # ZIA — activation, URL lookup
+│       ├── zpa_menu.py    # ZPA menus
+│       └── zia_menu.py    # ZIA menus
 │
 ├── api/               # FastAPI REST API (future GUI backend)
-│   └── ...
-│
-├── config/            # Server-side credential templates
-│   └── zscaler-oneapi.conf
 │
 └── data/              # SQLite database (git-ignored)
     └── zscaler.db
@@ -64,56 +71,84 @@ pip install -r requirements.txt
 python cli/zscaler-cli.py
 ```
 
-An encryption key is generated automatically on first launch and saved to `~/.config/zscaler-cli/secret.key`.  No manual setup required.
+On first launch an encryption key is generated automatically and saved to `~/.config/zscaler-cli/secret.key`. No manual setup required.
 
-Go to **Settings → Manage Tenants → Add Tenant** to register your first Zscaler tenant.
+Go to **Settings → Manage Tenants → Add Tenant** to register your first Zscaler tenant, then **ZPA → Import Config** to pull your tenant's configuration into the local cache.
 
-> **Override:** set `ZSCALER_SECRET_KEY` in your environment to use a specific key instead of the auto-generated one.
+> **Key override:** set `ZSCALER_SECRET_KEY` in your environment to use a specific Fernet key instead of the auto-generated one.
 
----
-
-## CLI — ZPA Menu
-
-### Config Import
-
-**ZPA → Import Config**
-
-Pulls a full snapshot of your ZPA tenant into the local SQLite database.  Fetches 18 resource types (applications, segment groups, server groups, connectors, PRA portals, policies, certificates, and more) and stores each as a `ZPAResource` row.  Subsequent imports only update rows whose content has changed (SHA-256 comparison), so re-runs are fast.
-
-Run Import Config before using any feature that reads from the local DB (List Segments, Bulk Create dependency resolution, etc.).
+> **Database override:** set `ZSCALER_DB_URL` to use PostgreSQL or another SQLAlchemy-compatible database instead of the default SQLite file.
 
 ---
 
-### Application Segments
+## CLI Reference
 
-**ZPA → Application Segments**
+### Main Menu
 
 | Option | Description |
 |---|---|
-| List Segments | Table view of all imported segments — filter by All / Enabled / Disabled |
-| Search by Domain | Find segments by FQDN substring match |
-| Enable / Disable | Toggle a segment's enabled state live (calls ZPA API + audit log) |
-| Bulk Create from CSV | Import new segments from a CSV file (see below) |
-| Export CSV Template | Write a ready-to-edit template to disk |
-| CSV Field Reference | In-tool reference: accepted values for every field |
+| ZPA | Zscaler Private Access management |
+| ZIA | Zscaler Internet Access management |
+| Switch Tenant | Change the active tenant for the session |
+| Settings | Tenant management, encryption key, credentials file, data reset |
+| Audit Log | Scrollable viewer of all recorded operations |
+| Exit | Quit |
 
 ---
 
-### Bulk Create from CSV
+### ZPA Menu
 
-**ZPA → Application Segments → Bulk Create from CSV**
+| Option | Description |
+|---|---|
+| Application Segments | Segment list, search, enable/disable, bulk create |
+| Certificate Management | List, rotate, and delete certificates |
+| Connectors | *(coming soon)* |
+| PRA Portals | *(coming soon)* |
+| Import Config | Pull a full ZPA config snapshot into the local DB |
+| Reset N/A Resource Types | Clear the list of auto-disabled resource types so they are retried on the next import |
+
+---
+
+### ZPA — Import Config
+
+Fetches 18 resource types from your ZPA tenant and stores each as a `ZPAResource` row in the local DB. Uses SHA-256 comparison so re-runs only write rows whose content has changed.
+
+Resource types that return 401 (not entitled for your tenant) are automatically recorded as N/A and skipped on subsequent imports. Use **Reset N/A Resource Types** if your entitlements change.
+
+**Run Import Config before using any feature that reads from the local DB** (List Segments, Search by Domain, Bulk Create dependency resolution, etc.).
+
+---
+
+### ZPA — Application Segments
+
+| Option | Description |
+|---|---|
+| List Segments | Scrollable table of all imported segments — filter by All / Enabled / Disabled |
+| Search by Domain | Find segments by FQDN substring match |
+| Enable / Disable | Spacebar multi-select; enable or disable any number of segments in one operation |
+| Bulk Create from CSV | Import new segments from a CSV file (see below) |
+| Export CSV Template | Write a ready-to-edit template to disk |
+| CSV Field Reference | In-tool scrollable reference for every CSV column |
+
+#### Enable / Disable
+
+Use **Space** to select one or more segments (current state shown as ✓/✗), then choose Enable or Disable. The local DB is updated immediately after each successful API call — no re-import needed.
+
+---
+
+### ZPA — Bulk Create from CSV
 
 The workflow runs in stages:
 
-1. **Parse & validate** — checks required fields and port format; invalid rows are shown with specific error messages.  You can abort or skip invalid rows and continue.
-2. **Dry run** — resolves segment group and server group names against the local DB.  Each row is tagged:
+1. **Parse & validate** — checks required fields and port format; invalid rows are shown with specific error messages. You can abort or skip invalid rows and continue.
+2. **Dry run** — resolves segment group and server group names against the local DB. Each row is tagged:
    - `READY` — all dependencies found, will be created
-   - `MISSING_DEPENDENCY` — a segment group or server group name wasn't found in the DB
-   - `INVALID` — validation error
-3. **Fix missing groups** *(optional)* — if any rows have missing dependencies, you can create the missing segment groups and server groups directly from the CLI.  A re-import is triggered automatically so the new groups are available for the next dry run.  Note: server groups created this way have no connector groups assigned — assign them in the ZPA portal afterwards.
-4. **Confirm & create** — shows a count of READY rows.  Confirm to proceed.
+   - `MISSING_DEPENDENCY` — a segment group or server group name was not found in the DB
+3. **Fix missing groups** *(optional)* — create missing segment groups and server groups directly from the CLI. A targeted re-import runs automatically so the new groups are available immediately. Server groups created this way have no connector groups assigned — assign them in the ZPA portal afterwards.
+4. **Confirm & create** — shows a count of READY rows. Confirm to proceed.
 5. **Progress bar** — segments are created one at a time; failures are collected without aborting the batch.
-6. **Summary** — `✓ Created X  ✗ Failed Y  — Skipped Z` with per-row error details for any failures.
+6. **Summary** — `✓ Created X  ✗ Failed Y  — Skipped Z` with per-row error details for failures.
+7. **Re-import** — newly created segments are synced into the local DB automatically.
 
 Every created resource is written to the audit log.
 
@@ -121,7 +156,7 @@ Every created resource is written to the audit log.
 
 ### CSV Format
 
-Use **Export CSV Template** to get a pre-filled starting point, or build your own using the column reference below.
+Use **Export CSV Template** to get a pre-filled starting point, or build your own. The in-tool **CSV Field Reference** lists every column with accepted values and defaults.
 
 #### Required columns
 
@@ -134,7 +169,7 @@ Use **Export CSV Template** to get a pre-filled starting point, or build your ow
 | `tcp_ports` | Required if `udp_ports` is blank — see port format below |
 | `udp_ports` | Required if `tcp_ports` is blank — see port format below |
 
-#### Optional columns (defaults shown)
+#### Optional columns
 
 | Column | Default | Accepted values |
 |---|---|---|
@@ -160,38 +195,48 @@ Use **Export CSV Template** to get a pre-filled starting point, or build your ow
 
 ---
 
-### Certificate Management
-
-**ZPA → Certificate Management**
+### ZPA — Certificate Management
 
 | Option | Description |
 |---|---|
 | List Certificates | Show all certificates in the tenant |
-| Rotate Certificate for Domain | Upload a new PEM cert+key, update all matching App Segments and PRA Portals, delete the old cert |
+| Rotate Certificate for Domain | Provide an existing cert and key file — the tool uploads the new cert to ZPA, updates all matching App Segments and PRA Portals, and deletes the old cert |
 | Delete Certificate | Remove a certificate by selection |
 
 ---
 
-## Headless Script — Certificate Rotation (acme.sh)
+### ZIA Menu
 
-For server-deployed automated certificate rotation:
+| Option | Description |
+|---|---|
+| Activate Policy | Push pending ZIA policy changes |
+| URL Category Lookup | Look up the category classification of one or more URLs |
 
-### Option A — Config file
-Copy `config/zscaler-oneapi.conf` to `/etc/zscaler-oneapi.conf`, fill in credentials, then register with acme.sh:
-```bash
-acme.sh --deploy -d "*.example.com" --deploy-hook /path/to/scripts/zpa/deploy.sh
-```
+---
 
-### Option B — Database tenant
-```bash
-python scripts/zpa/cert-upload.py /path/to/cert.pem /path/to/key.pem "*.example.com" --tenant prod
-```
+### Settings
+
+| Option | Description |
+|---|---|
+| Manage Tenants | Add, list, or remove tenants |
+| Generate Encryption Key | Rotate the Fernet key — **warning: invalidates all saved tenant secrets** |
+| Configure Server Credentials File | Write `zscaler-oneapi.conf` (chmod 600) for use with server-side tooling |
+| Clear Imported Data & Audit Log | Delete all ZPA resources, sync logs, and audit entries (tenant config is preserved) |
+
+---
+
+### Audit Log
+
+Displays up to 500 recent operations in a scrollable full-screen viewer. Timestamps are shown in the local timezone of the machine running the tool.
+
+**Navigation:** ↑↓ / j k one line · PageDown/PageUp half page · g/G top/bottom · q exit
 
 ---
 
 ## Database
 
 SQLite by default at `data/zscaler.db` (git-ignored). Override with:
+
 ```bash
 export ZSCALER_DB_URL="postgresql://user:pass@host/dbname"
 ```
@@ -210,15 +255,15 @@ export ZSCALER_DB_URL="postgresql://user:pass@host/dbname"
 
 Tenant secrets are encrypted with [Fernet](https://cryptography.io/en/latest/fernet/) symmetric encryption.
 
-- **Auto-managed:** on first launch a key is generated and saved to `~/.config/zscaler-cli/secret.key` (chmod 600).
-- **Env var override:** set `ZSCALER_SECRET_KEY` to use a specific key.
-- **Rotation:** go to **Settings → Generate Encryption Key**.  Warning: rotating the key makes previously saved tenant secrets unreadable — re-add tenants after rotating.
+- **Auto-managed:** on first launch a key is generated and saved to `~/.config/zscaler-cli/secret.key` (chmod 600)
+- **Env var override:** set `ZSCALER_SECRET_KEY` to use a specific key
+- **Rotation:** go to **Settings → Generate Encryption Key** — warning: rotating the key makes previously saved tenant secrets unreadable; re-add tenants after rotating
 
 ---
 
 ## Extending
 
 - **New ZPA endpoint** → add a method to `lib/zpa_client.py`
-- **New automation script** → create `scripts/<product>/your-script.py`
 - **New CLI menu** → add a file under `cli/menus/`, wire into `main_menu.py`
 - **New product** (ZCC, ZDX, etc.) → add `lib/<product>_client.py` + `services/<product>_service.py`
+- **Reusable table view** → call `scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())` from `cli/scroll_view.py` and `cli/banner.py`
