@@ -297,7 +297,7 @@ def _list_segments(tenant):
             questionary.Choice("Enabled only", value="enabled"),
             questionary.Choice("Disabled only", value="disabled"),
         ],
-        instruction="(Esc to cancel)",
+        instruction="(Ctrl+C to cancel)",
     ).ask()
     if filter_choice is None:
         return
@@ -428,7 +428,7 @@ def _toggle_enable(client, tenant):
             )
             for r in rows
         ],
-        instruction="(Space to select, Enter to confirm, Esc to cancel)",
+        instruction="(Space to select, Enter to confirm, Ctrl+C to cancel)",
     ).ask()
 
     if not selected:
@@ -440,7 +440,7 @@ def _toggle_enable(client, tenant):
             questionary.Choice("Enable", value="enable"),
             questionary.Choice("Disable", value="disable"),
         ],
-        instruction="(Esc to cancel)",
+        instruction="(Ctrl+C to cancel)",
     ).ask()
     if action is None:
         return
@@ -798,7 +798,7 @@ def _delete_certificate(client, tenant):
             )
             for c in certs
         ],
-        instruction="(Esc to cancel)",
+        instruction="(Ctrl+C to cancel)",
     ).ask()
 
     if not cert:
