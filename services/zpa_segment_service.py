@@ -384,9 +384,9 @@ def bulk_create(
             tcp = _parse_ports(row.get("tcp_ports", ""))
             udp = _parse_ports(row.get("udp_ports", ""))
             if tcp:
-                payload["tcp_port_ranges"] = tcp
+                payload["tcp_port_range"] = tcp
             if udp:
-                payload["udp_port_ranges"] = udp
+                payload["udp_port_range"] = udp
 
             if row.get("description"):
                 payload["description"] = row["description"]
