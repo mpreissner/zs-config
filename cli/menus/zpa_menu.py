@@ -284,9 +284,6 @@ def _list_segments(tenant):
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    # DEBUG — remove once field names confirmed
-    console.print(f"[dim]DEBUG raw_config keys: {sorted(rows[0]['raw_config'].keys())}[/dim]")
-
     filter_choice = questionary.select(
         "Show:",
         choices=[
@@ -319,18 +316,12 @@ def _list_segments(tenant):
 
     for r in rows:
         cfg = r["raw_config"]
-        domains = cfg.get("domainNames") or cfg.get("domain_names") or []
+        domains = cfg.get("domain_names") or []
         domain_str = "; ".join(domains[:2])
         if len(domains) > 2:
             domain_str += f" [dim]+{len(domains) - 2} more[/dim]"
 
-        seg_group = (
-            cfg.get("segmentGroupName")
-            or cfg.get("segment_group_name")
-            or (cfg.get("segmentGroup") or {}).get("name")
-            or (cfg.get("segment_group") or {}).get("name")
-            or ""
-        )
+        seg_group = cfg.get("segment_group_name", "")
 
         enabled = cfg.get("enabled", True)
         enabled_str = "[green]Yes[/green]" if enabled else "[red]No[/red]"
@@ -364,9 +355,7 @@ def _search_by_domain(tenant):
             }
             for r in resources
             if search in " ".join(
-                (r.raw_config or {}).get("domainNames")
-                or (r.raw_config or {}).get("domain_names")
-                or []
+                (r.raw_config or {}).get("domain_names") or []
             ).lower()
         ]
 
@@ -382,7 +371,7 @@ def _search_by_domain(tenant):
 
     for r in rows:
         cfg = r["raw_config"]
-        domains = cfg.get("domainNames") or cfg.get("domain_names") or []
+        domains = cfg.get("domain_names") or []
         domain_str = "; ".join(domains[:3])
         if len(domains) > 3:
             domain_str += f" [dim]+{len(domains) - 3} more[/dim]"
