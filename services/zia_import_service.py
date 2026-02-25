@@ -119,7 +119,7 @@ class ZIAImportService:
             try:
                 records = self._fetch(defn)
             except Exception as exc:
-                if "401" in str(exc):
+                if "401" in str(exc) or "NOT_SUBSCRIBED" in str(exc):
                     self._disable_resource_type(defn.resource_type)
                     disabled_types.add(defn.resource_type)
                     newly_disabled.append(defn.resource_type)

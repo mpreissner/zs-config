@@ -67,7 +67,7 @@ class ZIAClient:
     # ------------------------------------------------------------------
 
     def list_url_categories(self, include_built_in: bool = False) -> List[Dict]:
-        result, resp, err = self._sdk.zia.url_categories.list_url_categories()
+        result, resp, err = self._sdk.zia.url_categories.list_categories()
         return _to_dicts(_unwrap(result, resp, err))
 
     def list_url_categories_lite(self) -> List[Dict]:
@@ -95,7 +95,7 @@ class ZIAClient:
     # ------------------------------------------------------------------
 
     def list_url_filtering_rules(self) -> List[Dict]:
-        result, resp, err = self._sdk.zia.url_filtering.list_url_filtering_rules()
+        result, resp, err = self._sdk.zia.url_filtering.list_rules()
         return _to_dicts(_unwrap(result, resp, err))
 
     # ------------------------------------------------------------------
