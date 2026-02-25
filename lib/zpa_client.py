@@ -189,6 +189,40 @@ class ZPAClient:
         result, resp, err = self._sdk.zpa.app_connectors.list_connectors()
         return _to_dicts(_unwrap(result, resp, err))
 
+    # Connectors
+    def get_connector(self, connector_id: str) -> Dict:
+        result, resp, err = self._sdk.zpa.app_connectors.get_connector(connector_id)
+        return _to_dict(_unwrap(result, resp, err))
+
+    def update_connector(self, connector_id: str, config: Dict) -> bool:
+        result, resp, err = self._sdk.zpa.app_connectors.update_connector(connector_id, **config)
+        _unwrap(result, resp, err)
+        return True
+
+    def delete_connector(self, connector_id: str) -> bool:
+        result, resp, err = self._sdk.zpa.app_connectors.delete_connector(connector_id)
+        _unwrap(result, resp, err)
+        return True
+
+    # Connector Groups
+    def get_connector_group(self, group_id: str) -> Dict:
+        result, resp, err = self._sdk.zpa.app_connector_groups.get_connector_group(group_id)
+        return _to_dict(_unwrap(result, resp, err))
+
+    def create_connector_group(self, **kwargs) -> Dict:
+        result, resp, err = self._sdk.zpa.app_connector_groups.add_connector_group(**kwargs)
+        return _to_dict(_unwrap(result, resp, err))
+
+    def update_connector_group(self, group_id: str, config: Dict) -> bool:
+        result, resp, err = self._sdk.zpa.app_connector_groups.update_connector_group(group_id, **config)
+        _unwrap(result, resp, err)
+        return True
+
+    def delete_connector_group(self, group_id: str) -> bool:
+        result, resp, err = self._sdk.zpa.app_connector_groups.delete_connector_group(group_id)
+        _unwrap(result, resp, err)
+        return True
+
     # ------------------------------------------------------------------
     # IdP / SAML / SCIM
     # ------------------------------------------------------------------

@@ -23,8 +23,7 @@ def zpa_menu():
                 questionary.Choice("Application Segments", value="apps"),
                 questionary.Choice("Certificate Management", value="certs"),
                 questionary.Choice("PRA Portals", value="pra"),
-                questionary.Separator(),
-                questionary.Choice("Connectors            [coming soon]", value="connectors"),
+                questionary.Choice("Connectors", value="connectors"),
                 questionary.Separator(),
                 questionary.Choice("Import Config", value="import"),
                 questionary.Choice("Reset N/A Resource Types", value="reset_na"),
@@ -44,7 +43,7 @@ def zpa_menu():
         elif choice == "pra":
             pra_portals_menu(client, tenant)
         elif choice == "connectors":
-            console.print("[yellow]Coming soon.[/yellow]")
+            connectors_menu(client, tenant)
         elif choice in ("back", None):
             break
 
@@ -1337,3 +1336,892 @@ def _delete_certificate(client, tenant):
         console.print(f"[red]✗ Error: {e}[/red]")
 
     questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+# ------------------------------------------------------------------
+# Connectors
+# ------------------------------------------------------------------
+
+def connectors_menu(client, tenant):
+    while True:
+        render_banner()
+        choice = questionary.select(
+            "Connectors",
+            choices=[
+                questionary.Choice("List Connectors", value="list"),
+                questionary.Choice("Search Connectors", value="search"),
+                questionary.Choice("Enable / Disable", value="toggle"),
+                questionary.Choice("Rename Connector", value="rename"),
+                questionary.Choice("Delete Connector", value="delete"),
+                questionary.Separator(),
+                questionary.Choice("List Connector Groups", value="list_groups"),
+                questionary.Choice("Search Connector Groups", value="search_groups"),
+                questionary.Choice("Create Connector Group", value="create_group"),
+                questionary.Choice("Enable / Disable Group", value="toggle_group"),
+                questionary.Choice("Delete Connector Group", value="delete_group"),
+                questionary.Separator(),
+                questionary.Choice("← Back", value="back"),
+            ],
+            use_indicator=True,
+        ).ask()
+
+        if choice == "list":
+            _list_connectors(tenant)
+        elif choice == "search":
+            _search_connectors(tenant)
+        elif choice == "toggle":
+            _toggle_connector(client, tenant)
+        elif choice == "rename":
+            _rename_connector(client, tenant)
+        elif choice == "delete":
+            _delete_connector(client, tenant)
+        elif choice == "list_groups":
+            _list_connector_groups(tenant)
+        elif choice == "search_groups":
+            _search_connector_groups(tenant)
+        elif choice == "create_group":
+            _create_connector_group(client, tenant)
+        elif choice == "toggle_group":
+            _toggle_connector_group(client, tenant)
+        elif choice == "delete_group":
+            _delete_connector_group(client, tenant)
+        elif choice in ("back", None):
+            break
+
+
+def _list_connectors(tenant):
+    from db.database import get_session
+    from db.models import ZPAResource
+
+    with get_session() as session:
+        resources = (
+            session.query(ZPAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="app_connector", is_deleted=False)
+            .order_by(ZPAResource.name)
+            .all()
+        )
+        rows = [
+            {"name": r.name, "zpa_id": r.zpa_id, "raw_config": r.raw_config or {}}
+            for r in resources
+        ]
+
+    if not rows:
+        console.print(
+            "[yellow]No App Connectors in local DB. "
+            "Run [bold]Import Config[/bold] first.[/yellow]"
+        )
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    table = Table(title=f"App Connectors ({len(rows)} total)", show_lines=False)
+    table.add_column("Name")
+    table.add_column("Group")
+    table.add_column("Status")
+    table.add_column("Private IP")
+    table.add_column("Version")
+    table.add_column("Enabled")
+
+    for r in rows:
+        cfg = r["raw_config"]
+        group = cfg.get("appConnectorGroupName", "—") or "—"
+        status_val = cfg.get("controlChannelStatus", "—") or "—"
+        status_str = (
+            f"[green]{status_val}[/green]"
+            if status_val == "ZPN_STATUS_AUTHENTICATED"
+            else f"[red]{status_val}[/red]"
+        )
+        private_ip = cfg.get("privateIp", "—") or "—"
+        version = cfg.get("currentVersion", "—") or "—"
+        enabled = cfg.get("enabled", True)
+        enabled_str = "[green]Yes[/green]" if enabled else "[red]No[/red]"
+        table.add_row(r["name"], group, status_str, private_ip, version, enabled_str)
+
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+    scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
+
+
+def _search_connectors(tenant):
+    from db.database import get_session
+    from db.models import ZPAResource
+
+    search = questionary.text(
+        "Search (name or partial):",
+        instruction="(Ctrl+C to cancel)",
+    ).ask()
+    if not search:
+        return
+    search = search.lower()
+
+    with get_session() as session:
+        resources = (
+            session.query(ZPAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="app_connector", is_deleted=False)
+            .all()
+        )
+        rows = [
+            {"name": r.name, "zpa_id": r.zpa_id, "raw_config": r.raw_config or {}}
+            for r in resources
+            if search in (r.name or "").lower()
+        ]
+
+    if not rows:
+        console.print(f"[yellow]No connectors matching '{search}'.[/yellow]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    table = Table(title=f"Matching Connectors ({len(rows)})", show_lines=False)
+    table.add_column("Name")
+    table.add_column("Group")
+    table.add_column("Status")
+    table.add_column("Private IP")
+    table.add_column("Version")
+    table.add_column("Enabled")
+
+    for r in rows:
+        cfg = r["raw_config"]
+        group = cfg.get("appConnectorGroupName", "—") or "—"
+        status_val = cfg.get("controlChannelStatus", "—") or "—"
+        status_str = (
+            f"[green]{status_val}[/green]"
+            if status_val == "ZPN_STATUS_AUTHENTICATED"
+            else f"[red]{status_val}[/red]"
+        )
+        private_ip = cfg.get("privateIp", "—") or "—"
+        version = cfg.get("currentVersion", "—") or "—"
+        enabled = cfg.get("enabled", True)
+        enabled_str = "[green]Yes[/green]" if enabled else "[red]No[/red]"
+        table.add_row(r["name"], group, status_str, private_ip, version, enabled_str)
+
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+    scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
+
+
+def _toggle_connector(client, tenant):
+    from db.database import get_session
+    from db.models import ZPAResource
+    from services import audit_service
+
+    with get_session() as session:
+        resources = (
+            session.query(ZPAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="app_connector", is_deleted=False)
+            .order_by(ZPAResource.name)
+            .all()
+        )
+        rows = [
+            {
+                "name": r.name,
+                "zpa_id": r.zpa_id,
+                "group": (r.raw_config or {}).get("appConnectorGroupName", ""),
+                "enabled": (r.raw_config or {}).get("enabled", True),
+            }
+            for r in resources
+        ]
+
+    if not rows:
+        console.print(
+            "[yellow]No App Connectors in local DB. "
+            "Run [bold]Import Config[/bold] first.[/yellow]"
+        )
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    selected = questionary.checkbox(
+        "Select connectors:",
+        choices=[
+            questionary.Choice(
+                f"{'✓' if r['enabled'] else '✗'}  {r['name']}  ({r['group']})",
+                value=r,
+            )
+            for r in rows
+        ],
+        instruction="(Space to select, Enter to confirm, Ctrl+C to cancel)",
+    ).ask()
+
+    if not selected:
+        return
+
+    action = questionary.select(
+        f"Action for {len(selected)} connector(s):",
+        choices=[
+            questionary.Choice("Enable", value="enable"),
+            questionary.Choice("Disable", value="disable"),
+        ],
+        instruction="(Ctrl+C to cancel)",
+    ).ask()
+    if action is None:
+        return
+
+    confirmed = questionary.confirm(
+        f"{action.title()} {len(selected)} connector(s)?", default=True
+    ).ask()
+    if not confirmed:
+        return
+
+    new_state = action == "enable"
+    success_count = 0
+    fail_count = 0
+
+    for connector in selected:
+        try:
+            config = client.get_connector(connector["zpa_id"])
+            config["enabled"] = new_state
+            client.update_connector(connector["zpa_id"], config)
+
+            _update_connector_enabled_in_db(tenant.id, connector["zpa_id"], new_state)
+
+            icon = "✓" if new_state else "✗"
+            color = "green" if new_state else "red"
+            console.print(f"  [{color}]{icon} {connector['name']}[/{color}]")
+
+            audit_service.log(
+                product="ZPA",
+                operation="toggle_connector",
+                action="UPDATE",
+                status="SUCCESS",
+                tenant_id=tenant.id,
+                resource_type="app_connector",
+                resource_id=connector["zpa_id"],
+                resource_name=connector["name"],
+                details={"enabled": new_state},
+            )
+            success_count += 1
+        except Exception as exc:
+            console.print(f"  [red]✗ {connector['name']}: {exc}[/red]")
+            audit_service.log(
+                product="ZPA",
+                operation="toggle_connector",
+                action="UPDATE",
+                status="FAILURE",
+                tenant_id=tenant.id,
+                resource_type="app_connector",
+                resource_id=connector["zpa_id"],
+                resource_name=connector["name"],
+                error_message=str(exc),
+            )
+            fail_count += 1
+
+    console.print(
+        f"\n[green]✓ {success_count} succeeded[/green]"
+        + (f"  [red]✗ {fail_count} failed[/red]" if fail_count else "")
+    )
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def _rename_connector(client, tenant):
+    from db.database import get_session
+    from db.models import ZPAResource
+    from services import audit_service
+    from sqlalchemy.orm.attributes import flag_modified
+
+    with get_session() as session:
+        resources = (
+            session.query(ZPAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="app_connector", is_deleted=False)
+            .order_by(ZPAResource.name)
+            .all()
+        )
+        rows = [
+            {
+                "name": r.name,
+                "zpa_id": r.zpa_id,
+                "group": (r.raw_config or {}).get("appConnectorGroupName", ""),
+            }
+            for r in resources
+        ]
+
+    if not rows:
+        console.print(
+            "[yellow]No App Connectors in local DB. "
+            "Run [bold]Import Config[/bold] first.[/yellow]"
+        )
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    connector = questionary.select(
+        "Select connector to rename:",
+        choices=[
+            questionary.Choice(
+                f"{r['name']}  ({r['group']})",
+                value=r,
+            )
+            for r in rows
+        ],
+        instruction="(Ctrl+C to cancel)",
+    ).ask()
+    if connector is None:
+        return
+
+    old_name = connector["name"]
+    new_name = questionary.text("New name:", default=old_name).ask()
+    if not new_name or new_name == old_name:
+        return
+
+    confirmed = questionary.confirm(
+        f"Rename '{old_name}' → '{new_name}'?", default=True
+    ).ask()
+    if not confirmed:
+        return
+
+    try:
+        config = client.get_connector(connector["zpa_id"])
+        config["name"] = new_name
+        client.update_connector(connector["zpa_id"], config)
+    except Exception as exc:
+        console.print(f"[red]✗ Error: {exc}[/red]")
+        audit_service.log(
+            product="ZPA",
+            operation="rename_connector",
+            action="UPDATE",
+            status="FAILURE",
+            tenant_id=tenant.id,
+            resource_type="app_connector",
+            resource_id=connector["zpa_id"],
+            resource_name=old_name,
+            error_message=str(exc),
+        )
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    with get_session() as session:
+        rec = (
+            session.query(ZPAResource)
+            .filter_by(
+                tenant_id=tenant.id,
+                resource_type="app_connector",
+                zpa_id=connector["zpa_id"],
+            )
+            .first()
+        )
+        if rec:
+            cfg = dict(rec.raw_config or {})
+            cfg["name"] = new_name
+            rec.raw_config = cfg
+            flag_modified(rec, "raw_config")
+            rec.name = new_name
+
+    audit_service.log(
+        product="ZPA",
+        operation="rename_connector",
+        action="UPDATE",
+        status="SUCCESS",
+        tenant_id=tenant.id,
+        resource_type="app_connector",
+        resource_id=connector["zpa_id"],
+        resource_name=new_name,
+        details={"old_name": old_name, "new_name": new_name},
+    )
+
+    console.print("[green]✓ Renamed.[/green]")
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def _delete_connector(client, tenant):
+    from db.database import get_session
+    from db.models import ZPAResource
+    from services import audit_service
+
+    with get_session() as session:
+        resources = (
+            session.query(ZPAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="app_connector", is_deleted=False)
+            .order_by(ZPAResource.name)
+            .all()
+        )
+        rows = [
+            {
+                "name": r.name,
+                "zpa_id": r.zpa_id,
+                "group": (r.raw_config or {}).get("appConnectorGroupName", ""),
+            }
+            for r in resources
+        ]
+
+    if not rows:
+        console.print(
+            "[yellow]No App Connectors in local DB. "
+            "Run [bold]Import Config[/bold] first.[/yellow]"
+        )
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    connector = questionary.select(
+        "Select connector to delete:",
+        choices=[
+            questionary.Choice(
+                f"{r['name']}  ({r['group']})",
+                value=r,
+            )
+            for r in rows
+        ],
+        instruction="(Ctrl+C to cancel)",
+    ).ask()
+    if connector is None:
+        return
+
+    confirmed = questionary.confirm(
+        f"Delete '{connector['name']}'? This cannot be undone.", default=False
+    ).ask()
+    if not confirmed:
+        return
+
+    try:
+        client.delete_connector(connector["zpa_id"])
+    except Exception as exc:
+        console.print(f"[red]✗ Error: {exc}[/red]")
+        audit_service.log(
+            product="ZPA",
+            operation="delete_connector",
+            action="DELETE",
+            status="FAILURE",
+            tenant_id=tenant.id,
+            resource_type="app_connector",
+            resource_id=connector["zpa_id"],
+            resource_name=connector["name"],
+            error_message=str(exc),
+        )
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    with get_session() as session:
+        rec = (
+            session.query(ZPAResource)
+            .filter_by(
+                tenant_id=tenant.id,
+                resource_type="app_connector",
+                zpa_id=connector["zpa_id"],
+            )
+            .first()
+        )
+        if rec:
+            rec.is_deleted = True
+
+    audit_service.log(
+        product="ZPA",
+        operation="delete_connector",
+        action="DELETE",
+        status="SUCCESS",
+        tenant_id=tenant.id,
+        resource_type="app_connector",
+        resource_id=connector["zpa_id"],
+        resource_name=connector["name"],
+    )
+
+    console.print("[green]✓ Connector deleted.[/green]")
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def _update_connector_enabled_in_db(tenant_id: int, zpa_id: str, enabled: bool) -> None:
+    from sqlalchemy.orm.attributes import flag_modified
+    from db.database import get_session
+    from db.models import ZPAResource
+
+    with get_session() as session:
+        rec = (
+            session.query(ZPAResource)
+            .filter_by(tenant_id=tenant_id, resource_type="app_connector", zpa_id=zpa_id)
+            .first()
+        )
+        if rec:
+            cfg = dict(rec.raw_config or {})
+            cfg["enabled"] = enabled
+            rec.raw_config = cfg
+            flag_modified(rec, "raw_config")
+
+
+# ------------------------------------------------------------------
+# Connector Groups
+# ------------------------------------------------------------------
+
+def _list_connector_groups(tenant):
+    from db.database import get_session
+    from db.models import ZPAResource
+    from collections import defaultdict
+
+    with get_session() as session:
+        resources = (
+            session.query(ZPAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="app_connector_group", is_deleted=False)
+            .order_by(ZPAResource.name)
+            .all()
+        )
+        rows = [
+            {"name": r.name, "zpa_id": r.zpa_id, "raw_config": r.raw_config or {}}
+            for r in resources
+        ]
+
+        connector_rows = (
+            session.query(ZPAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="app_connector", is_deleted=False)
+            .all()
+        )
+        count_map: dict = defaultdict(int)
+        for c in connector_rows:
+            gid = str((c.raw_config or {}).get("appConnectorGroupId", ""))
+            if gid:
+                count_map[gid] += 1
+
+    if not rows:
+        console.print(
+            "[yellow]No Connector Groups in local DB. "
+            "Run [bold]Import Config[/bold] first.[/yellow]"
+        )
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    table = Table(title=f"Connector Groups ({len(rows)} total)", show_lines=False)
+    table.add_column("Name")
+    table.add_column("Location")
+    table.add_column("Connectors", justify="right")
+    table.add_column("Enabled")
+
+    for r in rows:
+        cfg = r["raw_config"]
+        location = cfg.get("location") or cfg.get("cityCountry") or "—"
+        connector_count = str(count_map.get(str(r["zpa_id"]), 0))
+        enabled = cfg.get("enabled", True)
+        enabled_str = "[green]Yes[/green]" if enabled else "[red]No[/red]"
+        table.add_row(r["name"], location, connector_count, enabled_str)
+
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+    scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
+
+
+def _search_connector_groups(tenant):
+    from db.database import get_session
+    from db.models import ZPAResource
+
+    search = questionary.text(
+        "Search (name or partial):",
+        instruction="(Ctrl+C to cancel)",
+    ).ask()
+    if not search:
+        return
+    search = search.lower()
+
+    with get_session() as session:
+        resources = (
+            session.query(ZPAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="app_connector_group", is_deleted=False)
+            .all()
+        )
+        rows = [
+            {"name": r.name, "zpa_id": r.zpa_id, "raw_config": r.raw_config or {}}
+            for r in resources
+            if search in (r.name or "").lower()
+        ]
+
+    if not rows:
+        console.print(f"[yellow]No connector groups matching '{search}'.[/yellow]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    table = Table(title=f"Matching Connector Groups ({len(rows)})", show_lines=False)
+    table.add_column("Name")
+    table.add_column("Location")
+    table.add_column("Enabled")
+
+    for r in rows:
+        cfg = r["raw_config"]
+        location = cfg.get("location") or cfg.get("cityCountry") or "—"
+        enabled = cfg.get("enabled", True)
+        enabled_str = "[green]Yes[/green]" if enabled else "[red]No[/red]"
+        table.add_row(r["name"], location, enabled_str)
+
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+    scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
+
+
+def _create_connector_group(client, tenant):
+    from services import audit_service
+    from services.zpa_import_service import ZPAImportService
+
+    name = questionary.text("Group name:").ask()
+    if not name:
+        return
+
+    description = questionary.text(
+        "Description (optional — blank to skip):"
+    ).ask() or ""
+
+    confirmed = questionary.confirm(
+        f"Create connector group '{name}'?", default=True
+    ).ask()
+    if not confirmed:
+        return
+
+    kwargs = {"name": name, "enabled": True}
+    if description:
+        kwargs["description"] = description
+
+    try:
+        result = client.create_connector_group(**kwargs)
+    except Exception as exc:
+        console.print(f"[red]✗ Error: {exc}[/red]")
+        audit_service.log(
+            product="ZPA",
+            operation="create_connector_group",
+            action="CREATE",
+            status="FAILURE",
+            tenant_id=tenant.id,
+            resource_type="app_connector_group",
+            resource_name=name,
+            error_message=str(exc),
+        )
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    audit_service.log(
+        product="ZPA",
+        operation="create_connector_group",
+        action="CREATE",
+        status="SUCCESS",
+        tenant_id=tenant.id,
+        resource_type="app_connector_group",
+        resource_id=str(result.get("id", "")),
+        resource_name=name,
+    )
+
+    with console.status("Syncing to local DB..."):
+        ZPAImportService(client, tenant.id).run(resource_types=["app_connector_group"])
+
+    console.print(f"[green]✓ Connector group '{name}' created.[/green]")
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def _toggle_connector_group(client, tenant):
+    from db.database import get_session
+    from db.models import ZPAResource
+    from services import audit_service
+
+    with get_session() as session:
+        resources = (
+            session.query(ZPAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="app_connector_group", is_deleted=False)
+            .order_by(ZPAResource.name)
+            .all()
+        )
+        rows = [
+            {
+                "name": r.name,
+                "zpa_id": r.zpa_id,
+                "location": (r.raw_config or {}).get("location")
+                    or (r.raw_config or {}).get("cityCountry", ""),
+                "enabled": (r.raw_config or {}).get("enabled", True),
+            }
+            for r in resources
+        ]
+
+    if not rows:
+        console.print(
+            "[yellow]No Connector Groups in local DB. "
+            "Run [bold]Import Config[/bold] first.[/yellow]"
+        )
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    selected = questionary.checkbox(
+        "Select connector groups:",
+        choices=[
+            questionary.Choice(
+                f"{'✓' if r['enabled'] else '✗'}  {r['name']}  ({r['location']})",
+                value=r,
+            )
+            for r in rows
+        ],
+        instruction="(Space to select, Enter to confirm, Ctrl+C to cancel)",
+    ).ask()
+
+    if not selected:
+        return
+
+    action = questionary.select(
+        f"Action for {len(selected)} group(s):",
+        choices=[
+            questionary.Choice("Enable", value="enable"),
+            questionary.Choice("Disable", value="disable"),
+        ],
+        instruction="(Ctrl+C to cancel)",
+    ).ask()
+    if action is None:
+        return
+
+    confirmed = questionary.confirm(
+        f"{action.title()} {len(selected)} group(s)?", default=True
+    ).ask()
+    if not confirmed:
+        return
+
+    new_state = action == "enable"
+    success_count = 0
+    fail_count = 0
+
+    for group in selected:
+        try:
+            config = client.get_connector_group(group["zpa_id"])
+            config["enabled"] = new_state
+            client.update_connector_group(group["zpa_id"], config)
+
+            _update_connector_group_enabled_in_db(tenant.id, group["zpa_id"], new_state)
+
+            icon = "✓" if new_state else "✗"
+            color = "green" if new_state else "red"
+            console.print(f"  [{color}]{icon} {group['name']}[/{color}]")
+
+            audit_service.log(
+                product="ZPA",
+                operation="toggle_connector_group",
+                action="UPDATE",
+                status="SUCCESS",
+                tenant_id=tenant.id,
+                resource_type="app_connector_group",
+                resource_id=group["zpa_id"],
+                resource_name=group["name"],
+                details={"enabled": new_state},
+            )
+            success_count += 1
+        except Exception as exc:
+            console.print(f"  [red]✗ {group['name']}: {exc}[/red]")
+            audit_service.log(
+                product="ZPA",
+                operation="toggle_connector_group",
+                action="UPDATE",
+                status="FAILURE",
+                tenant_id=tenant.id,
+                resource_type="app_connector_group",
+                resource_id=group["zpa_id"],
+                resource_name=group["name"],
+                error_message=str(exc),
+            )
+            fail_count += 1
+
+    console.print(
+        f"\n[green]✓ {success_count} succeeded[/green]"
+        + (f"  [red]✗ {fail_count} failed[/red]" if fail_count else "")
+    )
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def _delete_connector_group(client, tenant):
+    from db.database import get_session
+    from db.models import ZPAResource
+    from services import audit_service
+    from collections import defaultdict
+
+    with get_session() as session:
+        resources = (
+            session.query(ZPAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="app_connector_group", is_deleted=False)
+            .order_by(ZPAResource.name)
+            .all()
+        )
+        rows = [
+            {"name": r.name, "zpa_id": r.zpa_id, "raw_config": r.raw_config or {}}
+            for r in resources
+        ]
+
+        connector_rows = (
+            session.query(ZPAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="app_connector", is_deleted=False)
+            .all()
+        )
+        count_map: dict = defaultdict(int)
+        for c in connector_rows:
+            gid = str((c.raw_config or {}).get("appConnectorGroupId", ""))
+            if gid:
+                count_map[gid] += 1
+
+    if not rows:
+        console.print(
+            "[yellow]No Connector Groups in local DB. "
+            "Run [bold]Import Config[/bold] first.[/yellow]"
+        )
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    group = questionary.select(
+        "Select connector group to delete:",
+        choices=[
+            questionary.Choice(
+                f"{r['name']}  ({count_map.get(str(r['zpa_id']), 0)} connectors)",
+                value=r,
+            )
+            for r in rows
+        ],
+        instruction="(Ctrl+C to cancel)",
+    ).ask()
+    if group is None:
+        return
+
+    confirmed = questionary.confirm(
+        f"Delete group '{group['name']}'? This cannot be undone.", default=False
+    ).ask()
+    if not confirmed:
+        return
+
+    try:
+        client.delete_connector_group(group["zpa_id"])
+    except Exception as exc:
+        console.print(f"[red]✗ Error: {exc}[/red]")
+        audit_service.log(
+            product="ZPA",
+            operation="delete_connector_group",
+            action="DELETE",
+            status="FAILURE",
+            tenant_id=tenant.id,
+            resource_type="app_connector_group",
+            resource_id=group["zpa_id"],
+            resource_name=group["name"],
+            error_message=str(exc),
+        )
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    with get_session() as session:
+        rec = (
+            session.query(ZPAResource)
+            .filter_by(
+                tenant_id=tenant.id,
+                resource_type="app_connector_group",
+                zpa_id=group["zpa_id"],
+            )
+            .first()
+        )
+        if rec:
+            rec.is_deleted = True
+
+    audit_service.log(
+        product="ZPA",
+        operation="delete_connector_group",
+        action="DELETE",
+        status="SUCCESS",
+        tenant_id=tenant.id,
+        resource_type="app_connector_group",
+        resource_id=group["zpa_id"],
+        resource_name=group["name"],
+    )
+
+    console.print("[green]✓ Connector group deleted.[/green]")
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def _update_connector_group_enabled_in_db(tenant_id: int, zpa_id: str, enabled: bool) -> None:
+    from sqlalchemy.orm.attributes import flag_modified
+    from db.database import get_session
+    from db.models import ZPAResource
+
+    with get_session() as session:
+        rec = (
+            session.query(ZPAResource)
+            .filter_by(tenant_id=tenant_id, resource_type="app_connector_group", zpa_id=zpa_id)
+            .first()
+        )
+        if rec:
+            cfg = dict(rec.raw_config or {})
+            cfg["enabled"] = enabled
+            rec.raw_config = cfg
+            flag_modified(rec, "raw_config")
