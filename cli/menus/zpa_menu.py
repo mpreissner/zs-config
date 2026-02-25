@@ -422,8 +422,7 @@ def _toggle_enable(client, tenant):
         "Select segment:",
         choices=[
             questionary.Choice(
-                f"{r['name']}  [{'green' if r['enabled'] else 'red'}]"
-                f"({'enabled' if r['enabled'] else 'disabled'})[/]",
+                f"{'✓' if r['enabled'] else '✗'}  {r['name']}",
                 value=r,
             )
             for r in rows
