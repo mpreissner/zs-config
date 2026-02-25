@@ -22,8 +22,8 @@ def zpa_menu():
             choices=[
                 questionary.Choice("Application Segments", value="apps"),
                 questionary.Choice("Certificate Management", value="certs"),
-                questionary.Choice("PRA Portals", value="pra"),
                 questionary.Choice("Connectors", value="connectors"),
+                questionary.Choice("PRA Portals", value="pra"),
                 questionary.Separator(),
                 questionary.Choice("Import Config", value="import"),
                 questionary.Choice("Reset N/A Resource Types", value="reset_na"),
