@@ -659,6 +659,13 @@ def _bulk_create(client, tenant):
                 hint = " → check server group ID"
             console.print(f"  [red]{detail['name']}:[/red] {err}{hint}")
 
+    # 9. Re-import application segments into local DB
+    if result.created:
+        from services.zpa_import_service import ZPAImportService
+        with console.status(f"Syncing {result.created} new segment(s) to local DB..."):
+            ZPAImportService(client, tenant.id).run(resource_types=["application"])
+        console.print("[green]✓ Local DB updated.[/green]")
+
     questionary.press_any_key_to_continue("Press any key to continue...").ask()
 
 
