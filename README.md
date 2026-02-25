@@ -140,14 +140,14 @@ Use **Export CSV Template** to get a pre-filled starting point, or build your ow
 |---|---|---|
 | `description` | *(blank)* | Any string |
 | `enabled` | `true` | `true` / `false` |
-| `app_type` | `BROWSER_ACCESS` | `BROWSER_ACCESS` |
+| `app_type` | `BROWSER_ACCESS` | `BROWSER_ACCESS` \| `SIPA` \| `INSPECT` \| `SECURE_REMOTE_ACCESS` |
 | `bypass_type` | `NEVER` | `NEVER` \| `ALWAYS` \| `ON_NET` |
 | `double_encrypt` | `false` | `true` / `false` |
 | `health_check_type` | `DEFAULT` | `DEFAULT` \| `NONE` |
-| `health_reporting` | `NONE` | `NONE` \| `ON_ACCESS` \| `CONTINUOUS` |
-| `icmp_access_type` | `PING_TRACEROUTING` | `NONE` \| `PING` \| `PING_TRACEROUTING` |
-| `passive_health_enabled` | `false` | `true` / `false` |
-| `is_cname_enabled` | `false` | `true` / `false` |
+| `health_reporting` | `ON_ACCESS` | `NONE` \| `ON_ACCESS` \| `CONTINUOUS` |
+| `icmp_access_type` | `NONE` | `NONE` \| `PING` \| `PING_TRACEROUTING` |
+| `passive_health_enabled` | `true` | `true` / `false` |
+| `is_cname_enabled` | `true` | `true` / `false` |
 | `select_connector_close_to_app` | `false` | `true` / `false` |
 
 #### Port format
