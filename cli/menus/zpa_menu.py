@@ -105,8 +105,9 @@ def _list_certificates(client, tenant):
             c.get("issuedTo", "") or "[dim]—[/dim]",
         )
 
-    console.print(table)
-    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+    scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
 def _rotate_certificate(client, tenant):
