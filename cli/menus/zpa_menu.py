@@ -1,3 +1,5 @@
+import os
+
 import questionary
 from rich.console import Console
 from rich.table import Table
@@ -485,6 +487,7 @@ def _bulk_create(client, tenant):
     csv_path = questionary.path("Path to CSV file:").ask()
     if not csv_path:
         return
+    csv_path = os.path.expanduser(csv_path)
 
     # 2. Parse and validate CSV
     try:
@@ -705,7 +708,6 @@ def _csv_field_reference():
 
 
 def _export_template():
-    import os
     from services.zpa_segment_service import CSV_FIELDNAMES, TEMPLATE_ROWS
 
     default_path = os.path.expanduser("~/app_segment_template.csv")
@@ -714,6 +716,7 @@ def _export_template():
     ).ask()
     if not out_path:
         return
+    out_path = os.path.expanduser(out_path)
 
     import csv as _csv
     with open(out_path, "w", newline="", encoding="utf-8") as fh:
