@@ -284,6 +284,9 @@ def _list_segments(tenant):
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
+    # DEBUG — remove once field names confirmed
+    console.print(f"[dim]DEBUG raw_config keys: {sorted(rows[0]['raw_config'].keys())}[/dim]")
+
     filter_choice = questionary.select(
         "Show:",
         choices=[
@@ -321,9 +324,12 @@ def _list_segments(tenant):
         if len(domains) > 2:
             domain_str += f" [dim]+{len(domains) - 2} more[/dim]"
 
-        seg_group = cfg.get("segmentGroupName") or (
-            cfg.get("segmentGroup", {}).get("name", "")
-            if isinstance(cfg.get("segmentGroup"), dict) else ""
+        seg_group = (
+            cfg.get("segmentGroupName")
+            or cfg.get("segment_group_name")
+            or (cfg.get("segmentGroup") or {}).get("name")
+            or (cfg.get("segment_group") or {}).get("name")
+            or ""
         )
 
         enabled = cfg.get("enabled", True)
