@@ -356,6 +356,8 @@ def _clear_imported_data():
 # ------------------------------------------------------------------
 
 def audit_menu():
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
     from services import audit_service
 
     with console.status("Loading audit log..."):
@@ -387,5 +389,4 @@ def audit_menu():
             f"[{status_style}]{entry.status or ''}[/{status_style}]",
         )
 
-    console.print(table)
-    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+    scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())

@@ -29,14 +29,8 @@ except Exception:
     )
 
 
-def render_banner() -> None:
-    """Clear the screen and redraw the Z-Config logo panel.
-
-    The subtitle shows the active tenant name when one is selected.
-    """
+def _build_banner_panel():
     from cli.session import get_active_tenant
-
-    console.clear()
 
     tenant = get_active_tenant()
     subtitle = (
@@ -49,11 +43,27 @@ def render_banner() -> None:
     _w = max(len(l) for l in _lines)
     _logo = "\n".join(l.ljust(_w) for l in _lines)
 
-    console.print(
-        Panel(
-            Align(Text(_logo, style="bold cyan", no_wrap=True), align="center"),
-            subtitle=subtitle,
-            border_style="cyan",
-            padding=(0, 4),
-        )
+    return Panel(
+        Align(Text(_logo, style="bold cyan", no_wrap=True), align="center"),
+        subtitle=subtitle,
+        border_style="cyan",
+        padding=(0, 4),
     )
+
+
+def render_banner() -> None:
+    """Clear the screen and redraw the Z-Config logo panel."""
+    console.clear()
+    console.print(_build_banner_panel())
+
+
+def capture_banner() -> str:
+    """Render the banner to an ANSI string (for embedded scroll views)."""
+    import shutil
+    from io import StringIO
+
+    buf = StringIO()
+    cap = Console(file=buf, width=shutil.get_terminal_size().columns,
+                  force_terminal=True, highlight=False)
+    cap.print(_build_banner_panel())
+    return buf.getvalue()
