@@ -4,7 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [0.0.1] - 2026-02-25
+## [0.0.2] - 2026-02-24
+
+### Fixed
+- Windows compatibility — all `chmod` / `os.chmod` calls are now guarded with `sys.platform != "win32"` so the tool runs on Windows without raising `NotImplementedError`
+- Platform-aware default credentials file path — Windows now defaults to `%APPDATA%\z-config\zscaler-oneapi.conf` instead of `/etc/zscaler-oneapi.conf`
+
+### Changed
+- Entry point renamed from `cli/zscaler-cli.py` to `cli/z_config.py` to match the repository name (`z-config`)
+- Encryption key path moved from `~/.config/zscaler-cli/secret.key` to `~/.config/z-config/secret.key`; existing keys at the old location are migrated automatically on first launch
+
+---
+
+## [0.0.1] - 2026-02-24
 
 Initial release.
 
@@ -32,7 +44,7 @@ Initial release.
 
 ### CLI
 - Full-screen scrollable viewer for all table views — Z-Config banner pinned at top, content scrolls with ↑↓ / j k / PageDown / PageUp / g / G, status bar with row range and scroll %, q to exit
-- Auto-generated encryption key on first launch — saved to `~/.config/zscaler-cli/secret.key`, no manual setup required
+- Auto-generated encryption key on first launch — saved to `~/.config/z-config/secret.key`, no manual setup required
 - Tenant management — add, list, remove; client secrets encrypted at rest with Fernet
 - Audit log viewer — all operations recorded with product, operation, resource, status, and local-timezone timestamp
 - Settings — manage tenants, rotate encryption key, configure server credentials file, clear imported data
