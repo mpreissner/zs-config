@@ -6,6 +6,7 @@ Thanks for your interest in contributing.
 
 1. Fork the repository and create a branch from `dev` (not `main`)
 2. Install dependencies: `pip install -r requirements.txt`
+3. Launch: `python cli/z_config.py`
 3. Make your changes, keeping the existing code style
 4. Test manually against a real or sandbox Zscaler tenant where possible
 5. Submit a pull request against `dev`

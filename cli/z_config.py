@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Zscaler Management CLI — interactive Rich TUI.
+"""z-config — interactive TUI for Zscaler OneAPI.
 
 Usage:
-    python cli/zscaler-cli.py
+    python cli/z_config.py
 """
 
 import os

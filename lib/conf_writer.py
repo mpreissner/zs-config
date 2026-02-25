@@ -6,10 +6,16 @@ produce identical output and apply the same security posture.
 
 import os
 import stat
+import sys
 from pathlib import Path
 from typing import Optional
 
-DEFAULT_CONF_PATH = "/etc/zscaler-oneapi.conf"
+if sys.platform == "win32":
+    DEFAULT_CONF_PATH = str(
+        Path(os.environ.get("APPDATA", Path.home())) / "z-config" / "zscaler-oneapi.conf"
+    )
+else:
+    DEFAULT_CONF_PATH = "/etc/zscaler-oneapi.conf"
 DEFAULT_ONEAPI_URL = "https://api.zsapi.net"
 
 
@@ -60,7 +66,8 @@ def write_conf(
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(content)
-    os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)  # 600
+    if sys.platform != "win32":
+        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)  # 600
 
     return str(p.resolve())
 
