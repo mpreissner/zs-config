@@ -1,5 +1,7 @@
 # z-config
 
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+
 Automation toolset for Zscaler OneAPI — interactive TUI with a local DB cache for fast lookups and bulk operations.
 
 ---
