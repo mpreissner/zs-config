@@ -957,6 +957,7 @@ def ssl_inspection_menu(client, tenant):
             choices=[
                 questionary.Choice("List Rules", value="list"),
                 questionary.Choice("Search Rules", value="search"),
+                questionary.Choice("Enable / Disable", value="toggle"),
                 questionary.Separator(),
                 questionary.Choice("← Back", value="back"),
             ],
@@ -967,6 +968,8 @@ def ssl_inspection_menu(client, tenant):
             _list_ssl_rules(tenant)
         elif choice == "search":
             _search_ssl_rules(tenant)
+        elif choice == "toggle":
+            _toggle_ssl_rules(client, tenant)
         elif choice in ("back", None):
             break
 
@@ -1079,6 +1082,87 @@ def _search_ssl_rules(tenant):
 
 
 # ------------------------------------------------------------------
+def _toggle_ssl_rules(client, tenant):
+    from db.database import get_session
+    from db.models import ZIAResource
+    from services import audit_service
+
+    with get_session() as session:
+        resources = (
+            session.query(ZIAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="ssl_inspection_rule", is_deleted=False)
+            .order_by(ZIAResource.name)
+            .all()
+        )
+        rows = [
+            {
+                "name": r.name,
+                "zia_id": r.zia_id,
+                "state": (r.raw_config or {}).get("state", "UNKNOWN"),
+            }
+            for r in resources
+        ]
+
+    if not rows:
+        console.print("[yellow]No SSL inspection rules in local DB. Run Import Config first.[/yellow]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    selected = questionary.checkbox(
+        "Select rules to toggle:",
+        choices=[
+            questionary.Choice(
+                f"{'✓' if r['state'] == 'ENABLED' else '✗'}  {r['name']}",
+                value=r,
+            )
+            for r in rows
+        ],
+    ).ask()
+    if not selected:
+        return
+
+    action = questionary.select(
+        "Action:",
+        choices=[
+            questionary.Choice("Enable", value="ENABLED"),
+            questionary.Choice("Disable", value="DISABLED"),
+        ],
+    ).ask()
+    if not action:
+        return
+
+    verb = "Enable" if action == "ENABLED" else "Disable"
+    confirmed = questionary.confirm(f"{verb} {len(selected)} rule(s)?", default=True).ask()
+    if not confirmed:
+        return
+
+    ok = 0
+    for r in selected:
+        try:
+            config = client.get_ssl_inspection_rule(r["zia_id"])
+            config["state"] = action
+            client.update_ssl_inspection_rule(r["zia_id"], config)
+            _update_zia_resource_field(tenant.id, "ssl_inspection_rule", r["zia_id"], "state", action)
+            audit_service.log(
+                product="ZIA", operation="toggle_ssl_rule", action="UPDATE",
+                status="SUCCESS", tenant_id=tenant.id, resource_type="ssl_inspection_rule",
+                resource_id=r["zia_id"], resource_name=r["name"],
+                details={"state": action},
+            )
+            ok += 1
+        except Exception as e:
+            console.print(f"[red]✗ {r['name']}: {e}[/red]")
+            audit_service.log(
+                product="ZIA", operation="toggle_ssl_rule", action="UPDATE",
+                status="FAILURE", tenant_id=tenant.id, resource_type="ssl_inspection_rule",
+                resource_id=r["zia_id"], resource_name=r["name"], error_message=str(e),
+            )
+
+    if ok:
+        console.print(f"[green]✓ {ok} rule(s) updated. Remember to activate changes.[/green]")
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
 # DB helpers
 # ------------------------------------------------------------------
 

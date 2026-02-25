@@ -223,6 +223,15 @@ class ZIAClient:
         result, resp, err = self._sdk.zia.ssl_inspection_rules.list_rules()
         return _to_dicts(_unwrap(result, resp, err))
 
+    def get_ssl_inspection_rule(self, rule_id: str) -> Dict:
+        result, resp, err = self._sdk.zia.ssl_inspection_rules.get_rule(int(rule_id))
+        return _to_dict(_unwrap(result, resp, err))
+
+    def update_ssl_inspection_rule(self, rule_id: str, config: Dict) -> bool:
+        result, resp, err = self._sdk.zia.ssl_inspection_rules.update_rule(int(rule_id), **config)
+        _unwrap(result, resp, err)
+        return True
+
     # ------------------------------------------------------------------
     # Traffic Forwarding
     # ------------------------------------------------------------------
