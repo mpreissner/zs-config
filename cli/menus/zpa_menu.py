@@ -419,8 +419,8 @@ def _toggle_enable(client, tenant):
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    seg = questionary.select(
-        "Select segment:",
+    selected = questionary.checkbox(
+        "Select segments:",
         choices=[
             questionary.Choice(
                 f"{'✓' if r['enabled'] else '✗'}  {r['name']}",
@@ -428,52 +428,93 @@ def _toggle_enable(client, tenant):
             )
             for r in rows
         ],
-        instruction="(Esc to cancel)",
+        instruction="(Space to select, Enter to confirm, Esc to cancel)",
     ).ask()
-    if seg is None:
+
+    if not selected:
         return
 
-    current = seg["enabled"]
-    action_label = "Disable" if current else "Enable"
+    action = questionary.select(
+        f"Action for {len(selected)} segment(s):",
+        choices=[
+            questionary.Choice("Enable", value="enable"),
+            questionary.Choice("Disable", value="disable"),
+        ],
+        instruction="(Esc to cancel)",
+    ).ask()
+    if action is None:
+        return
 
     confirmed = questionary.confirm(
-        f"{action_label} '{seg['name']}'?", default=True
+        f"{action.title()} {len(selected)} segment(s)?", default=True
     ).ask()
     if not confirmed:
         return
 
-    try:
-        if current:
-            client.disable_application(seg["zpa_id"])
-        else:
-            client.enable_application(seg["zpa_id"])
-        console.print(f"[green]✓ {seg['name']} {action_label.lower()}d.[/green]")
-        audit_service.log(
-            product="ZPA",
-            operation="toggle_application",
-            action="UPDATE",
-            status="SUCCESS",
-            tenant_id=tenant.id,
-            resource_type="application",
-            resource_id=seg["zpa_id"],
-            resource_name=seg["name"],
-            details={"enabled": not current},
-        )
-    except Exception as exc:
-        console.print(f"[red]✗ Error: {exc}[/red]")
-        audit_service.log(
-            product="ZPA",
-            operation="toggle_application",
-            action="UPDATE",
-            status="FAILURE",
-            tenant_id=tenant.id,
-            resource_type="application",
-            resource_id=seg["zpa_id"],
-            resource_name=seg["name"],
-            error_message=str(exc),
-        )
+    success_count = 0
+    fail_count = 0
+    new_state = action == "enable"
 
+    for seg in selected:
+        try:
+            if new_state:
+                client.enable_application(seg["zpa_id"])
+            else:
+                client.disable_application(seg["zpa_id"])
+
+            _update_segment_enabled_in_db(tenant.id, seg["zpa_id"], new_state)
+
+            console.print(f"  [green]✓ {seg['name']}[/green]")
+            audit_service.log(
+                product="ZPA",
+                operation="toggle_application",
+                action="UPDATE",
+                status="SUCCESS",
+                tenant_id=tenant.id,
+                resource_type="application",
+                resource_id=seg["zpa_id"],
+                resource_name=seg["name"],
+                details={"enabled": new_state},
+            )
+            success_count += 1
+        except Exception as exc:
+            console.print(f"  [red]✗ {seg['name']}: {exc}[/red]")
+            audit_service.log(
+                product="ZPA",
+                operation="toggle_application",
+                action="UPDATE",
+                status="FAILURE",
+                tenant_id=tenant.id,
+                resource_type="application",
+                resource_id=seg["zpa_id"],
+                resource_name=seg["name"],
+                error_message=str(exc),
+            )
+            fail_count += 1
+
+    console.print(
+        f"\n[green]✓ {success_count} succeeded[/green]"
+        + (f"  [red]✗ {fail_count} failed[/red]" if fail_count else "")
+    )
     questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def _update_segment_enabled_in_db(tenant_id: int, zpa_id: str, enabled: bool) -> None:
+    from sqlalchemy.orm.attributes import flag_modified
+    from db.database import get_session
+    from db.models import ZPAResource
+
+    with get_session() as session:
+        rec = (
+            session.query(ZPAResource)
+            .filter_by(tenant_id=tenant_id, resource_type="application", zpa_id=zpa_id)
+            .first()
+        )
+        if rec:
+            cfg = dict(rec.raw_config or {})
+            cfg["enabled"] = enabled
+            rec.raw_config = cfg
+            flag_modified(rec, "raw_config")
 
 
 def _bulk_create(client, tenant):
