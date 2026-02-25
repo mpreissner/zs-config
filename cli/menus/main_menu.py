@@ -378,11 +378,14 @@ def audit_menu():
     table.add_column("Resource")
     table.add_column("Status")
 
+    from datetime import timezone as _tz
     for entry in logs:
         status_style = "green" if entry.status == "SUCCESS" else "red"
         resource = f"{entry.resource_type or ''} {entry.resource_name or ''}".strip()
+        # Timestamps are stored as UTC naive datetimes — convert to local time
+        ts = entry.timestamp.replace(tzinfo=_tz.utc).astimezone()
         table.add_row(
-            entry.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            ts.strftime("%Y-%m-%d %H:%M:%S"),
             entry.product or "",
             entry.operation or "",
             resource or "[dim]—[/dim]",
