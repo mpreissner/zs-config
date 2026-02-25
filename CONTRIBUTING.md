@@ -1,4 +1,4 @@
-# Contributing to z-config
+# Contributing to zs-config
 
 Thanks for your interest in contributing.
 

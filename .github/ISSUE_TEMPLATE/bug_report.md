@@ -21,7 +21,7 @@ What actually happened. Paste any error output (sanitise credentials and tenant 
 **Environment**
 - OS and version:
 - Python version:
-- z-config version:
+- zs-config version:
 - Zscaler product affected (ZPA / ZIA):
 
 **Additional context**
