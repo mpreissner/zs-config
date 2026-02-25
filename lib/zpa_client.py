@@ -136,6 +136,15 @@ class ZPAClient:
         _unwrap(result, resp, err)
         return True
 
+    def create_pra_portal(self, **kwargs) -> Dict:
+        result, resp, err = self._sdk.zpa.pra_portal.add_portal(**kwargs)
+        return _to_dict(_unwrap(result, resp, err))
+
+    def delete_pra_portal(self, portal_id: str) -> bool:
+        result, resp, err = self._sdk.zpa.pra_portal.delete_portal(portal_id)
+        _unwrap(result, resp, err)
+        return True
+
     # ------------------------------------------------------------------
     # Privileged Credentials
     # ------------------------------------------------------------------

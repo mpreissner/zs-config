@@ -24,7 +24,7 @@ def zpa_menu():
                 questionary.Choice("Certificate Management", value="certs"),
                 questionary.Separator(),
                 questionary.Choice("Connectors            [coming soon]", value="connectors"),
-                questionary.Choice("PRA Portals           [coming soon]", value="pra"),
+                questionary.Choice("PRA Portals", value="pra"),
                 questionary.Separator(),
                 questionary.Choice("Import Config", value="import"),
                 questionary.Choice("Reset N/A Resource Types", value="reset_na"),
@@ -41,7 +41,9 @@ def zpa_menu():
             _reset_na_resources(client, tenant)
         elif choice == "apps":
             app_segments_menu(client, tenant)
-        elif choice in ("pra", "connectors"):
+        elif choice == "pra":
+            pra_portals_menu(client, tenant)
+        elif choice == "connectors":
             console.print("[yellow]Coming soon.[/yellow]")
         elif choice in ("back", None):
             break
@@ -780,6 +782,515 @@ def _export_template():
         writer.writerows(TEMPLATE_ROWS)
 
     console.print(f"[green]✓ Template written to {out_path}[/green]")
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+# ------------------------------------------------------------------
+# PRA Portals
+# ------------------------------------------------------------------
+
+def pra_portals_menu(client, tenant):
+    while True:
+        render_banner()
+        choice = questionary.select(
+            "PRA Portals",
+            choices=[
+                questionary.Choice("List PRA Portals", value="list"),
+                questionary.Choice("Search by Domain", value="search"),
+                questionary.Choice("Create Portal", value="create"),
+                questionary.Choice("Enable / Disable", value="toggle"),
+                questionary.Choice("Delete Portal", value="delete"),
+                questionary.Separator(),
+                questionary.Choice("← Back", value="back"),
+            ],
+            use_indicator=True,
+        ).ask()
+
+        if choice == "list":
+            _list_pra_portals(tenant)
+        elif choice == "search":
+            _search_pra_by_domain(tenant)
+        elif choice == "create":
+            _create_pra_portal(client, tenant)
+        elif choice == "toggle":
+            _toggle_pra_portal(client, tenant)
+        elif choice == "delete":
+            _delete_pra_portal(client, tenant)
+        elif choice in ("back", None):
+            break
+
+
+def _list_pra_portals(tenant):
+    from db.database import get_session
+    from db.models import ZPAResource
+
+    with get_session() as session:
+        resources = (
+            session.query(ZPAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="pra_portal", is_deleted=False)
+            .order_by(ZPAResource.name)
+            .all()
+        )
+        rows = [
+            {"name": r.name, "zpa_id": r.zpa_id, "raw_config": r.raw_config or {}}
+            for r in resources
+        ]
+
+        cert_rows = (
+            session.query(ZPAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="certificate", is_deleted=False)
+            .all()
+        )
+        cert_map = {str(c.zpa_id): c.name for c in cert_rows}
+
+    if not rows:
+        console.print(
+            "[yellow]No PRA Portals in local DB. "
+            "Run [bold]Import Config[/bold] first.[/yellow]"
+        )
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    table = Table(title=f"PRA Portals ({len(rows)} total)", show_lines=False)
+    table.add_column("Name")
+    table.add_column("Domain")
+    table.add_column("Enabled")
+    table.add_column("Certificate")
+
+    for r in rows:
+        cfg = r["raw_config"]
+        enabled = cfg.get("enabled", True)
+        enabled_str = "[green]Yes[/green]" if enabled else "[red]No[/red]"
+
+        cert_id = cfg.get("certificateId") or cfg.get("certificate_id")
+        if not cert_id or str(cert_id) in ("0", ""):
+            cert_str = "[dim]Zscaler-managed[/dim]"
+        else:
+            cert_str = cert_map.get(str(cert_id), str(cert_id))
+
+        table.add_row(
+            r["name"],
+            cfg.get("domain", ""),
+            enabled_str,
+            cert_str,
+        )
+
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+    scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
+
+
+def _search_pra_by_domain(tenant):
+    from db.database import get_session
+    from db.models import ZPAResource
+
+    search = questionary.text(
+        "Search string (domain or partial):",
+        instruction="(Ctrl+C to cancel)",
+    ).ask()
+    if not search:
+        return
+    search = search.lower()
+
+    with get_session() as session:
+        resources = (
+            session.query(ZPAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="pra_portal", is_deleted=False)
+            .all()
+        )
+        rows = [
+            {"name": r.name, "zpa_id": r.zpa_id, "raw_config": r.raw_config or {}}
+            for r in resources
+            if search in (r.raw_config or {}).get("domain", "").lower()
+        ]
+
+        cert_rows = (
+            session.query(ZPAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="certificate", is_deleted=False)
+            .all()
+        )
+        cert_map = {str(c.zpa_id): c.name for c in cert_rows}
+
+    if not rows:
+        console.print(f"[yellow]No PRA Portals matching '{search}'.[/yellow]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    table = Table(title=f"Matching PRA Portals ({len(rows)})", show_lines=False)
+    table.add_column("Name")
+    table.add_column("Domain")
+    table.add_column("Enabled")
+    table.add_column("Certificate")
+
+    for r in rows:
+        cfg = r["raw_config"]
+        enabled = cfg.get("enabled", True)
+        enabled_str = "[green]Yes[/green]" if enabled else "[red]No[/red]"
+
+        cert_id = cfg.get("certificateId") or cfg.get("certificate_id")
+        if not cert_id or str(cert_id) in ("0", ""):
+            cert_str = "[dim]Zscaler-managed[/dim]"
+        else:
+            cert_str = cert_map.get(str(cert_id), str(cert_id))
+
+        table.add_row(r["name"], cfg.get("domain", ""), enabled_str, cert_str)
+
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+    scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
+
+
+def _create_pra_portal(client, tenant):
+    from db.database import get_session
+    from db.models import ZPAResource
+    from services import audit_service
+    from services.zpa_import_service import ZPAImportService
+
+    # 1. Gather basic fields
+    name = questionary.text("Portal name:").ask()
+    if not name:
+        return
+
+    domain = questionary.text("Domain (e.g. pra.example.com):").ask()
+    if not domain:
+        return
+
+    description = questionary.text(
+        "Description (optional — blank to skip):"
+    ).ask() or ""
+
+    # 2. Certificate selection
+    with get_session() as session:
+        cert_rows = (
+            session.query(ZPAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="certificate", is_deleted=False)
+            .order_by(ZPAResource.name)
+            .all()
+        )
+        certs = [
+            {"id": c.zpa_id, "name": c.name or c.zpa_id}
+            for c in cert_rows
+        ]
+
+    if not certs:
+        console.print(
+            "[yellow]No certificates in DB — run [bold]Import Config[/bold] first.[/yellow]"
+        )
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    cert_choice = questionary.select(
+        "Certificate:",
+        choices=[
+            questionary.Choice(f"{c['name']}  (ID: {c['id']})", value=c)
+            for c in certs
+        ],
+        instruction="(Ctrl+C to cancel)",
+    ).ask()
+    if cert_choice is None:
+        return
+
+    # 3. Enabled / user notification
+    enabled = questionary.confirm("Enable portal?", default=True).ask()
+    if enabled is None:
+        return
+
+    notif_enabled = questionary.confirm(
+        "Enable user notification?", default=False
+    ).ask()
+    if notif_enabled is None:
+        return
+
+    user_notification = ""
+    if notif_enabled:
+        user_notification = questionary.text("Notification text/HTML:").ask() or ""
+
+    # 4. Confirm
+    confirmed = questionary.confirm(
+        f"Create portal '{name}'?", default=True
+    ).ask()
+    if not confirmed:
+        return
+
+    # 5. API call
+    kwargs = {
+        "name": name,
+        "domain": domain,
+        "certificate_id": cert_choice["id"],
+        "enabled": enabled,
+        "user_notification_enabled": notif_enabled,
+    }
+    if description:
+        kwargs["description"] = description
+    if user_notification:
+        kwargs["user_notification"] = user_notification
+
+    try:
+        result = client.create_pra_portal(**kwargs)
+    except Exception as exc:
+        console.print(f"[red]✗ Error creating portal: {exc}[/red]")
+        audit_service.log(
+            product="ZPA",
+            operation="create_pra_portal",
+            action="CREATE",
+            status="FAILURE",
+            tenant_id=tenant.id,
+            resource_type="pra_portal",
+            resource_name=name,
+            error_message=str(exc),
+        )
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    # 6. Audit log
+    audit_service.log(
+        product="ZPA",
+        operation="create_pra_portal",
+        action="CREATE",
+        status="SUCCESS",
+        tenant_id=tenant.id,
+        resource_type="pra_portal",
+        resource_id=str(result.get("id", "")),
+        resource_name=name,
+        details={"domain": domain, "certificate_id": cert_choice["id"]},
+    )
+
+    # 7. Re-import pra_portal into local DB
+    with console.status("Syncing to local DB..."):
+        ZPAImportService(client, tenant.id).run(resource_types=["pra_portal"])
+
+    console.print(f"[green]✓ Portal '{name}' created.[/green]")
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def _toggle_pra_portal(client, tenant):
+    from db.database import get_session
+    from db.models import ZPAResource
+    from services import audit_service
+
+    with get_session() as session:
+        resources = (
+            session.query(ZPAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="pra_portal", is_deleted=False)
+            .order_by(ZPAResource.name)
+            .all()
+        )
+        rows = [
+            {
+                "name": r.name,
+                "zpa_id": r.zpa_id,
+                "domain": (r.raw_config or {}).get("domain", ""),
+                "enabled": (r.raw_config or {}).get("enabled", True),
+            }
+            for r in resources
+        ]
+
+    if not rows:
+        console.print(
+            "[yellow]No PRA Portals in local DB. "
+            "Run [bold]Import Config[/bold] first.[/yellow]"
+        )
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    selected = questionary.checkbox(
+        "Select portals:",
+        choices=[
+            questionary.Choice(
+                f"{'✓' if r['enabled'] else '✗'}  {r['name']}  ({r['domain']})",
+                value=r,
+            )
+            for r in rows
+        ],
+        instruction="(Space to select, Enter to confirm, Ctrl+C to cancel)",
+    ).ask()
+
+    if not selected:
+        return
+
+    action = questionary.select(
+        f"Action for {len(selected)} portal(s):",
+        choices=[
+            questionary.Choice("Enable", value="enable"),
+            questionary.Choice("Disable", value="disable"),
+        ],
+        instruction="(Ctrl+C to cancel)",
+    ).ask()
+    if action is None:
+        return
+
+    confirmed = questionary.confirm(
+        f"{action.title()} {len(selected)} portal(s)?", default=True
+    ).ask()
+    if not confirmed:
+        return
+
+    new_state = action == "enable"
+    success_count = 0
+    fail_count = 0
+
+    for portal in selected:
+        try:
+            config = client.get_pra_portal(portal["zpa_id"])
+            config["enabled"] = new_state
+            client.update_pra_portal(portal["zpa_id"], config)
+
+            _update_pra_portal_enabled_in_db(tenant.id, portal["zpa_id"], new_state)
+
+            icon = "✓" if new_state else "✗"
+            color = "green" if new_state else "red"
+            console.print(f"  [{color}]{icon} {portal['name']}[/{color}]")
+
+            audit_service.log(
+                product="ZPA",
+                operation="toggle_pra_portal",
+                action="UPDATE",
+                status="SUCCESS",
+                tenant_id=tenant.id,
+                resource_type="pra_portal",
+                resource_id=portal["zpa_id"],
+                resource_name=portal["name"],
+                details={"enabled": new_state},
+            )
+            success_count += 1
+        except Exception as exc:
+            console.print(f"  [red]✗ {portal['name']}: {exc}[/red]")
+            audit_service.log(
+                product="ZPA",
+                operation="toggle_pra_portal",
+                action="UPDATE",
+                status="FAILURE",
+                tenant_id=tenant.id,
+                resource_type="pra_portal",
+                resource_id=portal["zpa_id"],
+                resource_name=portal["name"],
+                error_message=str(exc),
+            )
+            fail_count += 1
+
+    console.print(
+        f"\n[green]✓ {success_count} succeeded[/green]"
+        + (f"  [red]✗ {fail_count} failed[/red]" if fail_count else "")
+    )
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def _update_pra_portal_enabled_in_db(tenant_id: int, zpa_id: str, enabled: bool) -> None:
+    from sqlalchemy.orm.attributes import flag_modified
+    from db.database import get_session
+    from db.models import ZPAResource
+
+    with get_session() as session:
+        rec = (
+            session.query(ZPAResource)
+            .filter_by(tenant_id=tenant_id, resource_type="pra_portal", zpa_id=zpa_id)
+            .first()
+        )
+        if rec:
+            cfg = dict(rec.raw_config or {})
+            cfg["enabled"] = enabled
+            rec.raw_config = cfg
+            flag_modified(rec, "raw_config")
+
+
+def _delete_pra_portal(client, tenant):
+    from db.database import get_session
+    from db.models import ZPAResource
+    from services import audit_service
+
+    with get_session() as session:
+        resources = (
+            session.query(ZPAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="pra_portal", is_deleted=False)
+            .order_by(ZPAResource.name)
+            .all()
+        )
+        rows = [
+            {
+                "name": r.name,
+                "zpa_id": r.zpa_id,
+                "domain": (r.raw_config or {}).get("domain", ""),
+            }
+            for r in resources
+        ]
+
+    if not rows:
+        console.print(
+            "[yellow]No PRA Portals in local DB. "
+            "Run [bold]Import Config[/bold] first.[/yellow]"
+        )
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    portal = questionary.select(
+        "Select portal to delete:",
+        choices=[
+            questionary.Choice(
+                f"{r['name']}  ({r['domain']})",
+                value=r,
+            )
+            for r in rows
+        ],
+        instruction="(Ctrl+C to cancel)",
+    ).ask()
+
+    if not portal:
+        return
+
+    confirmed = questionary.confirm(
+        f"Delete '{portal['name']}'? This cannot be undone.", default=False
+    ).ask()
+    if not confirmed:
+        return
+
+    try:
+        client.delete_pra_portal(portal["zpa_id"])
+    except Exception as exc:
+        console.print(f"[red]✗ Error: {exc}[/red]")
+        audit_service.log(
+            product="ZPA",
+            operation="delete_pra_portal",
+            action="DELETE",
+            status="FAILURE",
+            tenant_id=tenant.id,
+            resource_type="pra_portal",
+            resource_id=portal["zpa_id"],
+            resource_name=portal["name"],
+            error_message=str(exc),
+        )
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    # Mark deleted in local DB immediately
+    from sqlalchemy.orm.attributes import flag_modified
+    from db.database import get_session
+    from db.models import ZPAResource
+
+    with get_session() as session:
+        rec = (
+            session.query(ZPAResource)
+            .filter_by(
+                tenant_id=tenant.id,
+                resource_type="pra_portal",
+                zpa_id=portal["zpa_id"],
+            )
+            .first()
+        )
+        if rec:
+            rec.is_deleted = True
+
+    audit_service.log(
+        product="ZPA",
+        operation="delete_pra_portal",
+        action="DELETE",
+        status="SUCCESS",
+        tenant_id=tenant.id,
+        resource_type="pra_portal",
+        resource_id=portal["zpa_id"],
+        resource_name=portal["name"],
+    )
+
+    console.print("[green]✓ Portal deleted.[/green]")
     questionary.press_any_key_to_continue("Press any key to continue...").ask()
 
 
