@@ -387,8 +387,9 @@ def _search_by_domain(tenant):
         enabled_str = "[green]Yes[/green]" if enabled else "[red]No[/red]"
         table.add_row(r["name"], domain_str, enabled_str)
 
-    console.print(table)
-    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+    scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
 def _toggle_enable(client, tenant):
