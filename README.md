@@ -1,4 +1,4 @@
-# z-config
+# zs-config
 
 [![PyPI](https://img.shields.io/pypi/v/zs-config)](https://pypi.org/project/zs-config/)
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
@@ -27,7 +27,7 @@ Automation toolset for Zscaler OneAPI — interactive TUI with a local DB cache 
 ## Architecture
 
 ```
-z-config/
+zs-config/
 │
 ├── lib/               # Low-level API clients
 │   ├── auth.py          # OAuth2 client_credentials token manager
@@ -68,7 +68,7 @@ z-config/
 
 ## Installation
 
-### Recommended — pipx (isolated, `z-config` available system-wide)
+### Recommended — pipx (isolated, `zs-config` available system-wide)
 
 ```bash
 pipx install zs-config
@@ -83,26 +83,26 @@ pip install zs-config
 Then launch from anywhere:
 
 ```bash
-z-config
+zs-config
 ```
 
-On first launch an encryption key is generated automatically and saved to `~/.config/z-config/secret.key`. No manual setup required.
+On first launch an encryption key is generated automatically and saved to `~/.config/zs-config/secret.key`. No manual setup required.
 
 Go to **Settings → Manage Tenants → Add Tenant** to register your first Zscaler tenant, then **ZIA → Import Config** or **ZPA → Import Config** to pull your tenant's configuration into the local cache.
 
 > **Key override:** set `ZSCALER_SECRET_KEY` in your environment to use a specific Fernet key instead of the auto-generated one.
 
-> **Database override:** set `ZSCALER_DB_URL` to use PostgreSQL or another SQLAlchemy-compatible database instead of the default SQLite file (`~/.local/share/z-config/zscaler.db`).
+> **Database override:** set `ZSCALER_DB_URL` to use PostgreSQL or another SQLAlchemy-compatible database instead of the default SQLite file (`~/.local/share/zs-config/zscaler.db`).
 
 ---
 
 ## Development Setup
 
 ```bash
-git clone https://github.com/mpreissner/z-config.git
-cd z-config
+git clone https://github.com/mpreissner/zs-config.git
+cd zs-config
 pip install -e .
-z-config
+zs-config
 ```
 
 ---
@@ -132,6 +132,7 @@ z-config
 | Privileged Remote Access | PRA Portals — list, search, create, enable/disable, delete; PRA Consoles *(coming soon)* |
 | Access Policy | *(coming soon)* |
 | Import Config | Pull a full ZPA config snapshot into the local DB |
+| Config Snapshots | Save, compare, export, and delete point-in-time config snapshots |
 | Reset N/A Resource Types | Clear the list of auto-disabled resource types so they are retried on the next import |
 
 ---
@@ -246,6 +247,7 @@ Use **Export CSV Template** to get a pre-filled starting point, or build your ow
 | Traffic Forwarding | *(coming soon)* |
 | Activation | View activation status; push pending ZIA policy changes |
 | Import Config | Pull a full ZIA config snapshot (19 resource types) into the local DB |
+| Config Snapshots | Save, compare, export, and delete point-in-time config snapshots |
 | Reset N/A Resource Types | Clear the list of auto-disabled resource types so they are retried on the next import |
 
 ---
@@ -285,6 +287,7 @@ export ZSCALER_DB_URL="postgresql://user:pass@host/dbname"
 | `ZPAResource` | Full JSON snapshot of every ZPA resource (`tenant × type × id`); SHA-256 hash enables fast change detection on re-import |
 | `ZIAResource` | Full JSON snapshot of every ZIA resource (`tenant × type × id`); same SHA-256 change-detection pattern as ZPA |
 | `SyncLog` | Outcome of each import run (status, counters, errors) — shared by ZPA and ZIA imports |
+| `RestorePoint` | Point-in-time config snapshots for pre/post-change diffing and export |
 
 ---
 
@@ -292,7 +295,7 @@ export ZSCALER_DB_URL="postgresql://user:pass@host/dbname"
 
 Tenant secrets are encrypted with [Fernet](https://cryptography.io/en/latest/fernet/) symmetric encryption.
 
-- **Auto-managed:** on first launch a key is generated and saved to `~/.config/z-config/secret.key` (chmod 600)
+- **Auto-managed:** on first launch a key is generated and saved to `~/.config/zs-config/secret.key` (chmod 600)
 - **Env var override:** set `ZSCALER_SECRET_KEY` to use a specific key
 - **Rotation:** go to **Settings → Generate Encryption Key** — warning: rotating the key makes previously saved tenant secrets unreadable; re-add tenants after rotating
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""z-config — interactive TUI for Zscaler OneAPI.
+"""zs-config — interactive TUI for Zscaler OneAPI.
 
-Installed usage:  z-config
-Development:      pip install -e .  then  z-config
+Installed usage:  zs-config
+Development:      pip install -e .  then  zs-config
 """
 
 
