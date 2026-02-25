@@ -166,6 +166,8 @@ def _add_tenant():
     except Exception as e:
         console.print(f"[red]✗ Error: {e}[/red]")
 
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
 
 def _list_tenants():
     from services.config_service import list_tenants
@@ -173,6 +175,7 @@ def _list_tenants():
     tenants = list_tenants()
     if not tenants:
         console.print("[yellow]No tenants configured.[/yellow]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
     table = Table(title="Configured Tenants", show_lines=True)
@@ -288,20 +291,29 @@ def _configure_conf_file():
 
 
 def _generate_key():
-    from services.config_service import generate_key
+    from services.config_service import generate_key, _KEY_FILE
+
+    confirmed = questionary.confirm(
+        "Generate a new encryption key? This will replace the existing key and make "
+        "any previously saved tenant secrets unreadable.",
+        default=False,
+    ).ask()
+    if not confirmed:
+        return
 
     key = generate_key()
     console.print(
         Panel(
             f"[bold yellow]{key}[/bold yellow]",
-            title="Generated Encryption Key",
-            subtitle="Set as ZSCALER_SECRET_KEY in your environment",
+            title="New Encryption Key Generated",
+            subtitle=f"Saved to {_KEY_FILE}",
             border_style="yellow",
         )
     )
     console.print(
-        "[dim]Add to ~/.zshrc or ~/.bashrc:[/dim]\n"
-        f"[cyan]export ZSCALER_SECRET_KEY={key}[/cyan]"
+        f"[green]✓ Key saved to[/green] [cyan]{_KEY_FILE}[/cyan]\n"
+        "[dim]To override with an env var instead: "
+        f"export ZSCALER_SECRET_KEY={key}[/dim]"
     )
     questionary.press_any_key_to_continue("Press any key to continue...").ask()
 

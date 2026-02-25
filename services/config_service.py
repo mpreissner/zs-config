@@ -1,15 +1,17 @@
 """Tenant configuration management with encrypted secret storage.
 
 Secrets (client_secret) are encrypted with Fernet symmetric encryption before
-being stored in the database. The encryption key lives only in the
-ZSCALER_SECRET_KEY environment variable — never on disk.
+being stored in the database.
 
-To generate a key for first-time setup:
-    python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-Then set: export ZSCALER_SECRET_KEY=<generated_key>
+Key resolution order:
+  1. ZSCALER_SECRET_KEY environment variable (explicit override)
+  2. Key file at ~/.config/zscaler-cli/secret.key (auto-created on first run)
+
+On first launch the key is generated automatically — no manual setup required.
 """
 
 import os
+from pathlib import Path
 from typing import List, Optional
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -17,20 +19,35 @@ from cryptography.fernet import Fernet, InvalidToken
 from db.database import get_session
 from db.models import TenantConfig
 
+_KEY_FILE = Path.home() / ".config" / "zscaler-cli" / "secret.key"
+
 
 def _get_fernet() -> Fernet:
+    # 1. Explicit env var override
     key = os.environ.get("ZSCALER_SECRET_KEY")
-    if not key:
-        raise EnvironmentError(
-            "ZSCALER_SECRET_KEY is not set. "
-            "Generate one with: python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
-        )
-    return Fernet(key.encode() if isinstance(key, str) else key)
+    if key:
+        return Fernet(key.encode() if isinstance(key, str) else key)
+
+    # 2. Persisted key file
+    if _KEY_FILE.exists():
+        key = _KEY_FILE.read_text().strip()
+        return Fernet(key.encode())
+
+    # 3. First run — auto-generate and save
+    key = Fernet.generate_key().decode()
+    _KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _KEY_FILE.write_text(key)
+    _KEY_FILE.chmod(0o600)
+    return Fernet(key.encode())
 
 
 def generate_key() -> str:
-    """Generate a new Fernet encryption key. Print and store securely."""
-    return Fernet.generate_key().decode()
+    """Generate a new Fernet encryption key and persist it to the key file."""
+    key = Fernet.generate_key().decode()
+    _KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _KEY_FILE.write_text(key)
+    _KEY_FILE.chmod(0o600)
+    return key
 
 
 def encrypt_secret(value: str) -> str:
