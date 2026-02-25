@@ -104,8 +104,8 @@ Go to **Settings → Manage Tenants → Add Tenant** to register your first Zsca
 |---|---|
 | Application Segments | Segment list, search, enable/disable, bulk create |
 | Certificate Management | List, rotate, and delete certificates |
-| Connectors | *(coming soon)* |
-| PRA Portals | *(coming soon)* |
+| Connectors | List, search, enable/disable, rename, and delete App Connectors; full CRUD for Connector Groups |
+| PRA Portals | List, search, create, enable/disable, and delete PRA Portals |
 | Import Config | Pull a full ZPA config snapshot into the local DB |
 | Reset N/A Resource Types | Clear the list of auto-disabled resource types so they are retried on the next import |
 

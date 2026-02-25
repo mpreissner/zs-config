@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.1.0] - 2026-02-25
+
+### Added
+
+#### ZPA — Connectors
+- **List Connectors** — scrollable table showing Name, Group, Control Channel Status (green if authenticated), Private IP, Version, and Enabled state
+- **Search Connectors** — partial name match, same table columns
+- **Enable / Disable** — checkbox multi-select; patches `enabled` via API and updates local DB immediately
+- **Rename Connector** — select connector, enter new name, confirms with old → new display; updates API and local DB
+- **Delete Connector** — confirmation prompt (default: No); marks `is_deleted` in local DB on success
+
+#### ZPA — Connector Groups
+- **List Connector Groups** — scrollable table showing Name, Location, member Connector count (from local DB), and Enabled state
+- **Search Connector Groups** — partial name match
+- **Create Connector Group** — name + optional description; targeted re-import syncs new group into local DB automatically
+- **Enable / Disable Group** — checkbox multi-select; patches `enabled` via API and updates local DB immediately
+- **Delete Connector Group** — API rejection (e.g. group has members) is surfaced cleanly; local DB updated only on success
+
+#### ZPA — PRA Portals
+- **List PRA Portals** — scrollable table with domain, enabled state, and certificate name
+- **Search by Domain** — partial domain match
+- **Create Portal** — name, domain, certificate selection from local DB, enabled flag, optional user notification
+- **Enable / Disable** — checkbox multi-select
+- **Delete Portal** — confirmation prompt (default: No)
+
+### Changed
+- Connectors and PRA Portals promoted from stubs into the top section of the ZPA menu (alongside Application Segments and Certificate Management)
+- ZPA menu order: Application Segments → Certificate Management → Connectors → PRA Portals → *(separator)* → Import Config → Reset N/A Resource Types
+
+---
+
 ## [0.0.2] - 2026-02-24
 
 ### Fixed
