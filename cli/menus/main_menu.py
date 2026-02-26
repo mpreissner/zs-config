@@ -12,7 +12,7 @@ console = Console()
 def _active_tenant_label() -> str:
     from cli.session import get_active_tenant
     t = get_active_tenant()
-    return f"  Switch Tenant  (active: {t.name})" if t else "  Switch Tenant"
+    return f"  Tenant Management  (active: {t.name})" if t else "  Tenant Management"
 
 
 def main_menu():
@@ -23,8 +23,10 @@ def main_menu():
             choices=[
                 questionary.Choice("  ZIA   Zscaler Internet Access", value="zia"),
                 questionary.Choice("  ZPA   Zscaler Private Access", value="zpa"),
+                questionary.Choice("  ZCC   Zscaler Client Connector", value="zcc"),
+                questionary.Choice("  ZIdentity", value="zidentity"),
                 questionary.Separator(),
-                questionary.Choice(_active_tenant_label(), value="switch_tenant"),
+                questionary.Choice(_active_tenant_label(), value="tenant_mgmt"),
                 questionary.Choice("  Settings", value="settings"),
                 questionary.Choice("  Audit Log", value="audit"),
                 questionary.Separator(),
@@ -39,8 +41,14 @@ def main_menu():
         elif choice == "zia":
             from cli.menus.zia_menu import zia_menu
             zia_menu()
-        elif choice == "switch_tenant":
-            _switch_tenant()
+        elif choice == "zcc":
+            from cli.menus.zcc_menu import zcc_menu
+            zcc_menu()
+        elif choice == "zidentity":
+            from cli.menus.zidentity_menu import zidentity_menu
+            zidentity_menu()
+        elif choice == "tenant_mgmt":
+            tenant_management_menu()
         elif choice == "settings":
             settings_menu()
         elif choice == "audit":
@@ -78,9 +86,6 @@ def settings_menu():
             "Settings",
             choices=[
                 questionary.Choice("Manage Tenants", value="tenants"),
-                questionary.Choice("Generate Encryption Key", value="genkey"),
-                questionary.Separator(),
-                questionary.Choice("Configure Server Credentials File", value="conffile"),
                 questionary.Separator(),
                 questionary.Choice("Clear Imported Data & Audit Log", value="cleardata"),
                 questionary.Separator(),
@@ -90,10 +95,6 @@ def settings_menu():
 
         if choice == "tenants":
             tenant_management_menu()
-        elif choice == "genkey":
-            _generate_key()
-        elif choice == "conffile":
-            _configure_conf_file()
         elif choice == "cleardata":
             _clear_imported_data()
         elif choice in ("back", None):
@@ -106,6 +107,8 @@ def tenant_management_menu():
         choice = questionary.select(
             "Manage Tenants",
             choices=[
+                questionary.Choice("Switch Tenant", value="switch"),
+                questionary.Separator(),
                 questionary.Choice("Add Tenant", value="add"),
                 questionary.Choice("List Tenants", value="list"),
                 questionary.Choice("Remove Tenant", value="remove"),
@@ -114,7 +117,9 @@ def tenant_management_menu():
             ],
         ).ask()
 
-        if choice == "add":
+        if choice == "switch":
+            _switch_tenant()
+        elif choice == "add":
             _add_tenant()
         elif choice == "list":
             _list_tenants()
