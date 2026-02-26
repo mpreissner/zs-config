@@ -19,6 +19,10 @@ Automation toolset for Zscaler OneAPI — interactive TUI with a local DB cache 
 - **ZIA Locations** — list and search locations and location groups
 - **ZIA SSL Inspection** — list, search, and enable/disable SSL inspection rules
 - **ZIA Config Import** — pull a full snapshot of 19 resource types into a local SQLite cache
+- **ZCC Device Management** — list, search, and view enrolled devices; soft and force remove; OTP lookup; app profile password lookup; CSV exports for devices and service status
+- **ZIdentity User Management** — list and search users; full profile with group membership and service entitlements; reset password, set password, and skip MFA
+- **ZIdentity Group Management** — list and search groups; view members; add and remove users
+- **ZIdentity API Client Management** — list and search clients; view details and scopes; manage secrets with expiry; delete clients
 - **Audit Log** — immutable record of every operation with local-timezone timestamps
 - **Zero-config encryption** — tenant secrets encrypted at rest; key auto-generated on first launch
 
@@ -33,7 +37,9 @@ zs-config/
 │   ├── auth.py          # OAuth2 client_credentials token manager
 │   ├── zpa_client.py    # ZPA API methods
 │   ├── zia_client.py    # ZIA API methods
-│   └── conf_writer.py   # zscaler-oneapi.conf writer (chmod 600)
+│   ├── zcc_client.py        # ZCC API methods
+│   ├── zidentity_client.py  # ZIdentity API methods
+│   └── conf_writer.py       # zscaler-oneapi.conf writer (chmod 600)
 │
 ├── db/                # Database layer (SQLAlchemy + SQLite by default)
 │   ├── models.py      # TenantConfig, AuditLog, Certificate, ZPAResource, SyncLog
@@ -46,7 +52,9 @@ zs-config/
 │   ├── zpa_import_service.py    # ZPA config import (pulls live config into DB)
 │   ├── zpa_segment_service.py   # App segment bulk-create logic
 │   ├── zia_service.py           # ZIA workflows
-│   └── zia_import_service.py    # ZIA config import (pulls live config into DB)
+│   ├── zia_import_service.py    # ZIA config import (pulls live config into DB)
+│   ├── zcc_service.py           # ZCC workflows (device management, secrets)
+│   └── zidentity_service.py     # ZIdentity workflows (users, groups, API clients)
 │
 ├── cli/               # Interactive Rich TUI
 │   ├── zscaler-cli.py
@@ -55,8 +63,10 @@ zs-config/
 │   ├── scroll_view.py     # Full-screen scrollable table viewer
 │   └── menus/
 │       ├── main_menu.py   # Main menu, settings, audit log viewer
-│       ├── zpa_menu.py    # ZPA menus
-│       └── zia_menu.py    # ZIA menus
+│       ├── zpa_menu.py         # ZPA menus
+│       ├── zia_menu.py         # ZIA menus
+│       ├── zcc_menu.py         # ZCC menus
+│       └── zidentity_menu.py   # ZIdentity menus
 │
 ├── api/               # FastAPI REST API (future GUI backend)
 │
@@ -113,10 +123,12 @@ zs-config
 
 | Option | Description |
 |---|---|
-| ZPA | Zscaler Private Access management |
 | ZIA | Zscaler Internet Access management |
-| Switch Tenant | Change the active tenant for the session |
-| Settings | Tenant management, encryption key, credentials file, data reset |
+| ZPA | Zscaler Private Access management |
+| ZCC | Zscaler Client Connector management |
+| ZIdentity | User, group, and API client management |
+| Tenant Management | Switch active tenant; add, list, or remove tenants |
+| Settings | Data reset and tenant management |
 | Audit Log | Scrollable viewer of all recorded operations |
 | Exit | Quit |
 
@@ -252,13 +264,75 @@ Use **Export CSV Template** to get a pre-filled starting point, or build your ow
 
 ---
 
+### ZCC Menu
+
+| Option | Description |
+|---|---|
+| Devices | List, search by username, view details, soft remove, force remove |
+| OTP Lookup | Fetch a one-time password for a specific device UDID |
+| App Profile Passwords | Look up profile passwords for a user/OS combination |
+| Export Devices CSV | Download enrolled device list as CSV, filterable by OS and registration state |
+| Export Service Status CSV | Download per-device service status as CSV, same filters |
+
+#### Devices submenu
+
+| Option | Description |
+|---|---|
+| List Devices | Paginated table filtered by OS type (iOS / Android / Windows / macOS / Linux) |
+| Search by Username | Filter device list by username |
+| Device Details | Full device record by username or UDID |
+| Soft Remove Device | Mark device as Removal Pending — unenrolled on next connection |
+| Force Remove Device | Immediately remove a Registered or Removal Pending device |
+
+---
+
+### ZIdentity Menu
+
+| Option | Description |
+|---|---|
+| Users | List, search, view details, reset password, set password, skip MFA |
+| Groups | List, search, view members, add/remove users |
+| API Clients | List, search, view details and secrets, add/delete secrets, delete client |
+
+#### Users
+
+| Option | Description |
+|---|---|
+| List Users | Full user list (up to 500) |
+| Search Users | Filter by login name, display name, or email (partial match on each) |
+| User Details | Profile panel with group membership and service entitlements |
+| Reset Password | Trigger a password reset for the selected user |
+| Set Password | Set a specific password; option to force reset on next login |
+| Skip MFA | Bypass MFA for 1 / 4 / 8 / 24 / 72 hours |
+
+#### Groups
+
+| Option | Description |
+|---|---|
+| List Groups | All groups with type (Static / Dynamic) |
+| Search Groups | Filter by name (partial match) |
+| Group Members | View all members of a selected group |
+| Add User to Group | Two-step: pick group → pick user |
+| Remove User from Group | Pick group → pick from current members |
+
+#### API Clients
+
+| Option | Description |
+|---|---|
+| List API Clients | All clients with status |
+| Search API Clients | Filter by name (partial match) |
+| Client Details & Secrets | Profile panel (name, status, scopes, token lifetime) plus secrets list |
+| Add Secret | Generate a new secret with optional expiry; secret value shown once |
+| Delete Secret | Pick from existing secrets by ID and expiry |
+| Delete API Client | Permanently remove a client |
+
+---
+
 ### Settings
 
 | Option | Description |
 |---|---|
 | Manage Tenants | Add, list, or remove tenants |
-| Generate Encryption Key | Rotate the Fernet key — **warning: invalidates all saved tenant secrets** |
-| Configure Server Credentials File | Write `zscaler-oneapi.conf` (chmod 600) for use with server-side tooling |
 | Clear Imported Data & Audit Log | Delete all ZPA resources, sync logs, and audit entries (tenant config is preserved) |
 
 ---
@@ -305,5 +379,5 @@ Tenant secrets are encrypted with [Fernet](https://cryptography.io/en/latest/fer
 
 - **New ZPA endpoint** → add a method to `lib/zpa_client.py`
 - **New CLI menu** → add a file under `cli/menus/`, wire into `main_menu.py`
-- **New product** (ZCC, ZDX, etc.) → add `lib/<product>_client.py` + `services/<product>_service.py`
+- **New product** (ZDX, ZTW, etc.) → add `lib/<product>_client.py` + `services/<product>_service.py` + `cli/menus/<product>_menu.py`; add a `get_<product>_client()` factory to `cli/menus/__init__.py`
 - **Reusable table view** → call `scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())` from `cli/scroll_view.py` and `cli/banner.py`

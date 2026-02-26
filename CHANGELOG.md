@@ -4,6 +4,56 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.4.1] - 2026-02-26
+
+### Fixed
+- **ZCC — List Devices**: removed `page` query parameter from default request; the ZCC API rejected it with a 400, likely treating it as invalid for this endpoint. `pageSize` alone is sufficient.
+- **ZIdentity — List Users / Groups / API Clients**: the ZIdentity SDK returns model wrapper objects (`Users`, `Groups`, `APIClients`) rather than plain lists. The shared `_to_dicts` helper tried to call `vars()` on these objects, causing `attribute name must be string, not 'int'`. Replaced with a dedicated `_zid_list` extractor that unpacks the wrapper via `as_dict()` and pulls the first list-valued field.
+
+---
+
+## [0.4.0] - 2026-02-26
+
+### Added
+
+#### ZCC — Zscaler Client Connector
+- **lib/zcc_client.py** — thin SDK adapter wrapping `_sdk.zcc.devices` and `_sdk.zcc.secrets`; includes `OS_TYPE_LABELS` and `REGISTRATION_STATE_LABELS` integer-to-string mappings
+- **services/zcc_service.py** — business logic layer with audit logging for all mutating and sensitive read operations
+- **Devices** — list (filterable by OS type), search by username, full device detail panel (username, device name, OS, ZCC version, registration state, UDID, last seen, location)
+- **Soft Remove Device** — marks device as Removal Pending; unenrolled on next ZCC connection
+- **Force Remove Device** — immediately removes a Registered or Removal Pending device; extra confirmation warning
+- **OTP Lookup** — fetch a one-time password by UDID; shown in a yellow panel with single-use warning
+- **App Profile Password Lookup** — retrieve profile passwords (exit, logout, uninstall, per-service disable) for a user/OS combination
+- **Export Devices CSV** — download enrolled device list with OS type and registration state filters
+- **Export Service Status CSV** — download per-device service status with same filters
+
+#### ZIdentity
+- **lib/zidentity_client.py** — SDK adapter for `_sdk.zidentity.users`, `.groups`, `.api_client`, `.user_entitlement`; three endpoints not yet in the SDK (`resetpassword`, `updatepassword`, `setskipmfa`) implemented via direct HTTP with a cached OAuth2 token (30 s early-refresh)
+- **services/zidentity_service.py** — business logic layer with audit logging for all mutating operations
+- **Users — List / Search** — filterable by login name, display name, email (partial match on each)
+- **User Details** — profile panel with group membership and service entitlements in a single view
+- **Reset Password** — trigger a password reset for the selected user
+- **Set Password** — set a specific password with optional force-reset-on-login flag
+- **Skip MFA** — bypass MFA for 1 / 4 / 8 / 24 / 72 hours; converts duration to UTC Unix timestamp
+- **Groups — List / Search** — with Static / Dynamic type indicator and optional dynamic-group exclusion filter
+- **Group Members** — full member table for any selected group
+- **Add User to Group** — two-step flow: pick group → search and pick user
+- **Remove User from Group** — pick group → select from current member list
+- **API Clients — List / Search** — with status, description, and ID
+- **Client Details & Secrets** — profile panel (name, status, scopes, token lifetime) plus secrets table (ID, expiry)
+- **Add Secret** — generate a new secret with no-expiry / 90 / 180 / 365-day options; secret value shown once in a copy-now panel
+- **Delete Secret** — select by ID and expiry from the client's current secrets
+- **Delete API Client** — with confirmation (default: No)
+
+### Changed
+
+#### CLI / UX
+- Main menu: "Switch Tenant" renamed to "Tenant Management"; now opens the full tenant management submenu (add / list / remove / switch)
+- "Switch Tenant" moved into the Tenant Management submenu as the first option
+- Settings menu: removed "Generate Encryption Key" and "Configure Server Credentials File" options (no longer needed)
+
+---
+
 ## [0.3.0] - 2026-02-25
 
 ### Added
