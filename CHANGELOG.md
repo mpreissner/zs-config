@@ -6,7 +6,28 @@ All notable changes to this project will be documented in this file.
 
 ## [0.8.0] - 2026-02-27
 
+### Fixed
+
+#### ZIA — Apply Baseline: skip `ZSCALER_PROXY_NW_SERVICES`
+- Added `SKIP_NAMED` constant — a per-type dict of resource names that are system-managed
+  but lack a `predefined:true` flag in their API response (e.g. `ZSCALER_PROXY_NW_SERVICES`
+  returns a 403 `EDIT_INTERNAL_DATA_NOT_ALLOWED` on any write attempt)
+- `_is_predefined()` now checks `SKIP_NAMED` in addition to the `predefined` boolean and
+  the `url_category` type-field heuristics; these resources are silently skipped during
+  classification and never queued for push
+
 ### Changed
+
+#### ZIA — Apply Baseline: dry-run comparison before push
+- `classify_baseline()` is now a standalone phase: runs a full import of the target tenant
+  and classifies each baseline entry as **create / update / skip** — no API writes
+- `push_classified()` accepts the `DryRunResult` returned by `classify_baseline()` and
+  executes the actual multi-pass push
+- `apply_baseline_menu()` now shows a **Comparison Result** table after classification
+  (type | Create | Update | Skip) plus a per-resource list of pending creates and updates
+  (capped at 30 each), then asks for confirmation before issuing any API calls
+- If the target is already in sync (0 creates, 0 updates), the user is informed and the
+  menu returns without making any API calls
 
 #### ZIA — Apply Baseline: delta-only push strategy
 - Before pushing anything, a full ZIA import is now run against the target tenant
