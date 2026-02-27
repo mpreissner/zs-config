@@ -19,16 +19,18 @@ def zia_menu():
         choice = questionary.select(
             "ZIA",
             choices=[
-                questionary.Choice("SSL Inspection", value="ssl"),
-                questionary.Choice("Locations", value="locations"),
-                questionary.Choice("Firewall Policy", value="firewall"),
-                questionary.Choice("URL Lookup", value="url_lookup"),
-                questionary.Separator(),
-                questionary.Choice("Security Policy Settings", value="security_policy"),
-                questionary.Choice("URL Categories", value="url_categories"),
+                questionary.Separator("── Web & URL Policy ──"),
                 questionary.Choice("URL Filtering", value="url_filtering"),
+                questionary.Choice("URL Categories", value="url_categories"),
+                questionary.Choice("Security Policy Settings", value="security_policy"),
+                questionary.Choice("URL Lookup", value="url_lookup"),
+                questionary.Separator("── Network Security ──"),
+                questionary.Choice("Firewall Policy", value="firewall"),
+                questionary.Choice("SSL Inspection", value="ssl"),
                 questionary.Choice("Traffic Forwarding", value="traffic_forwarding"),
+                questionary.Separator("── Identity & Access ──"),
                 questionary.Choice("Users", value="users"),
+                questionary.Choice("Locations", value="locations"),
                 questionary.Separator(),
                 questionary.Choice("Activation", value="activation"),
                 questionary.Choice("Import Config", value="import"),
@@ -39,26 +41,26 @@ def zia_menu():
             use_indicator=True,
         ).ask()
 
-        if choice == "activation":
-            activation_menu(client, tenant)
+        if choice == "url_filtering":
+            url_filtering_menu(client, tenant)
+        elif choice == "url_categories":
+            url_categories_menu(client, tenant)
+        elif choice == "security_policy":
+            security_policy_menu(client, tenant)
         elif choice == "url_lookup":
             _url_lookup(client, tenant)
         elif choice == "firewall":
             firewall_policy_menu(client, tenant)
-        elif choice == "locations":
-            locations_menu(client, tenant)
         elif choice == "ssl":
             ssl_inspection_menu(client, tenant)
-        elif choice == "security_policy":
-            security_policy_menu(client, tenant)
-        elif choice == "url_categories":
-            url_categories_menu(client, tenant)
-        elif choice == "url_filtering":
-            url_filtering_menu(client, tenant)
         elif choice == "traffic_forwarding":
             traffic_forwarding_menu(tenant)
         elif choice == "users":
             zia_users_menu(tenant)
+        elif choice == "locations":
+            locations_menu(client, tenant)
+        elif choice == "activation":
+            activation_menu(client, tenant)
         elif choice == "import":
             _import_zia_config(client, tenant)
         elif choice == "snapshots":

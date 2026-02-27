@@ -36,14 +36,15 @@ def zcc_menu():
         choice = questionary.select(
             "ZCC  Zscaler Client Connector",
             choices=[
+                questionary.Separator("── Devices ──"),
                 questionary.Choice("Devices", value="devices"),
-                questionary.Separator(),
+                questionary.Separator("── Device Credentials ──"),
+                questionary.Choice("OTP Lookup", value="otp"),
+                questionary.Choice("App Profile Passwords", value="passwords"),
+                questionary.Separator("── Configuration ──"),
                 questionary.Choice("Trusted Networks", value="trusted_networks"),
                 questionary.Choice("Forwarding Profiles", value="forwarding_profiles"),
                 questionary.Choice("Admin Users", value="admin_users"),
-                questionary.Separator(),
-                questionary.Choice("OTP Lookup", value="otp"),
-                questionary.Choice("App Profile Passwords", value="passwords"),
                 questionary.Separator(),
                 questionary.Choice("Export Devices CSV", value="export_devices"),
                 questionary.Choice("Export Service Status CSV", value="export_status"),
@@ -58,16 +59,16 @@ def zcc_menu():
 
         if choice == "devices":
             devices_menu(client, tenant)
+        elif choice == "otp":
+            _otp_lookup(client, tenant)
+        elif choice == "passwords":
+            _password_lookup(client, tenant)
         elif choice == "trusted_networks":
             trusted_networks_menu(tenant)
         elif choice == "forwarding_profiles":
             forwarding_profiles_menu(tenant)
         elif choice == "admin_users":
             admin_users_menu(tenant)
-        elif choice == "otp":
-            _otp_lookup(client, tenant)
-        elif choice == "passwords":
-            _password_lookup(client, tenant)
         elif choice == "export_devices":
             _export_devices(client, tenant)
         elif choice == "export_status":
