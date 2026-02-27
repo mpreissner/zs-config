@@ -4,6 +4,65 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.5.0] - 2026-02-27
+
+### Added
+
+#### ZPA — Menu Expansion
+- **App Segment Groups** — list and search from local DB cache (group name, enabled state, config space, application count)
+- **PRA Consoles** — list, search, enable/disable, and delete; follows same pattern as PRA Portals
+- **Service Edges** — new top-level ZPA submenu; list and search (name, group, channel status, private IP, version, enabled), enable/disable via API with immediate DB update
+- **Access Policy** — replaces [coming soon] stub; list and search policy_access rules from DB cache (name, action type, description)
+
+#### ZIA — Menu Expansion
+- **Security Policy Settings** — view, add to, and remove URLs from the allowlist and denylist
+- **URL Categories** — list all categories with ID, type, and URL count; search by name; add/remove custom URLs per category
+- **URL Filtering** — list and search rules (order, name, action, state); enable/disable checkbox multi-select
+- **Traffic Forwarding** — list and search forwarding rules (read-only DB view: name, type, description)
+- **Users** — list and search from DB cache (username, email, department, group count)
+
+#### ZCC — Menu Expansion
+- **Import Config** — sync ZCC device inventory, trusted networks, forwarding profiles, and admin users into local DB
+- **Reset N/A Resource Types** — clear auto-disabled ZCC resource types so they are retried on the next import
+- **Trusted Networks** — list and search from DB cache (name, network ID)
+- **Forwarding Profiles** — list and search from DB cache (name, profile type)
+- **Admin Users** — list and search from DB cache (username, role, email)
+
+#### Config Import Expansion (Priorities 1–2)
+
+**ZPA** — 7 new resource types added to the import service:
+`pra_console`, `service_edge_group`, `service_edge`, `server`, `machine_group`, `trusted_network`, `lss_config`
+
+**ZIA** — 5 new resource types:
+`user`, `dlp_engine`, `dlp_dictionary`, `allowlist` (singleton), `denylist` (singleton)
+
+**ZCC** — full new import service (`services/zcc_import_service.py`):
+`device`, `trusted_network`, `forwarding_profile`, `admin_user`
+Auto-disables resource types on 401 or 403; `ZCCResource` DB model mirrors ZPA/ZIA pattern.
+
+#### ZIA Client (`lib/zia_client.py`)
+- `list_dlp_engines`, `list_dlp_dictionaries`
+- `list_allowlist`, `list_denylist` (singleton wrappers for the import service)
+- `add_to_allowlist`, `remove_from_allowlist`, `add_to_denylist`, `remove_from_denylist`
+- `get_url_filtering_rule`, `update_url_filtering_rule`
+- `add_urls_to_category`, `remove_urls_from_category`
+
+#### ZPA Client (`lib/zpa_client.py`)
+- `get_policy_rule`, `update_policy_rule`
+- PRA Console CRUD: `list_pra_consoles`, `get_pra_console`, `create_pra_console`, `update_pra_console`, `delete_pra_console`
+- `list_service_edge_groups`, `list_service_edges`, `get_service_edge`, `update_service_edge`
+- `list_servers`, `list_machine_groups`, `list_trusted_networks`, `list_lss_configs`
+
+#### ZCC Client (`lib/zcc_client.py`)
+- `list_trusted_networks`, `list_forwarding_profiles`, `list_admin_users`
+
+#### Database
+- `ZCCResource` model (`db/models.py`) with `zcc_id` unique key and standard `raw_config` / `config_hash` / `is_deleted` columns
+- `zcc_disabled_resources` JSON column on `TenantConfig`
+- SQLite migration applied automatically on next launch
+
+---
+
 ## [0.4.1] - 2026-02-26
 
 ### Fixed

@@ -36,13 +36,21 @@ def zcc_menu():
         choice = questionary.select(
             "ZCC  Zscaler Client Connector",
             choices=[
+                questionary.Separator("── Devices ──"),
                 questionary.Choice("Devices", value="devices"),
-                questionary.Separator(),
+                questionary.Separator("── Device Credentials ──"),
                 questionary.Choice("OTP Lookup", value="otp"),
                 questionary.Choice("App Profile Passwords", value="passwords"),
+                questionary.Separator("── Configuration ──"),
+                questionary.Choice("Trusted Networks", value="trusted_networks"),
+                questionary.Choice("Forwarding Profiles", value="forwarding_profiles"),
+                questionary.Choice("Admin Users", value="admin_users"),
                 questionary.Separator(),
                 questionary.Choice("Export Devices CSV", value="export_devices"),
                 questionary.Choice("Export Service Status CSV", value="export_status"),
+                questionary.Separator(),
+                questionary.Choice("Import Config", value="import"),
+                questionary.Choice("Reset N/A Resource Types", value="reset_na"),
                 questionary.Separator(),
                 questionary.Choice("← Back", value="back"),
             ],
@@ -55,10 +63,20 @@ def zcc_menu():
             _otp_lookup(client, tenant)
         elif choice == "passwords":
             _password_lookup(client, tenant)
+        elif choice == "trusted_networks":
+            trusted_networks_menu(tenant)
+        elif choice == "forwarding_profiles":
+            forwarding_profiles_menu(tenant)
+        elif choice == "admin_users":
+            admin_users_menu(tenant)
         elif choice == "export_devices":
             _export_devices(client, tenant)
         elif choice == "export_status":
             _export_service_status(client, tenant)
+        elif choice == "import":
+            _import_zcc_config(client, tenant)
+        elif choice == "reset_na":
+            _reset_na_resources(client, tenant)
         elif choice in ("back", None):
             break
 
@@ -473,3 +491,315 @@ def _export_service_status(client, tenant):
 
     console.print(f"[green]✓ Saved to {filename}[/green]")
     questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+# ------------------------------------------------------------------
+# Import Config
+# ------------------------------------------------------------------
+
+def _import_zcc_config(client, tenant):
+    from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn
+    from services.zcc_import_service import ZCCImportService, RESOURCE_DEFINITIONS
+
+    console.print("\n[bold]Import ZCC Config[/bold]")
+    console.print(f"[dim]Fetching {len(RESOURCE_DEFINITIONS)} resource types from ZCC.[/dim]\n")
+
+    confirmed = questionary.confirm("Start import?", default=True).ask()
+    if not confirmed:
+        return
+
+    service = ZCCImportService(client, tenant_id=tenant.id)
+    total = len(RESOURCE_DEFINITIONS)
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total}"),
+        TimeElapsedColumn(),
+        console=console,
+        transient=True,
+    ) as progress:
+        task = progress.add_task("Importing...", total=total)
+
+        def on_progress(resource_type, done, _total):
+            progress.update(task, completed=done, description=f"[cyan]{resource_type}[/cyan]")
+
+        sync = service.run(progress_callback=on_progress)
+
+    status_style = "green" if sync.status == "SUCCESS" else (
+        "yellow" if sync.status == "PARTIAL" else "red"
+    )
+    console.print(f"\n[{status_style}]■ Sync {sync.status}[/{status_style}]")
+    console.print(f"  Resources synced:  {sync.resources_synced}")
+    console.print(f"  Records updated:   {sync.resources_updated}")
+    console.print(f"  Marked deleted:    {sync.resources_deleted}")
+    skipped = (sync.details or {}).get("skipped_na", [])
+    if skipped:
+        console.print(f"\n[dim]N/A (not entitled):[/dim] {', '.join(skipped)}")
+    if sync.error_message:
+        console.print(f"\n[yellow]Warnings:[/yellow]\n{sync.error_message}")
+
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def _reset_na_resources(client, tenant):
+    from services.zcc_import_service import ZCCImportService
+    service = ZCCImportService(client, tenant_id=tenant.id)
+    disabled = service._get_disabled_resource_types()
+    if not disabled:
+        console.print("[dim]No N/A resource types recorded for this tenant.[/dim]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+    console.print(f"\n[yellow]N/A resource types:[/yellow] {', '.join(disabled)}")
+    confirmed = questionary.confirm(
+        "Clear the N/A list? They will be retried on the next import.", default=False
+    ).ask()
+    if confirmed:
+        service.clear_disabled_resource_types()
+        console.print("[green]✓ N/A list cleared.[/green]")
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+# ------------------------------------------------------------------
+# Trusted Networks (read-only, from ZCCResource DB cache)
+# ------------------------------------------------------------------
+
+def trusted_networks_menu(tenant):
+    while True:
+        render_banner()
+        choice = questionary.select(
+            "Trusted Networks",
+            choices=[
+                questionary.Choice("List Trusted Networks", value="list"),
+                questionary.Choice("Search by Name", value="search"),
+                questionary.Separator(),
+                questionary.Choice("← Back", value="back"),
+            ],
+            use_indicator=True,
+        ).ask()
+
+        if choice == "list":
+            _list_trusted_networks(tenant)
+        elif choice == "search":
+            _search_trusted_networks(tenant)
+        elif choice in ("back", None):
+            break
+
+
+def _list_trusted_networks(tenant, search: str = None):
+    from db.database import get_session
+    from db.models import ZCCResource
+
+    with get_session() as session:
+        resources = (
+            session.query(ZCCResource)
+            .filter_by(tenant_id=tenant.id, resource_type="trusted_network", is_deleted=False)
+            .order_by(ZCCResource.name)
+            .all()
+        )
+        rows = [
+            {"name": r.name, "zcc_id": r.zcc_id, "raw_config": r.raw_config or {}}
+            for r in resources
+        ]
+
+    if search:
+        search_lower = search.lower()
+        rows = [
+            r for r in rows
+            if search_lower in (r["raw_config"].get("network_name") or r["name"] or "").lower()
+        ]
+
+    if not rows:
+        msg = (
+            f"[yellow]No trusted networks matching '{search}'.[/yellow]" if search
+            else "[yellow]No trusted networks in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
+        )
+        console.print(msg)
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    table = Table(title=f"ZCC Trusted Networks ({len(rows)} found)", show_lines=False)
+    table.add_column("Name")
+    table.add_column("DNS Servers")
+    table.add_column("DNS Search Domains")
+
+    for r in rows:
+        cfg = r["raw_config"]
+        name = cfg.get("network_name") or r["name"] or "—"
+        dns_servers = cfg.get("dns_servers") or "—"
+        dns_domains = cfg.get("dns_search_domains") or "—"
+        table.add_row(name, str(dns_servers), str(dns_domains))
+
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+    scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
+
+
+def _search_trusted_networks(tenant):
+    search = questionary.text("Search (name or partial):").ask()
+    if not search:
+        return
+    _list_trusted_networks(tenant, search=search.strip())
+
+
+# ------------------------------------------------------------------
+# Forwarding Profiles (read-only, from ZCCResource DB cache)
+# ------------------------------------------------------------------
+
+def forwarding_profiles_menu(tenant):
+    while True:
+        render_banner()
+        choice = questionary.select(
+            "Forwarding Profiles",
+            choices=[
+                questionary.Choice("List Forwarding Profiles", value="list"),
+                questionary.Choice("Search by Name", value="search"),
+                questionary.Separator(),
+                questionary.Choice("← Back", value="back"),
+            ],
+            use_indicator=True,
+        ).ask()
+
+        if choice == "list":
+            _list_forwarding_profiles(tenant)
+        elif choice == "search":
+            _search_forwarding_profiles(tenant)
+        elif choice in ("back", None):
+            break
+
+
+def _list_forwarding_profiles(tenant, search: str = None):
+    from db.database import get_session
+    from db.models import ZCCResource
+
+    with get_session() as session:
+        resources = (
+            session.query(ZCCResource)
+            .filter_by(tenant_id=tenant.id, resource_type="forwarding_profile", is_deleted=False)
+            .order_by(ZCCResource.name)
+            .all()
+        )
+        rows = [
+            {"name": r.name, "zcc_id": r.zcc_id, "raw_config": r.raw_config or {}}
+            for r in resources
+        ]
+
+    if search:
+        search_lower = search.lower()
+        rows = [r for r in rows if search_lower in (r["name"] or "").lower()]
+
+    if not rows:
+        msg = (
+            f"[yellow]No forwarding profiles matching '{search}'.[/yellow]" if search
+            else "[yellow]No forwarding profiles in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
+        )
+        console.print(msg)
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    table = Table(title=f"ZCC Forwarding Profiles ({len(rows)} found)", show_lines=False)
+    table.add_column("Name")
+    table.add_column("Active")
+    table.add_column("Evaluate Trusted Network")
+    table.add_column("Trusted Networks")
+
+    for r in rows:
+        cfg = r["raw_config"]
+        active = str(cfg.get("active", "")) == "1"
+        active_str = "[green]Yes[/green]" if active else "[red]No[/red]"
+        eval_tn = cfg.get("evaluate_trusted_network", 0)
+        eval_str = "Yes" if eval_tn else "No"
+        trusted = cfg.get("trusted_networks") or []
+        tn_str = ", ".join(trusted) if trusted else "[dim]None[/dim]"
+        table.add_row(r["name"] or "—", active_str, eval_str, tn_str)
+
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+    scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
+
+
+def _search_forwarding_profiles(tenant):
+    search = questionary.text("Search (name or partial):").ask()
+    if not search:
+        return
+    _list_forwarding_profiles(tenant, search=search.strip())
+
+
+# ------------------------------------------------------------------
+# Admin Users (read-only, from ZCCResource DB cache)
+# ------------------------------------------------------------------
+
+def admin_users_menu(tenant):
+    while True:
+        render_banner()
+        choice = questionary.select(
+            "Admin Users",
+            choices=[
+                questionary.Choice("List Admin Users", value="list"),
+                questionary.Choice("Search by Username", value="search"),
+                questionary.Separator(),
+                questionary.Choice("← Back", value="back"),
+            ],
+            use_indicator=True,
+        ).ask()
+
+        if choice == "list":
+            _list_admin_users(tenant)
+        elif choice == "search":
+            _search_admin_users(tenant)
+        elif choice in ("back", None):
+            break
+
+
+def _list_admin_users(tenant, search: str = None):
+    from db.database import get_session
+    from db.models import ZCCResource
+
+    with get_session() as session:
+        resources = (
+            session.query(ZCCResource)
+            .filter_by(tenant_id=tenant.id, resource_type="admin_user", is_deleted=False)
+            .order_by(ZCCResource.name)
+            .all()
+        )
+        rows = [
+            {"name": r.name, "zcc_id": r.zcc_id, "raw_config": r.raw_config or {}}
+            for r in resources
+        ]
+
+    if search:
+        search_lower = search.lower()
+        rows = [r for r in rows if search_lower in (r["name"] or "").lower()]
+
+    if not rows:
+        msg = (
+            f"[yellow]No admin users matching '{search}'.[/yellow]" if search
+            else "[yellow]No ZCC admin users found. This tenant may manage admins through ZIdentity instead.[/yellow]"
+        )
+        console.print(msg)
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    table = Table(title=f"ZCC Admin Users ({len(rows)} found)", show_lines=False)
+    table.add_column("Username")
+    table.add_column("Role")
+    table.add_column("Email")
+
+    for r in rows:
+        cfg = r["raw_config"]
+        username = r["name"] or cfg.get("login_name") or cfg.get("loginName") or "—"
+        role = cfg.get("role") or cfg.get("adminRole") or "—"
+        email = cfg.get("email") or "—"
+        table.add_row(username, str(role), str(email))
+
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+    scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
+
+
+def _search_admin_users(tenant):
+    search = questionary.text("Search (username or partial):").ask()
+    if not search:
+        return
+    _list_admin_users(tenant, search=search.strip())
