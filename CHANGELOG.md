@@ -4,6 +4,50 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.6.0] - 2026-02-27
+
+### Added
+
+#### ZIA — DLP CRUD
+- **DLP Engines** — list, search, view details (JSON scroll view), create from JSON file, edit from JSON file, delete; all mutations remind the user to activate changes in ZIA
+- **DLP Dictionaries** — same CRUD operations plus CSV-based creation and editing; CSV format: one value per row (header optional); phrases and patterns are supported separately
+- Both DLP submenus are accessible under a new `── DLP ──` section in the ZIA menu, inserted after `── Identity & Access ──`
+- DB is re-synced automatically after every create/update/delete via a targeted `ZIAImportService.run(resource_types=[...])` call
+
+#### ZIA Client (`lib/zia_client.py`)
+- `get_dlp_engine`, `create_dlp_engine`, `update_dlp_engine`, `delete_dlp_engine`
+- `get_dlp_dictionary`, `create_dlp_dictionary`, `update_dlp_dictionary`, `delete_dlp_dictionary`
+
+#### ZCC — Entitlements
+- **Entitlements** added to the `── Configuration ──` section of the ZCC menu
+- **View ZPA / ZDX Entitlements** — fetches live data and renders a group access table (or raw JSON if structure is non-standard)
+- **Manage ZPA / ZDX Group Access** — checkbox multi-select to toggle group access; confirms changes before PUT; audit-logged
+
+#### ZCC Client (`lib/zcc_client.py`)
+- OAuth2 direct-HTTP token management (same 30 s early-refresh pattern as `zidentity_client.py`)
+- `get_zpa_entitlements`, `get_zdx_entitlements` — GET from `mobileadmin/v1/getZpaGroupEntitlements` and `getZdxGroupEntitlements`
+- `update_zpa_entitlements`, `update_zdx_entitlements` — PUT to corresponding update endpoints
+
+#### ZDX — Help Desk Module (new product area)
+- **Main menu** — `ZDX  Zscaler Digital Experience` added between ZCC and ZIdentity
+- **Time window picker** — 2 / 4 / 8 / 24 hours, shown at menu entry or per-action as needed
+- **Device Lookup & Health** — hostname/email search → device picker → health metrics table + events table in a single scroll view
+- **App Performance on Device** — search device → list apps with ZDX scores → optional drill into a single app for detailed JSON metrics
+- **User Lookup** — email/name search → users table with device count and ZDX score
+- **Application Scores** — all apps with color-coded ZDX scores (green ≥80, yellow ≥50, red <50) and affected user count
+- **Deep Trace** — list traces per device; start new trace (device picker → optional app scope → session name → POST → status poll); view trace results (JSON); stop trace (DELETE)
+- All READ operations audit-logged with `product="ZDX"`; CREATE/DELETE mutations audit-logged with resource details
+
+#### New Files
+- `lib/zdx_client.py` — direct-HTTP ZDX client with OAuth2 token caching
+- `services/zdx_service.py` — thin service layer with audit logging
+- `cli/menus/zdx_menu.py` — full ZDX TUI menu
+
+#### Infrastructure
+- `cli/menus/__init__.py` — `get_zdx_client()` factory added
+
+---
+
 ## [0.5.0] - 2026-02-27
 
 ### Added
