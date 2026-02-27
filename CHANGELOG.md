@@ -4,6 +4,58 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.8.0] - 2026-02-27
+
+### Added
+
+#### ZIA — Import Gaps Filled (27 → 35 resource types)
+- `dlp_web_rule` — DLP Web Rules via `zia.dlp_web_rules.list_rules()`
+- `nat_control_rule` — NAT Control Policy via `zia.nat_control_policy.list_rules()`
+- `bandwidth_class` — Bandwidth Classes via `zia.bandwidth_classes.list_classes()`
+- `bandwidth_control_rule` — Bandwidth Control Rules via `zia.bandwidth_control_rules.list_rules()`
+- `traffic_capture_rule` — Traffic Capture Rules via `zia.traffic_capture.list_rules()`
+- `workload_group` — Workload Groups via `zia.workload_groups.list_groups()`
+- `network_app` — Network Apps (read-only) via `zia.cloud_firewall.list_network_apps()`
+- `network_app_group` — Network App Groups via `zia.cloud_firewall.list_network_app_groups()`
+
+#### ZIA — DLP Web Rules submenu
+- New **DLP Web Rules** entry under the `── DLP ──` section
+- Submenu: List All (ordered by policy order), Search by Name, View Details (JSON scroll view)
+
+#### ZIA — Apply Baseline from JSON (Push)
+- New `── Baseline ──` section in the ZIA menu with **Apply Baseline from JSON**
+- Reads a ZIA snapshot export JSON (must have `product: "ZIA"` and `resources` key)
+- Shows a summary table (resource type | count) before pushing
+- Runs ordered passes with retry until the error set stabilises
+- On HTTP 409: looks up existing resource by name in the target env and updates it
+- ID remapping: as objects are created/located, a `source_id → target_id` table is
+  built and applied to all subsequent payloads, handling cross-environment references
+- Push order: rule_label → time_interval → workload_group → bandwidth_class → URL/firewall
+  objects → locations → all rule types → allowlist/denylist
+- Skips env-specific types: `user`, `group`, `department`, `admin_user`, `admin_role`,
+  `location_group`, `network_app`, `cloud_app_policy`, `cloud_app_ssl_policy`
+- Skips predefined/system resources within `dlp_engine`, `dlp_dictionary`,
+  `url_category`, `network_service`
+- Allowlist/denylist: merge only (add entries, never replace existing list)
+- Final results table: type | created | updated | skipped | failed
+- Failure detail list for any resources that could not be pushed
+- Prompts to activate ZIA changes if anything was created or updated
+
+#### ZIA Client — write methods (~40 new)
+New `create_*` / `update_*` / `delete_*` methods for: `rule_label`, `time_interval`,
+`location`, `url_filtering_rule`, `firewall_rule`, `firewall_dns_rule`, `firewall_ips_rule`,
+`ssl_inspection_rule`, `forwarding_rule`, `ip_destination_group`, `ip_source_group`,
+`network_service`, `network_svc_group`, `network_app_group`, `dlp_web_rule`,
+`nat_control_rule`, `bandwidth_class`, `bandwidth_control_rule`, `traffic_capture_rule`,
+`workload_group`
+
+#### New file: `services/zia_push_service.py`
+- `ZIAPushService` — push engine with multi-pass retry, ID remapping, and per-record reporting
+- `PushRecord` dataclass — tracks per-resource outcome (created / updated / skipped / failed)
+- `PUSH_ORDER`, `SKIP_TYPES`, `SKIP_IF_PREDEFINED`, `READONLY_FIELDS` constants
+
+---
+
 ## [0.7.0] - 2026-02-27
 
 ### Added
