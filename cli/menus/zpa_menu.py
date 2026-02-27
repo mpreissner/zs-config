@@ -21,13 +21,18 @@ def zpa_menu():
         choice = questionary.select(
             "ZPA",
             choices=[
-                questionary.Choice("Application Segments", value="apps"),
-                questionary.Choice("Certificate Management", value="certs"),
-                questionary.Choice("Connectors", value="connectors"),
-                questionary.Choice("Privileged Remote Access", value="pra"),
+                questionary.Separator("── Infrastructure ──"),
+                questionary.Choice("App Connectors", value="connectors"),
                 questionary.Choice("Service Edges", value="edges"),
-                questionary.Separator(),
+                questionary.Separator("── Applications ──"),
+                questionary.Choice("Application Segments", value="apps"),
+                questionary.Choice("App Segment Groups", value="seg_groups"),
+                questionary.Separator("── Policy ──"),
                 questionary.Choice("Access Policy", value="policy"),
+                questionary.Separator("── PRA ──"),
+                questionary.Choice("Privileged Remote Access", value="pra"),
+                questionary.Separator("── Certificates ──"),
+                questionary.Choice("Certificate Management", value="certs"),
                 questionary.Separator(),
                 questionary.Choice("Import Config", value="import"),
                 questionary.Choice("Config Snapshots", value="snapshots"),
@@ -37,7 +42,19 @@ def zpa_menu():
             use_indicator=True,
         ).ask()
 
-        if choice == "certs":
+        if choice == "connectors":
+            connectors_menu(client, tenant)
+        elif choice == "edges":
+            service_edges_menu(client, tenant)
+        elif choice == "apps":
+            app_segments_menu(client, tenant)
+        elif choice == "seg_groups":
+            segment_groups_menu(client, tenant)
+        elif choice == "policy":
+            access_policy_menu(client, tenant)
+        elif choice == "pra":
+            privileged_access_menu(client, tenant)
+        elif choice == "certs":
             cert_menu(client, tenant)
         elif choice == "import":
             _import_config(client, tenant)
@@ -45,16 +62,6 @@ def zpa_menu():
             snapshots_menu(tenant, "ZPA")
         elif choice == "reset_na":
             _reset_na_resources(client, tenant)
-        elif choice == "apps":
-            app_segments_menu(client, tenant)
-        elif choice == "pra":
-            privileged_access_menu(client, tenant)
-        elif choice == "edges":
-            service_edges_menu(client, tenant)
-        elif choice == "policy":
-            access_policy_menu(client, tenant)
-        elif choice == "connectors":
-            connectors_menu(client, tenant)
         elif choice in ("back", None):
             break
 
@@ -248,7 +255,6 @@ def app_segments_menu(client, tenant):
                 questionary.Choice("List Segments", value="list"),
                 questionary.Choice("Search by Domain", value="search"),
                 questionary.Choice("Enable / Disable", value="toggle"),
-                questionary.Choice("App Segment Groups", value="seg_groups"),
                 questionary.Separator(),
                 questionary.Choice("Bulk Create from CSV", value="bulk"),
                 questionary.Choice("Export CSV Template", value="template"),
@@ -265,8 +271,6 @@ def app_segments_menu(client, tenant):
             _search_by_domain(tenant)
         elif choice == "toggle":
             _toggle_enable(client, tenant)
-        elif choice == "seg_groups":
-            segment_groups_menu(client, tenant)
         elif choice == "bulk":
             _bulk_create(client, tenant)
         elif choice == "template":
@@ -1385,7 +1389,7 @@ def connectors_menu(client, tenant):
     while True:
         render_banner()
         choice = questionary.select(
-            "Connectors",
+            "App Connectors",
             choices=[
                 questionary.Choice("List Connectors", value="list"),
                 questionary.Choice("Search Connectors", value="search"),
