@@ -328,7 +328,7 @@ Entries are grouped into labeled sections.
 | Option | Description |
 |---|---|
 | Activation | View activation status; push pending ZIA policy changes |
-| Import Config | Pull a full ZIA config snapshot (27 resource types) into the local DB |
+| Import Config | Pull a full ZIA config snapshot (35 resource types) into the local DB |
 | Config Snapshots | Save, compare, export, and delete point-in-time config snapshots |
 | Reset N/A Resource Types | Clear the list of auto-disabled resource types so they are retried on the next import |
 

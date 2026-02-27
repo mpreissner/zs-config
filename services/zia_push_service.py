@@ -99,6 +99,12 @@ SKIP_IF_PREDEFINED: set = {
     "network_service",
 }
 
+# Specific resource names that are system-managed and must never be pushed,
+# even when the 'predefined' flag is absent from the API response.
+SKIP_NAMED: dict = {
+    "network_service": {"ZSCALER_PROXY_NW_SERVICES"},
+}
+
 # Fields stripped from raw_config before comparison and before push
 READONLY_FIELDS: set = {
     "id",
@@ -705,8 +711,12 @@ def _is_predefined(resource_type: str, raw_config: dict) -> bool:
     Different resource types use different fields to signal predefined status:
     - dlp_engine, dlp_dictionary, network_service: predefined:true boolean
     - url_category: type:"ZSCALER_DEFINED" (no predefined field)
+    - SKIP_NAMED: hardcoded names that lack the predefined flag but are still system-owned
     """
     if raw_config.get("predefined"):
+        return True
+    name = raw_config.get("name", "")
+    if name and name in SKIP_NAMED.get(resource_type, set()):
         return True
     if resource_type == "url_category":
         if raw_config.get("type") == "ZSCALER_DEFINED":
