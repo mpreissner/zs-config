@@ -34,6 +34,9 @@ def zia_menu():
                 questionary.Separator("── DLP ──"),
                 questionary.Choice("DLP Engines", value="dlp_engines"),
                 questionary.Choice("DLP Dictionaries", value="dlp_dictionaries"),
+                questionary.Separator("── Cloud Apps ──"),
+                questionary.Choice("Cloud Applications", value="cloud_applications"),
+                questionary.Choice("Cloud App Control", value="cloud_app_control"),
                 questionary.Separator(),
                 questionary.Choice("Activation", value="activation"),
                 questionary.Choice("Import Config", value="import"),
@@ -66,6 +69,10 @@ def zia_menu():
             dlp_engines_menu(client, tenant)
         elif choice == "dlp_dictionaries":
             dlp_dictionaries_menu(client, tenant)
+        elif choice == "cloud_applications":
+            cloud_applications_menu(client, tenant)
+        elif choice == "cloud_app_control":
+            cloud_app_control_menu(client, tenant)
         elif choice == "activation":
             activation_menu(client, tenant)
         elif choice == "import":
@@ -2479,6 +2486,364 @@ def _delete_dlp_dictionary(client, tenant):
         console.print("[green]✓ DLP dictionary deleted.[/green]")
         console.print("[yellow]Remember to activate changes in ZIA.[/yellow]")
         _sync_dlp_resource(client, tenant, "dlp_dictionary")
+    except Exception as e:
+        console.print(f"[red]✗ Error: {e}[/red]")
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+# ------------------------------------------------------------------
+# Cloud Applications
+# ------------------------------------------------------------------
+
+def cloud_applications_menu(client, tenant):
+    while True:
+        render_banner()
+        choice = questionary.select(
+            "Cloud Applications",
+            choices=[
+                questionary.Choice("List Policy Apps (DLP / CAC)", value="list_policy"),
+                questionary.Choice("List SSL Policy Apps", value="list_ssl"),
+                questionary.Choice("Search by Name", value="search"),
+                questionary.Separator(),
+                questionary.Choice("← Back", value="back"),
+            ],
+            use_indicator=True,
+        ).ask()
+
+        if choice == "list_policy":
+            _list_cloud_apps(client, policy_type="policy")
+        elif choice == "list_ssl":
+            _list_cloud_apps(client, policy_type="ssl")
+        elif choice == "search":
+            _search_cloud_apps(client)
+        elif choice in ("back", None):
+            break
+
+
+def _list_cloud_apps(client, policy_type: str = "policy", search: str = None):
+    label = "SSL Policy Apps" if policy_type == "ssl" else "Policy Apps"
+    with console.status(f"Fetching {label}..."):
+        try:
+            if policy_type == "ssl":
+                apps = client.list_cloud_app_ssl_policy(search=search)
+            else:
+                apps = client.list_cloud_app_policy(search=search)
+        except Exception as e:
+            console.print(f"[red]✗ {e}[/red]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            return
+
+    if not apps:
+        msg = f"[yellow]No apps matching '{search}'.[/yellow]" if search else f"[yellow]No {label} returned.[/yellow]"
+        console.print(msg)
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    table = Table(title=f"{label} ({len(apps)} total)", show_lines=False)
+    table.add_column("Name")
+    table.add_column("App Class")
+    table.add_column("App Type")
+    table.add_column("ID", style="dim")
+
+    for app in apps:
+        name = app.get("name") or app.get("appName") or "—"
+        app_class = app.get("appClass") or "—"
+        app_type = app.get("appType") or "—"
+        app_id = str(app.get("id") or "—")
+        table.add_row(name, app_class, app_type, app_id)
+
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+    scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
+
+
+def _search_cloud_apps(client):
+    search = questionary.text("Search (app name or partial):").ask()
+    if not search:
+        return
+    choice = questionary.select(
+        "Search in:",
+        choices=[
+            questionary.Choice("Policy Apps (DLP / CAC)", value="policy"),
+            questionary.Choice("SSL Policy Apps", value="ssl"),
+        ],
+    ).ask()
+    if not choice:
+        return
+    _list_cloud_apps(client, policy_type=choice, search=search.strip())
+
+
+# ------------------------------------------------------------------
+# Cloud App Control
+# ------------------------------------------------------------------
+
+def cloud_app_control_menu(client, tenant):
+    while True:
+        render_banner()
+        with console.status("Loading rule types..."):
+            try:
+                type_map = client.get_cloud_app_rule_types()
+            except Exception as e:
+                console.print(f"[red]✗ Could not fetch rule types: {e}[/red]")
+                questionary.press_any_key_to_continue("Press any key to continue...").ask()
+                return
+
+        if not type_map:
+            console.print("[yellow]No rule types returned from API.[/yellow]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            return
+
+        type_choices = [
+            questionary.Choice(k.replace("_", " ").title(), value=k)
+            for k in sorted(type_map.keys())
+        ] + [questionary.Separator(), questionary.Choice("← Back", value="back")]
+
+        rule_type = questionary.select(
+            "Cloud App Control — Select Rule Type",
+            choices=type_choices,
+            use_indicator=True,
+        ).ask()
+
+        if rule_type in ("back", None):
+            break
+
+        _cloud_app_rules_menu(client, tenant, rule_type)
+
+
+def _cloud_app_rules_menu(client, tenant, rule_type: str):
+    label = rule_type.replace("_", " ").title()
+    while True:
+        render_banner()
+        choice = questionary.select(
+            f"Cloud App Control — {label}",
+            choices=[
+                questionary.Choice("List Rules", value="list"),
+                questionary.Choice("View Details", value="view"),
+                questionary.Separator(),
+                questionary.Choice("Create from JSON File", value="create"),
+                questionary.Choice("Edit from JSON File", value="edit"),
+                questionary.Choice("Duplicate Rule", value="duplicate"),
+                questionary.Choice("Delete Rule", value="delete"),
+                questionary.Separator(),
+                questionary.Choice("← Back", value="back"),
+            ],
+            use_indicator=True,
+        ).ask()
+
+        if choice == "list":
+            _list_cloud_app_rules(client, rule_type)
+        elif choice == "view":
+            _view_cloud_app_rule(client, rule_type)
+        elif choice == "create":
+            _create_cloud_app_rule(client, tenant, rule_type)
+        elif choice == "edit":
+            _edit_cloud_app_rule(client, tenant, rule_type)
+        elif choice == "duplicate":
+            _duplicate_cloud_app_rule(client, tenant, rule_type)
+        elif choice == "delete":
+            _delete_cloud_app_rule(client, tenant, rule_type)
+        elif choice in ("back", None):
+            break
+
+
+def _fetch_cloud_app_rules(client, rule_type: str):
+    """Fetch rules live from API, sorted by order."""
+    rules = client.list_cloud_app_rules(rule_type)
+    rules.sort(key=lambda r: r.get("order") or r.get("rank") or 0)
+    return rules
+
+
+def _pick_cloud_app_rule(client, rule_type: str):
+    """Fetch rules live and let user pick one. Returns rule dict or None."""
+    with console.status("Fetching rules..."):
+        try:
+            rules = _fetch_cloud_app_rules(client, rule_type)
+        except Exception as e:
+            console.print(f"[red]✗ {e}[/red]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            return None
+
+    if not rules:
+        console.print("[yellow]No rules found for this rule type.[/yellow]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return None
+
+    return questionary.select(
+        "Select rule:",
+        choices=[
+            questionary.Choice(
+                f"{r.get('name', '?')}  (ID: {r.get('id', '?')}  order: {r.get('order', '—')})",
+                value=r,
+            )
+            for r in rules
+        ],
+    ).ask()
+
+
+def _list_cloud_app_rules(client, rule_type: str):
+    with console.status("Fetching rules..."):
+        try:
+            rules = _fetch_cloud_app_rules(client, rule_type)
+        except Exception as e:
+            console.print(f"[red]✗ {e}[/red]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            return
+
+    label = rule_type.replace("_", " ").title()
+    if not rules:
+        console.print(f"[yellow]No rules configured for {label}.[/yellow]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    table = Table(title=f"{label} Rules ({len(rules)})", show_lines=False)
+    table.add_column("Order", justify="right")
+    table.add_column("Name")
+    table.add_column("State")
+    table.add_column("Actions")
+    table.add_column("Description")
+
+    for r in rules:
+        order = str(r.get("order") or r.get("rank") or "—")
+        name = r.get("name") or "—"
+        state_val = r.get("state") or "—"
+        state_str = (
+            f"[green]{state_val}[/green]" if state_val == "ENABLED"
+            else f"[red]{state_val}[/red]" if state_val == "DISABLED"
+            else state_val
+        )
+        actions = ", ".join(r.get("actions") or []) or "—"
+        if len(actions) > 50:
+            actions = actions[:47] + "..."
+        desc = str(r.get("description") or "")[:50]
+        table.add_row(order, name, state_str, actions, desc)
+
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+    scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
+
+
+def _view_cloud_app_rule(client, rule_type: str):
+    chosen = _pick_cloud_app_rule(client, rule_type)
+    if not chosen:
+        return
+    _view_raw_json(f"{rule_type} — {chosen.get('name', '?')}", chosen)
+
+
+def _create_cloud_app_rule(client, tenant, rule_type: str):
+    import json
+    from services import audit_service
+    console.print(f"\n[bold]Create Cloud App Control Rule — {rule_type.replace('_', ' ').title()}[/bold]")
+    path = questionary.text("Path to JSON file:").ask()
+    if not path:
+        return
+    try:
+        with open(path.strip()) as fh:
+            config = json.load(fh)
+    except Exception as e:
+        console.print(f"[red]✗ Could not read file: {e}[/red]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    console.print(f"[dim]Creating rule: {config.get('name', '(unnamed)')}[/dim]")
+    try:
+        result = client.create_cloud_app_rule(rule_type, config)
+        console.print(f"[green]✓ Created rule ID {result.get('id', '?')}.[/green]")
+        console.print("[yellow]Remember to activate changes in ZIA.[/yellow]")
+        audit_service.log(
+            product="ZIA", operation="create_cloud_app_rule", action="CREATE",
+            status="SUCCESS", tenant_id=tenant.id,
+            resource_type=rule_type, details={"name": config.get("name")},
+        )
+    except Exception as e:
+        console.print(f"[red]✗ Error: {e}[/red]")
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def _edit_cloud_app_rule(client, tenant, rule_type: str):
+    import json
+    from services import audit_service
+    chosen = _pick_cloud_app_rule(client, rule_type)
+    if not chosen:
+        return
+
+    _view_raw_json(f"Current — {chosen.get('name', '?')}", chosen)
+
+    path = questionary.text("Path to JSON file with updated config:").ask()
+    if not path:
+        return
+    try:
+        with open(path.strip()) as fh:
+            config = json.load(fh)
+    except Exception as e:
+        console.print(f"[red]✗ Could not read file: {e}[/red]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    rule_id = str(chosen.get("id", ""))
+    try:
+        client.update_cloud_app_rule(rule_type, rule_id, config)
+        console.print(f"[green]✓ Rule updated.[/green]")
+        console.print("[yellow]Remember to activate changes in ZIA.[/yellow]")
+        audit_service.log(
+            product="ZIA", operation="update_cloud_app_rule", action="UPDATE",
+            status="SUCCESS", tenant_id=tenant.id,
+            resource_type=rule_type, details={"id": rule_id, "name": chosen.get("name")},
+        )
+    except Exception as e:
+        console.print(f"[red]✗ Error: {e}[/red]")
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def _duplicate_cloud_app_rule(client, tenant, rule_type: str):
+    from services import audit_service
+    chosen = _pick_cloud_app_rule(client, rule_type)
+    if not chosen:
+        return
+
+    new_name = questionary.text(
+        "Name for duplicate rule:",
+        default=f"Copy of {chosen.get('name', '')}",
+    ).ask()
+    if not new_name:
+        return
+
+    rule_id = str(chosen.get("id", ""))
+    try:
+        result = client.duplicate_cloud_app_rule(rule_type, rule_id, new_name)
+        console.print(f"[green]✓ Duplicated as '{new_name}' (ID {result.get('id', '?')}).[/green]")
+        console.print("[yellow]Remember to activate changes in ZIA.[/yellow]")
+        audit_service.log(
+            product="ZIA", operation="duplicate_cloud_app_rule", action="CREATE",
+            status="SUCCESS", tenant_id=tenant.id,
+            resource_type=rule_type, details={"source_id": rule_id, "new_name": new_name},
+        )
+    except Exception as e:
+        console.print(f"[red]✗ Error: {e}[/red]")
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def _delete_cloud_app_rule(client, tenant, rule_type: str):
+    from services import audit_service
+    chosen = _pick_cloud_app_rule(client, rule_type)
+    if not chosen:
+        return
+
+    confirmed = questionary.confirm(
+        f"Delete rule '{chosen.get('name', '?')}' (ID: {chosen.get('id', '?')})? This cannot be undone.",
+        default=False,
+    ).ask()
+    if not confirmed:
+        return
+
+    rule_id = str(chosen.get("id", ""))
+    try:
+        client.delete_cloud_app_rule(rule_type, rule_id)
+        console.print(f"[green]✓ Rule deleted.[/green]")
+        console.print("[yellow]Remember to activate changes in ZIA.[/yellow]")
+        audit_service.log(
+            product="ZIA", operation="delete_cloud_app_rule", action="DELETE",
+            status="SUCCESS", tenant_id=tenant.id,
+            resource_type=rule_type, details={"id": rule_id, "name": chosen.get("name")},
+        )
     except Exception as e:
         console.print(f"[red]✗ Error: {e}[/red]")
     questionary.press_any_key_to_continue("Press any key to continue...").ask()
