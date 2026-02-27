@@ -604,7 +604,10 @@ def _list_trusted_networks(tenant, search: str = None):
 
     if search:
         search_lower = search.lower()
-        rows = [r for r in rows if search_lower in (r["name"] or "").lower()]
+        rows = [
+            r for r in rows
+            if search_lower in (r["raw_config"].get("network_name") or r["name"] or "").lower()
+        ]
 
     if not rows:
         msg = (
@@ -617,14 +620,18 @@ def _list_trusted_networks(tenant, search: str = None):
 
     table = Table(title=f"ZCC Trusted Networks ({len(rows)} found)", show_lines=False)
     table.add_column("Name")
-    table.add_column("Network Range / Domain")
-    table.add_column("Type")
+    table.add_column("DNS Servers")
+    table.add_column("DNS Search Domains")
+    table.add_column("Active")
 
     for r in rows:
         cfg = r["raw_config"]
-        network = cfg.get("network_range") or cfg.get("networkRange") or cfg.get("domain") or "—"
-        net_type = cfg.get("type") or cfg.get("networkType") or "—"
-        table.add_row(r["name"] or "—", str(network), str(net_type))
+        name = cfg.get("network_name") or r["name"] or "—"
+        dns_servers = cfg.get("dns_servers") or "—"
+        dns_domains = cfg.get("dns_search_domains") or "—"
+        active = cfg.get("active")
+        active_str = "[green]Yes[/green]" if active else "[red]No[/red]"
+        table.add_row(name, str(dns_servers), str(dns_domains), active_str)
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view

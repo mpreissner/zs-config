@@ -37,7 +37,7 @@ class ResourceDef:
 # All resource types we import.  Order doesn't matter.
 RESOURCE_DEFINITIONS: List[ResourceDef] = [
     ResourceDef("device",             "list_devices",           id_field="udid", name_field="machine_hostname"),
-    ResourceDef("trusted_network",    "list_trusted_networks"),
+    ResourceDef("trusted_network",    "list_trusted_networks",  name_field="network_name"),
     ResourceDef("forwarding_profile", "list_forwarding_profiles"),
     ResourceDef("admin_user",         "list_admin_users",       name_field="username"),
 ]
