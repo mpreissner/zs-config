@@ -26,7 +26,7 @@ def main_menu():
                 questionary.Choice("  ZCC   Zscaler Client Connector", value="zcc"),
                 questionary.Choice("  ZIdentity", value="zidentity"),
                 questionary.Separator(),
-                questionary.Choice(_active_tenant_label(), value="tenant_mgmt"),
+                questionary.Choice(_active_tenant_label(), value="switch_tenant"),
                 questionary.Choice("  Settings", value="settings"),
                 questionary.Choice("  Audit Log", value="audit"),
                 questionary.Separator(),
@@ -47,8 +47,8 @@ def main_menu():
         elif choice == "zidentity":
             from cli.menus.zidentity_menu import zidentity_menu
             zidentity_menu()
-        elif choice == "tenant_mgmt":
-            tenant_management_menu()
+        elif choice == "switch_tenant":
+            _switch_tenant()
         elif choice == "settings":
             settings_menu()
         elif choice == "audit":
@@ -85,7 +85,9 @@ def settings_menu():
         choice = questionary.select(
             "Settings",
             choices=[
-                questionary.Choice("Manage Tenants", value="tenants"),
+                questionary.Choice("Add Tenant", value="add"),
+                questionary.Choice("List Tenants", value="list"),
+                questionary.Choice("Remove Tenant", value="remove"),
                 questionary.Separator(),
                 questionary.Choice("Clear Imported Data & Audit Log", value="cleardata"),
                 questionary.Separator(),
@@ -93,40 +95,17 @@ def settings_menu():
             ],
         ).ask()
 
-        if choice == "tenants":
-            tenant_management_menu()
-        elif choice == "cleardata":
-            _clear_imported_data()
-        elif choice in ("back", None):
-            break
-
-
-def tenant_management_menu():
-    while True:
-        render_banner()
-        choice = questionary.select(
-            "Manage Tenants",
-            choices=[
-                questionary.Choice("Switch Tenant", value="switch"),
-                questionary.Separator(),
-                questionary.Choice("Add Tenant", value="add"),
-                questionary.Choice("List Tenants", value="list"),
-                questionary.Choice("Remove Tenant", value="remove"),
-                questionary.Separator(),
-                questionary.Choice("← Back", value="back"),
-            ],
-        ).ask()
-
-        if choice == "switch":
-            _switch_tenant()
-        elif choice == "add":
+        if choice == "add":
             _add_tenant()
         elif choice == "list":
             _list_tenants()
         elif choice == "remove":
             _remove_tenant()
+        elif choice == "cleardata":
+            _clear_imported_data()
         elif choice in ("back", None):
             break
+
 
 
 def _add_tenant():
