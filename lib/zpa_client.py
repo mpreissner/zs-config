@@ -1,8 +1,17 @@
 from typing import Dict, List, Optional
 
 from zscaler import ZscalerClient
+from zscaler.zpa.service_edges import ServiceEdgeControllerAPI
 
 from .auth import ZscalerAuth
+
+# Workaround for SDK bug: ServiceEdgeControllerAPI.list_service_edges references
+# self._zpa but __init__ only sets self._zpa_base_endpoint. Patch it as a
+# property on the class so every instance gets the fix regardless of install method.
+if not hasattr(ServiceEdgeControllerAPI, "_zpa") or not isinstance(
+    getattr(ServiceEdgeControllerAPI, "_zpa", None), property
+):
+    ServiceEdgeControllerAPI._zpa = property(lambda self: self._zpa_base_endpoint)
 
 
 def _unwrap(result, resp, err):
@@ -51,11 +60,6 @@ class ZPAClient:
             "vanityDomain": auth.vanity_domain,
             "customerId": customer_id,
         })
-        # Workaround for SDK bug: ServiceEdgeControllerAPI.list_service_edges
-        # references self._zpa but __init__ only sets self._zpa_base_endpoint.
-        se = self._sdk.zpa.service_edges
-        if not hasattr(se, "_zpa") and hasattr(se, "_zpa_base_endpoint"):
-            se._zpa = se._zpa_base_endpoint
 
     # ------------------------------------------------------------------
     # Certificates
