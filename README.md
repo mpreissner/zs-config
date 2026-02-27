@@ -12,8 +12,8 @@ Automation toolset for Zscaler OneAPI — interactive TUI with a local DB cache 
 - **Interactive TUI** — Rich terminal UI with a persistent banner, full-screen scrollable table views, and keyboard-driven navigation
 - **ZPA** — App Connectors (list/search/enable-disable/rename/delete), Connector Groups (full CRUD), Application Segments (list/search/enable-disable/bulk-create from CSV), App Segment Groups (list/search), Access Policy (list/search), PRA Portals (full CRUD), PRA Consoles (list/search/enable-disable/delete), Service Edges (list/search/enable-disable), Certificate Management (upload/rotate/delete)
 - **ZPA Config Import** — pull a full snapshot of 25 resource types into a local SQLite cache for fast lookups
-- **ZIA** — URL Filtering (list/search/enable-disable), URL Categories (list/search/add-remove URLs), Security Policy Settings (allowlist/denylist view and edit), URL Lookup, Firewall Policy (L4 rules, DNS filter rules, IPS rules), SSL Inspection (list/search/enable-disable), Traffic Forwarding (list/search), Locations (list/search), Users (list/search), DLP Engines (full CRUD + JSON import), DLP Dictionaries (full CRUD + JSON/CSV import), Cloud Applications (list/search policy and SSL-policy apps), Cloud App Control (full CRUD by rule type), Policy Activation
-- **ZIA Config Import** — pull a full snapshot of 27 resource types into a local SQLite cache
+- **ZIA** — URL Filtering (list/search/enable-disable), URL Categories (list/search/add-remove URLs), Security Policy Settings (allowlist/denylist view and edit), URL Lookup, Firewall Policy (L4 rules, DNS filter rules, IPS rules), SSL Inspection (list/search/enable-disable), Traffic Forwarding (list/search), Locations (list/search), Users (list/search), DLP Engines (full CRUD + JSON import), DLP Dictionaries (full CRUD + JSON/CSV import), DLP Web Rules (list/search/view), Cloud Applications (list/search policy and SSL-policy apps), Cloud App Control (full CRUD by rule type), **Apply Baseline from JSON** (push a snapshot export to a live tenant with multi-pass retry and ID remapping), Policy Activation
+- **ZIA Config Import** — pull a full snapshot of 35 resource types into a local SQLite cache
 - **ZCC Device Management** — list, search, and view enrolled devices; soft and force remove; OTP lookup; app profile password lookup; CSV exports for devices and service status
 - **ZCC Config Import** — sync devices, trusted networks, forwarding profiles, and admin users into a local SQLite cache
 - **ZCC Configuration** — Trusted Networks (list/search), Forwarding Profiles (list/search), Admin Users (list/search), Entitlements (view and manage ZPA and ZDX group access)
@@ -52,7 +52,8 @@ zs-config/
 │   ├── zpa_import_service.py    # ZPA config import (25 resource types)
 │   ├── zpa_segment_service.py   # App segment bulk-create logic
 │   ├── zia_service.py           # ZIA workflows
-│   ├── zia_import_service.py    # ZIA config import (24 resource types)
+│   ├── zia_import_service.py    # ZIA config import (35 resource types)
+│   ├── zia_push_service.py      # ZIA baseline push engine (multi-pass, ID remap)
 │   ├── zcc_service.py           # ZCC workflows (device management, secrets)
 │   ├── zcc_import_service.py    # ZCC config import (devices, networks, profiles, admins)
 │   ├── zdx_service.py           # ZDX workflows (device health, deep trace)
