@@ -268,9 +268,41 @@ class ZIAClient:
         result, resp, err = self._sdk.zia.dlp_engine.list_dlp_engines()
         return _to_dicts(_unwrap(result, resp, err))
 
+    def get_dlp_engine(self, engine_id: str) -> Dict:
+        result, resp, err = self._sdk.zia.dlp_engine.get_dlp_engine(int(engine_id))
+        return _to_dict(_unwrap(result, resp, err))
+
+    def create_dlp_engine(self, config: Dict) -> Dict:
+        result, resp, err = self._sdk.zia.dlp_engine.add_dlp_engine(**config)
+        return _to_dict(_unwrap(result, resp, err))
+
+    def update_dlp_engine(self, engine_id: str, config: Dict) -> Dict:
+        result, resp, err = self._sdk.zia.dlp_engine.update_dlp_engine(int(engine_id), **config)
+        return _to_dict(_unwrap(result, resp, err))
+
+    def delete_dlp_engine(self, engine_id: str) -> None:
+        result, resp, err = self._sdk.zia.dlp_engine.delete_dlp_engine(int(engine_id))
+        _unwrap(result, resp, err)
+
     def list_dlp_dictionaries(self) -> List[Dict]:
         result, resp, err = self._sdk.zia.dlp_dictionary.list_dicts()
         return _to_dicts(_unwrap(result, resp, err))
+
+    def get_dlp_dictionary(self, dict_id: str) -> Dict:
+        result, resp, err = self._sdk.zia.dlp_dictionary.get_dict(int(dict_id))
+        return _to_dict(_unwrap(result, resp, err))
+
+    def create_dlp_dictionary(self, config: Dict) -> Dict:
+        result, resp, err = self._sdk.zia.dlp_dictionary.add_dict(**config)
+        return _to_dict(_unwrap(result, resp, err))
+
+    def update_dlp_dictionary(self, dict_id: str, config: Dict) -> Dict:
+        result, resp, err = self._sdk.zia.dlp_dictionary.update_dict(int(dict_id), **config)
+        return _to_dict(_unwrap(result, resp, err))
+
+    def delete_dlp_dictionary(self, dict_id: str) -> None:
+        result, resp, err = self._sdk.zia.dlp_dictionary.delete_dict(int(dict_id))
+        _unwrap(result, resp, err)
 
     # ------------------------------------------------------------------
     # Security Policy (singleton list wrappers for import)
