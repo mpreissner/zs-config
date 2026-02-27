@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.7.0] - 2026-02-27
+
+### Added
+
+#### ZIA — Cloud Applications (read-only catalog)
+- New `── Cloud Apps ──` section in the ZIA menu
+- **Cloud Applications** — list all apps associated with DLP/CAC policy rules or SSL policy rules; search by name across either policy set
+- Table shows: name, app class, app type, ID
+
+#### ZIA — Cloud App Control (full CRUD)
+- **Cloud App Control** — browse rules by rule type (types loaded live from `get_rule_type_mapping()`)
+- Per-type submenu: list rules, view details (JSON scroll view), create from JSON file, edit from JSON file, duplicate rule (prompts for new name), delete rule (with confirmation)
+- All mutations audit-logged and remind user to activate changes in ZIA
+- Rules fetched live from API (no DB caching); list sorted by order/rank
+
+#### ZIA Client (`lib/zia_client.py`)
+- `list_cloud_app_policy`, `list_cloud_app_ssl_policy`
+- `get_cloud_app_rule_types`, `list_cloud_app_rules`, `get_cloud_app_rule`
+- `create_cloud_app_rule`, `update_cloud_app_rule`, `delete_cloud_app_rule`, `duplicate_cloud_app_rule`
+
+### Fixed
+- **ZCC Entitlements (continued)**: base URL corrected to `/zcc/papi/public/v1` (was `/mobileadmin/v1`); GET methods now use direct HTTP against the correct endpoint
+- **ZIA URL Lookup**: missing `press_any_key_to_continue` on error/empty paths meant errors were wiped by `render_banner()` before user could read them; also handle empty result set gracefully
+- **ZIA URL Lookup**: SDK method name corrected to `lookup` (was `url_lookup`); return value correctly unpacked as 2-tuple `(result, error)`
+
+---
+
 ## [0.6.1] - 2026-02-27
 
 ### Fixed

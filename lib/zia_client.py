@@ -371,3 +371,58 @@ class ZIAClient:
             category_id, urls=updated
         )
         return _to_dict(_unwrap(result, resp, err))
+
+    # ------------------------------------------------------------------
+    # Cloud Applications (read-only catalog)
+    # ------------------------------------------------------------------
+
+    def list_cloud_app_policy(self, search: Optional[str] = None, app_class: Optional[str] = None) -> List[Dict]:
+        params = {}
+        if search:
+            params["search"] = search
+        if app_class:
+            params["app_class"] = app_class
+        result, resp, err = self._sdk.zia.cloud_applications.list_cloud_app_policy(query_params=params)
+        return _to_dicts(_unwrap(result, resp, err))
+
+    def list_cloud_app_ssl_policy(self, search: Optional[str] = None, app_class: Optional[str] = None) -> List[Dict]:
+        params = {}
+        if search:
+            params["search"] = search
+        if app_class:
+            params["app_class"] = app_class
+        result, resp, err = self._sdk.zia.cloud_applications.list_cloud_app_ssl_policy(query_params=params)
+        return _to_dicts(_unwrap(result, resp, err))
+
+    # ------------------------------------------------------------------
+    # Cloud App Control
+    # ------------------------------------------------------------------
+
+    def get_cloud_app_rule_types(self) -> Dict:
+        result, resp, err = self._sdk.zia.cloudappcontrol.get_rule_type_mapping()
+        return _to_dict(_unwrap(result, resp, err))
+
+    def list_cloud_app_rules(self, rule_type: str) -> List[Dict]:
+        result, resp, err = self._sdk.zia.cloudappcontrol.list_rules(rule_type)
+        return _to_dicts(_unwrap(result, resp, err))
+
+    def get_cloud_app_rule(self, rule_type: str, rule_id: str) -> Dict:
+        result, resp, err = self._sdk.zia.cloudappcontrol.get_rule(rule_type, rule_id)
+        return _to_dict(_unwrap(result, resp, err))
+
+    def create_cloud_app_rule(self, rule_type: str, config: Dict) -> Dict:
+        result, resp, err = self._sdk.zia.cloudappcontrol.add_rule(rule_type, **config)
+        return _to_dict(_unwrap(result, resp, err))
+
+    def update_cloud_app_rule(self, rule_type: str, rule_id: str, config: Dict) -> Dict:
+        result, resp, err = self._sdk.zia.cloudappcontrol.update_rule(rule_type, rule_id, **config)
+        return _to_dict(_unwrap(result, resp, err))
+
+    def delete_cloud_app_rule(self, rule_type: str, rule_id: str) -> None:
+        _, resp, err = self._sdk.zia.cloudappcontrol.delete_rule(rule_type, rule_id)
+        if err:
+            raise RuntimeError(str(err))
+
+    def duplicate_cloud_app_rule(self, rule_type: str, rule_id: str, name: str) -> Dict:
+        result, resp, err = self._sdk.zia.cloudappcontrol.add_duplicate_rule(rule_type, rule_id, name)
+        return _to_dict(_unwrap(result, resp, err))
