@@ -702,14 +702,19 @@ def _list_forwarding_profiles(tenant, search: str = None):
 
     table = Table(title=f"ZCC Forwarding Profiles ({len(rows)} found)", show_lines=False)
     table.add_column("Name")
-    table.add_column("Type")
-    table.add_column("Description")
+    table.add_column("Active")
+    table.add_column("Evaluate Trusted Network")
+    table.add_column("Trusted Networks")
 
     for r in rows:
         cfg = r["raw_config"]
-        profile_type = cfg.get("type") or cfg.get("forwarding_type") or "—"
-        description = str(cfg.get("description") or "")[:60]
-        table.add_row(r["name"] or "—", str(profile_type), description)
+        active = str(cfg.get("active", "")) == "1"
+        active_str = "[green]Yes[/green]" if active else "[red]No[/red]"
+        eval_tn = cfg.get("evaluate_trusted_network", 0)
+        eval_str = "Yes" if eval_tn else "No"
+        trusted = cfg.get("trusted_networks") or []
+        tn_str = ", ".join(trusted) if trusted else "[dim]None[/dim]"
+        table.add_row(r["name"] or "—", active_str, eval_str, tn_str)
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
@@ -772,7 +777,7 @@ def _list_admin_users(tenant, search: str = None):
     if not rows:
         msg = (
             f"[yellow]No admin users matching '{search}'.[/yellow]" if search
-            else "[yellow]No admin users in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
+            else "[yellow]No ZCC admin users found. This tenant may manage admins through ZIdentity instead.[/yellow]"
         )
         console.print(msg)
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
