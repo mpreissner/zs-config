@@ -24,10 +24,11 @@ def zia_menu():
                 questionary.Choice("Firewall Policy", value="firewall"),
                 questionary.Choice("URL Lookup", value="url_lookup"),
                 questionary.Separator(),
-                questionary.Choice("Security Policy Settings  [coming soon]", value="noop"),
-                questionary.Choice("URL Categories  [coming soon]", value="noop"),
-                questionary.Choice("URL Filtering  [coming soon]", value="noop"),
-                questionary.Choice("Traffic Forwarding  [coming soon]", value="noop"),
+                questionary.Choice("Security Policy Settings", value="security_policy"),
+                questionary.Choice("URL Categories", value="url_categories"),
+                questionary.Choice("URL Filtering", value="url_filtering"),
+                questionary.Choice("Traffic Forwarding", value="traffic_forwarding"),
+                questionary.Choice("Users", value="users"),
                 questionary.Separator(),
                 questionary.Choice("Activation", value="activation"),
                 questionary.Choice("Import Config", value="import"),
@@ -48,6 +49,16 @@ def zia_menu():
             locations_menu(client, tenant)
         elif choice == "ssl":
             ssl_inspection_menu(client, tenant)
+        elif choice == "security_policy":
+            security_policy_menu(client, tenant)
+        elif choice == "url_categories":
+            url_categories_menu(client, tenant)
+        elif choice == "url_filtering":
+            url_filtering_menu(client, tenant)
+        elif choice == "traffic_forwarding":
+            traffic_forwarding_menu(tenant)
+        elif choice == "users":
+            zia_users_menu(tenant)
         elif choice == "import":
             _import_zia_config(client, tenant)
         elif choice == "snapshots":
@@ -1195,3 +1206,665 @@ def _update_zia_resource_field(tenant_id: int, resource_type: str, zia_id: str,
             cfg[field] = value
             rec.raw_config = cfg
             flag_modified(rec, "raw_config")
+
+
+# ------------------------------------------------------------------
+# Security Policy Settings (Allowlist / Denylist)
+# ------------------------------------------------------------------
+
+def security_policy_menu(client, tenant):
+    while True:
+        render_banner()
+        choice = questionary.select(
+            "Security Policy Settings",
+            choices=[
+                questionary.Choice("View Allowlist (Permitted URLs)", value="view_allow"),
+                questionary.Choice("Add URLs to Allowlist", value="add_allow"),
+                questionary.Choice("Remove URLs from Allowlist", value="rm_allow"),
+                questionary.Separator(),
+                questionary.Choice("View Denylist (Blocked URLs)", value="view_deny"),
+                questionary.Choice("Add URLs to Denylist", value="add_deny"),
+                questionary.Choice("Remove URLs from Denylist", value="rm_deny"),
+                questionary.Separator(),
+                questionary.Choice("← Back", value="back"),
+            ],
+            use_indicator=True,
+        ).ask()
+
+        if choice == "view_allow":
+            _view_url_list(client, "allowlist")
+        elif choice == "add_allow":
+            _add_urls_to_list(client, tenant, "allowlist")
+        elif choice == "rm_allow":
+            _remove_urls_from_list(client, tenant, "allowlist")
+        elif choice == "view_deny":
+            _view_url_list(client, "denylist")
+        elif choice == "add_deny":
+            _add_urls_to_list(client, tenant, "denylist")
+        elif choice == "rm_deny":
+            _remove_urls_from_list(client, tenant, "denylist")
+        elif choice in ("back", None):
+            break
+
+
+def _view_url_list(client, list_type: str):
+    label = "Allowlist" if list_type == "allowlist" else "Denylist"
+    with console.status(f"Fetching {label}..."):
+        try:
+            data = client.get_allowlist() if list_type == "allowlist" else client.get_denylist()
+        except Exception as e:
+            console.print(f"[red]✗ {e}[/red]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            return
+
+    url_key = "whitelistUrls" if list_type == "allowlist" else "blacklistUrls"
+    urls = data.get(url_key) or data.get("urls") or []
+
+    if not urls:
+        console.print(f"[yellow]{label} is empty.[/yellow]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    table = Table(title=f"{label} ({len(urls)} URLs)", show_lines=False)
+    table.add_column("URL")
+    for url in sorted(urls):
+        table.add_row(url)
+
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+    scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
+
+
+def _add_urls_to_list(client, tenant, list_type: str):
+    from services import audit_service
+    label = "allowlist" if list_type == "allowlist" else "denylist"
+    console.print(f"\n[bold]Add URLs to {label.title()}[/bold]")
+    console.print("[dim]Enter one URL per line, blank line to submit.[/dim]\n")
+
+    urls = []
+    while True:
+        url = questionary.text("URL (blank to finish):").ask()
+        if not url:
+            break
+        urls.append(url.strip())
+
+    if not urls:
+        return
+
+    confirmed = questionary.confirm(f"Add {len(urls)} URL(s) to {label}?", default=True).ask()
+    if not confirmed:
+        return
+
+    with console.status(f"Adding to {label}..."):
+        try:
+            if list_type == "allowlist":
+                client.add_to_allowlist(urls)
+            else:
+                client.add_to_denylist(urls)
+        except Exception as e:
+            console.print(f"[red]✗ {e}[/red]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            return
+
+    audit_service.log(
+        product="ZIA", operation=f"add_to_{label}", action="UPDATE",
+        status="SUCCESS", tenant_id=tenant.id,
+        resource_type=label, details={"urls_added": urls},
+    )
+    console.print(f"[green]✓ {len(urls)} URL(s) added. Remember to activate changes.[/green]")
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def _remove_urls_from_list(client, tenant, list_type: str):
+    from services import audit_service
+    label = "allowlist" if list_type == "allowlist" else "denylist"
+
+    with console.status(f"Fetching {label}..."):
+        try:
+            data = client.get_allowlist() if list_type == "allowlist" else client.get_denylist()
+        except Exception as e:
+            console.print(f"[red]✗ {e}[/red]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            return
+
+    url_key = "whitelistUrls" if list_type == "allowlist" else "blacklistUrls"
+    urls = sorted(data.get(url_key) or data.get("urls") or [])
+
+    if not urls:
+        console.print(f"[yellow]{label.title()} is empty.[/yellow]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    selected = questionary.checkbox(
+        f"Select URLs to remove from {label}:",
+        choices=[questionary.Choice(u, value=u) for u in urls],
+    ).ask()
+
+    if not selected:
+        return
+
+    confirmed = questionary.confirm(
+        f"Remove {len(selected)} URL(s) from {label}?", default=False
+    ).ask()
+    if not confirmed:
+        return
+
+    with console.status(f"Removing from {label}..."):
+        try:
+            if list_type == "allowlist":
+                client.remove_from_allowlist(selected)
+            else:
+                client.remove_from_denylist(selected)
+        except Exception as e:
+            console.print(f"[red]✗ {e}[/red]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            return
+
+    audit_service.log(
+        product="ZIA", operation=f"remove_from_{label}", action="UPDATE",
+        status="SUCCESS", tenant_id=tenant.id,
+        resource_type=label, details={"urls_removed": selected},
+    )
+    console.print(f"[green]✓ {len(selected)} URL(s) removed. Remember to activate changes.[/green]")
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+# ------------------------------------------------------------------
+# URL Categories
+# ------------------------------------------------------------------
+
+def url_categories_menu(client, tenant):
+    while True:
+        render_banner()
+        choice = questionary.select(
+            "URL Categories",
+            choices=[
+                questionary.Choice("List Custom Categories", value="list"),
+                questionary.Choice("Search by Name", value="search"),
+                questionary.Separator(),
+                questionary.Choice("Add URLs to Category", value="add_urls"),
+                questionary.Choice("Remove URLs from Category", value="rm_urls"),
+                questionary.Separator(),
+                questionary.Choice("← Back", value="back"),
+            ],
+            use_indicator=True,
+        ).ask()
+
+        if choice == "list":
+            _list_url_categories(tenant)
+        elif choice == "search":
+            _search_url_categories(tenant)
+        elif choice == "add_urls":
+            _modify_category_urls(client, tenant, add=True)
+        elif choice == "rm_urls":
+            _modify_category_urls(client, tenant, add=False)
+        elif choice in ("back", None):
+            break
+
+
+def _list_url_categories(tenant, search: str = None):
+    from db.database import get_session
+    from db.models import ZIAResource
+
+    with get_session() as session:
+        resources = (
+            session.query(ZIAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="url_category", is_deleted=False)
+            .order_by(ZIAResource.name)
+            .all()
+        )
+        rows = [
+            {"name": r.name, "zia_id": r.zia_id, "raw_config": r.raw_config or {}}
+            for r in resources
+        ]
+
+    # Only show custom categories (not Zscaler built-ins)
+    rows = [r for r in rows if r["raw_config"].get("customCategory") or r["raw_config"].get("type") == "URL_CATEGORY"]
+
+    if search:
+        search_lower = search.lower()
+        rows = [r for r in rows if search_lower in (r["name"] or "").lower()]
+
+    if not rows:
+        msg = (
+            f"[yellow]No URL categories matching '{search}'.[/yellow]" if search
+            else "[yellow]No custom URL categories in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
+        )
+        console.print(msg)
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    table = Table(title=f"Custom URL Categories ({len(rows)} found)", show_lines=False)
+    table.add_column("Name")
+    table.add_column("URLs", justify="right")
+    table.add_column("ID", style="dim")
+
+    for r in rows:
+        cfg = r["raw_config"]
+        url_count = len(cfg.get("urls") or [])
+        table.add_row(r["name"] or "—", str(url_count), r["zia_id"])
+
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+    scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
+
+
+def _search_url_categories(tenant):
+    search = questionary.text("Search (name or partial):").ask()
+    if not search:
+        return
+    _list_url_categories(tenant, search=search.strip())
+
+
+def _modify_category_urls(client, tenant, add: bool):
+    from db.database import get_session
+    from db.models import ZIAResource
+    from services import audit_service
+
+    with get_session() as session:
+        resources = (
+            session.query(ZIAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="url_category", is_deleted=False)
+            .order_by(ZIAResource.name)
+            .all()
+        )
+        cats = [
+            {"name": r.name, "zia_id": r.zia_id}
+            for r in resources
+            if r.raw_config and (r.raw_config.get("customCategory") or r.raw_config.get("type") == "URL_CATEGORY")
+        ]
+
+    if not cats:
+        console.print("[yellow]No custom URL categories in DB. Run Import Config first.[/yellow]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    cat = questionary.select(
+        "Select category:",
+        choices=[questionary.Choice(c["name"], value=c) for c in cats],
+    ).ask()
+    if not cat:
+        return
+
+    verb = "Add" if add else "Remove"
+    console.print(f"\n[dim]Enter URLs to {verb.lower()} (one per line, blank to finish).[/dim]\n")
+
+    urls = []
+    while True:
+        url = questionary.text("URL (blank to finish):").ask()
+        if not url:
+            break
+        urls.append(url.strip())
+
+    if not urls:
+        return
+
+    confirmed = questionary.confirm(
+        f"{verb} {len(urls)} URL(s) {'to' if add else 'from'} '{cat['name']}'?", default=True
+    ).ask()
+    if not confirmed:
+        return
+
+    with console.status(f"Updating category..."):
+        try:
+            if add:
+                client.add_urls_to_category(cat["zia_id"], urls)
+            else:
+                client.remove_urls_from_category(cat["zia_id"], urls)
+        except Exception as e:
+            console.print(f"[red]✗ {e}[/red]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            return
+
+    audit_service.log(
+        product="ZIA", operation=f"{'add' if add else 'remove'}_category_urls", action="UPDATE",
+        status="SUCCESS", tenant_id=tenant.id, resource_type="url_category",
+        resource_id=cat["zia_id"], resource_name=cat["name"],
+        details={"urls": urls},
+    )
+    console.print(f"[green]✓ {len(urls)} URL(s) {'added to' if add else 'removed from'} '{cat['name']}'. Remember to activate changes.[/green]")
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+# ------------------------------------------------------------------
+# URL Filtering
+# ------------------------------------------------------------------
+
+def url_filtering_menu(client, tenant):
+    while True:
+        render_banner()
+        choice = questionary.select(
+            "URL Filtering",
+            choices=[
+                questionary.Choice("List Rules", value="list"),
+                questionary.Choice("Search Rules", value="search"),
+                questionary.Choice("Enable / Disable Rules", value="toggle"),
+                questionary.Separator(),
+                questionary.Choice("← Back", value="back"),
+            ],
+            use_indicator=True,
+        ).ask()
+
+        if choice == "list":
+            _list_url_filtering_rules(tenant)
+        elif choice == "search":
+            _search_url_filtering_rules(tenant)
+        elif choice == "toggle":
+            _toggle_url_filtering_rules(client, tenant)
+        elif choice in ("back", None):
+            break
+
+
+def _list_url_filtering_rules(tenant, search: str = None):
+    from db.database import get_session
+    from db.models import ZIAResource
+
+    with get_session() as session:
+        resources = (
+            session.query(ZIAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="url_filtering_rule", is_deleted=False)
+            .order_by(ZIAResource.name)
+            .all()
+        )
+        rows = [
+            {"name": r.name, "zia_id": r.zia_id, "raw_config": r.raw_config or {}}
+            for r in resources
+        ]
+
+    if search:
+        search_lower = search.lower()
+        rows = [r for r in rows if search_lower in (r["name"] or "").lower()]
+
+    if not rows:
+        msg = (
+            f"[yellow]No URL filtering rules matching '{search}'.[/yellow]" if search
+            else "[yellow]No URL filtering rules in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
+        )
+        console.print(msg)
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    rows.sort(key=lambda r: r["raw_config"].get("order") or r["raw_config"].get("rank") or 0)
+
+    table = Table(title=f"URL Filtering Rules ({len(rows)} total)", show_lines=False)
+    table.add_column("Order", justify="right")
+    table.add_column("Name")
+    table.add_column("Action")
+    table.add_column("State")
+    table.add_column("Description")
+
+    for r in rows:
+        cfg = r["raw_config"]
+        order = str(cfg.get("order") or cfg.get("rank") or "—")
+        action = str(cfg.get("action") or "—")
+        state_val = cfg.get("state") or "—"
+        state_str = (
+            f"[green]{state_val}[/green]" if state_val == "ENABLED"
+            else f"[red]{state_val}[/red]" if state_val == "DISABLED"
+            else state_val
+        )
+        description = str(cfg.get("description") or "")[:60]
+        table.add_row(order, r["name"] or "—", action, state_str, description)
+
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+    scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
+
+
+def _search_url_filtering_rules(tenant):
+    search = questionary.text("Search (name or partial):").ask()
+    if not search:
+        return
+    _list_url_filtering_rules(tenant, search=search.strip())
+
+
+def _toggle_url_filtering_rules(client, tenant):
+    from db.database import get_session
+    from db.models import ZIAResource
+    from services import audit_service
+
+    with get_session() as session:
+        resources = (
+            session.query(ZIAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="url_filtering_rule", is_deleted=False)
+            .order_by(ZIAResource.name)
+            .all()
+        )
+        rows = [
+            {
+                "name": r.name,
+                "zia_id": r.zia_id,
+                "state": (r.raw_config or {}).get("state", "UNKNOWN"),
+            }
+            for r in resources
+        ]
+
+    if not rows:
+        console.print("[yellow]No URL filtering rules in local DB. Run Import Config first.[/yellow]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    selected = questionary.checkbox(
+        "Select rules to toggle:",
+        choices=[
+            questionary.Choice(
+                f"{'✓' if r['state'] == 'ENABLED' else '✗'}  {r['name']}",
+                value=r,
+            )
+            for r in rows
+        ],
+    ).ask()
+    if not selected:
+        return
+
+    action = questionary.select(
+        "Action:",
+        choices=[
+            questionary.Choice("Enable", value="ENABLED"),
+            questionary.Choice("Disable", value="DISABLED"),
+        ],
+    ).ask()
+    if not action:
+        return
+
+    verb = "Enable" if action == "ENABLED" else "Disable"
+    confirmed = questionary.confirm(f"{verb} {len(selected)} rule(s)?", default=True).ask()
+    if not confirmed:
+        return
+
+    ok = 0
+    for r in selected:
+        try:
+            config = client.get_url_filtering_rule(r["zia_id"])
+            config["state"] = action
+            client.update_url_filtering_rule(r["zia_id"], config)
+            _update_zia_resource_field(tenant.id, "url_filtering_rule", r["zia_id"], "state", action)
+            audit_service.log(
+                product="ZIA", operation="toggle_url_filtering_rule", action="UPDATE",
+                status="SUCCESS", tenant_id=tenant.id, resource_type="url_filtering_rule",
+                resource_id=r["zia_id"], resource_name=r["name"],
+                details={"state": action},
+            )
+            ok += 1
+        except Exception as e:
+            console.print(f"[red]✗ {r['name']}: {e}[/red]")
+            audit_service.log(
+                product="ZIA", operation="toggle_url_filtering_rule", action="UPDATE",
+                status="FAILURE", tenant_id=tenant.id, resource_type="url_filtering_rule",
+                resource_id=r["zia_id"], resource_name=r["name"], error_message=str(e),
+            )
+
+    if ok:
+        console.print(f"[green]✓ {ok} rule(s) updated. Remember to activate changes.[/green]")
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+# ------------------------------------------------------------------
+# Traffic Forwarding (read-only)
+# ------------------------------------------------------------------
+
+def traffic_forwarding_menu(tenant):
+    while True:
+        render_banner()
+        choice = questionary.select(
+            "Traffic Forwarding",
+            choices=[
+                questionary.Choice("List Forwarding Rules", value="list"),
+                questionary.Choice("Search Rules", value="search"),
+                questionary.Separator(),
+                questionary.Choice("← Back", value="back"),
+            ],
+            use_indicator=True,
+        ).ask()
+
+        if choice == "list":
+            _list_forwarding_rules(tenant)
+        elif choice == "search":
+            _search_forwarding_rules(tenant)
+        elif choice in ("back", None):
+            break
+
+
+def _list_forwarding_rules(tenant, search: str = None):
+    from db.database import get_session
+    from db.models import ZIAResource
+
+    with get_session() as session:
+        resources = (
+            session.query(ZIAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="forwarding_rule", is_deleted=False)
+            .order_by(ZIAResource.name)
+            .all()
+        )
+        rows = [
+            {"name": r.name, "zia_id": r.zia_id, "raw_config": r.raw_config or {}}
+            for r in resources
+        ]
+
+    if search:
+        search_lower = search.lower()
+        rows = [r for r in rows if search_lower in (r["name"] or "").lower()]
+
+    if not rows:
+        msg = (
+            f"[yellow]No forwarding rules matching '{search}'.[/yellow]" if search
+            else "[yellow]No forwarding rules in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
+        )
+        console.print(msg)
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    table = Table(title=f"Forwarding Rules ({len(rows)} total)", show_lines=False)
+    table.add_column("Name")
+    table.add_column("Type")
+    table.add_column("State")
+    table.add_column("Description")
+
+    for r in rows:
+        cfg = r["raw_config"]
+        fwd_type = str(cfg.get("type") or cfg.get("forwardingMethod") or "—")
+        state_val = cfg.get("state") or "—"
+        state_str = (
+            f"[green]{state_val}[/green]" if state_val == "ENABLED"
+            else f"[red]{state_val}[/red]" if state_val == "DISABLED"
+            else state_val
+        )
+        description = str(cfg.get("description") or "")[:60]
+        table.add_row(r["name"] or "—", fwd_type, state_str, description)
+
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+    scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
+
+
+def _search_forwarding_rules(tenant):
+    search = questionary.text("Search (name or partial):").ask()
+    if not search:
+        return
+    _list_forwarding_rules(tenant, search=search.strip())
+
+
+# ------------------------------------------------------------------
+# ZIA Users
+# ------------------------------------------------------------------
+
+def zia_users_menu(tenant):
+    while True:
+        render_banner()
+        choice = questionary.select(
+            "Users",
+            choices=[
+                questionary.Choice("List Users", value="list"),
+                questionary.Choice("Search by Name / Email", value="search"),
+                questionary.Separator(),
+                questionary.Choice("← Back", value="back"),
+            ],
+            use_indicator=True,
+        ).ask()
+
+        if choice == "list":
+            _list_zia_users(tenant)
+        elif choice == "search":
+            _search_zia_users(tenant)
+        elif choice in ("back", None):
+            break
+
+
+def _list_zia_users(tenant, search: str = None):
+    from db.database import get_session
+    from db.models import ZIAResource
+
+    with get_session() as session:
+        resources = (
+            session.query(ZIAResource)
+            .filter_by(tenant_id=tenant.id, resource_type="user", is_deleted=False)
+            .order_by(ZIAResource.name)
+            .all()
+        )
+        rows = [
+            {"name": r.name, "zia_id": r.zia_id, "raw_config": r.raw_config or {}}
+            for r in resources
+        ]
+
+    if search:
+        search_lower = search.lower()
+        rows = [
+            r for r in rows
+            if search_lower in (r["name"] or "").lower()
+            or search_lower in (r["raw_config"].get("email") or "").lower()
+        ]
+
+    if not rows:
+        msg = (
+            f"[yellow]No users matching '{search}'.[/yellow]" if search
+            else "[yellow]No users in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
+        )
+        console.print(msg)
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    table = Table(title=f"ZIA Users ({len(rows)} found)", show_lines=False)
+    table.add_column("Name")
+    table.add_column("Email")
+    table.add_column("Department")
+    table.add_column("Groups")
+
+    for r in rows:
+        cfg = r["raw_config"]
+        email = cfg.get("email") or "—"
+        dept = (cfg.get("department") or {}).get("name") or "—"
+        groups = ", ".join(
+            g.get("name", "") for g in (cfg.get("groups") or [])
+        )[:50] or "—"
+        table.add_row(r["name"] or "—", email, dept, groups)
+
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+    scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
+
+
+def _search_zia_users(tenant):
+    search = questionary.text("Search (name or email, partial):").ask()
+    if not search:
+        return
+    _list_zia_users(tenant, search=search.strip())
