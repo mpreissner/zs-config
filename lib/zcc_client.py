@@ -279,18 +279,10 @@ class ZCCClient:
     # ------------------------------------------------------------------
 
     def get_zpa_entitlements(self) -> Dict:
-        result, resp, err = self._sdk.zcc.entitlements.get_zpa_group_entitlements()
-        items = _unwrap(result, resp, err)
-        if isinstance(items, list):
-            return _to_dict(items[0]) if items else {}
-        return _to_dict(items)
+        return self._direct_get("getZpaGroupEntitlements")
 
     def get_zdx_entitlements(self) -> Dict:
-        result, resp, err = self._sdk.zcc.entitlements.get_zdx_group_entitlements()
-        items = _unwrap(result, resp, err)
-        if isinstance(items, list):
-            return _to_dict(items[0]) if items else {}
-        return _to_dict(items)
+        return self._direct_get("getZdxGroupEntitlements")
 
     def update_zpa_entitlements(self, payload: Dict) -> Dict:
         return self._direct_put("updateZpaGroupEntitlement", json=payload)
