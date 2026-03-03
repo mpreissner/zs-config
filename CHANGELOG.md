@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.8.1] - 2026-03-02
+
+### Added
+
+#### Credential verification on tenant add and switch
+- `ZscalerAuth.get_token()` — direct OAuth2 `client_credentials` POST to
+  `{zidentity_base_url}/oauth2/v1/token`; raises on failure (also fixes a latent
+  bug where `conf_writer.test_credentials` called this method before it existed)
+- **Add Tenant**: immediately tests credentials after saving; shows ✓ on success
+  or ✗ with a pointer to Settings → Edit Tenant on failure (tenant is saved either way)
+- **Switch Tenant**: verifies token with a spinner before activating the session;
+  on failure offers three options — Edit credentials / Switch anyway / Cancel
+- **Settings → Edit Tenant** (new): pick a tenant, edit vanity subdomain, client ID,
+  and/or client secret (blank = keep existing); live token test before saving;
+  "Save anyway?" offered if test fails
+
+---
+
 ## [0.8.0] - 2026-02-27
 
 ### Fixed

@@ -133,7 +133,7 @@ zs-config
 | ZDX | Zscaler Digital Experience — device health, app performance, deep trace |
 | ZIdentity | User, group, and API client management |
 | Switch Tenant | Switch active tenant (shows current tenant name) |
-| Settings | Add / list / remove tenants; clear imported data |
+| Settings | Add / edit / list / remove tenants; clear imported data |
 | Audit Log | Scrollable viewer of all recorded operations |
 | Exit | Quit |
 
@@ -458,7 +458,8 @@ Time window is selected on entry (Last 2 / 4 / 8 / 24 hours) and applied to all 
 
 | Option | Description |
 |---|---|
-| Add Tenant | Register a new Zscaler tenant (vanity domain, client ID/secret, ZPA customer ID) |
+| Add Tenant | Register a new Zscaler tenant (vanity domain, client ID/secret, ZPA customer ID); credentials are verified immediately after saving |
+| Edit Tenant | Update vanity subdomain, client ID, or client secret for an existing tenant; live token test before saving |
 | List Tenants | Show all configured tenants |
 | Remove Tenant | Delete a tenant and its encrypted credentials |
 | Clear Imported Data & Audit Log | Delete all imported resources, sync logs, and audit entries (tenant config is preserved) |
