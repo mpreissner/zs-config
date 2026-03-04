@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.8.3] - 2026-03-04
+
+### Fixed
+
+#### Update checker — changelog scroll UX
+- Changelog now opens in the full-screen scroll viewer (↑↓ / j k / PgDn / PgUp / g / G / q) instead of printing inline
+- Fixes the update panel being pushed off screen by long changelogs; the panel reappears after exiting the viewer since scroll_view uses the alternate screen buffer
+
+---
+
 ## [0.8.2] - 2026-03-04
 
 ### Added
