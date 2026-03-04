@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.9.1] - 2026-03-04
+
+### Fixed
+- Banner version string was not updated from 0.8.5 to 0.9.0
+
+---
+
 ## [0.9.0] - 2026-03-04
 
 ### Added
