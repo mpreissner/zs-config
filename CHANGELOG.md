@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.8.4] - 2026-03-04
+
+### Fixed
+
+#### Update checker — NameError crash on startup
+- `Markdown` was accidentally dropped from imports when refactoring to `scroll_view`; moved to a local import inside the branch that uses it
+- Fixes `NameError: name 'Markdown' is not defined` crash whenever an update was available
+
+---
+
 ## [0.8.3] - 2026-03-04
 
 ### Fixed
