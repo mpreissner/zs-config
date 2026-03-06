@@ -354,10 +354,14 @@ class ZIAPushService:
 
             # Allowlist/denylist: only queue if there are URLs to add
             if rtype in ("allowlist", "denylist"):
-                url_key = "whitelistUrls" if rtype == "allowlist" else "blacklistUrls"
                 new_urls = []
                 for entry in entries:
-                    new_urls.extend(entry.get("raw_config", {}).get(url_key) or [])
+                    raw = entry.get("raw_config", {})
+                    # SDK may return snake_case or camelCase keys
+                    new_urls.extend(
+                        raw.get("whitelistUrls") or raw.get("whitelist_urls") or
+                        raw.get("blacklistUrls") or raw.get("blacklist_urls") or []
+                    )
                 if new_urls:
                     pending[rtype] = list(entries)
                 else:
@@ -869,6 +873,10 @@ def _is_predefined(resource_type: str, raw_config: dict) -> bool:
         return True
     name = raw_config.get("name", "")
     if name and name in SKIP_NAMED.get(resource_type, set()):
+        return True
+    # network_service and bandwidth_class predefined entries carry type:"PREDEFINED"
+    # rather than a predefined:true boolean field.
+    if raw_config.get("type") == "PREDEFINED":
         return True
     if resource_type == "url_category":
         if raw_config.get("type") == "ZSCALER_DEFINED":
