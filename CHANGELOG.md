@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.10.3] - 2026-03-06
+
+### Fixed
+
+#### ZIA — Apply Baseline from JSON
+- `DUPLICATE_ITEM` (400) responses from ZIA now trigger the fallback-to-update path instead of being treated as permanent failures — previously caused false failures for `network_service`, `url_category`, `dlp_engine`, `dlp_dictionary`, and `network_app_group`
+- Added `bandwidth_class` to `SKIP_IF_PREDEFINED`; built-in bandwidth classes (`BANDWIDTH_CAT_*`) were being attempted and failing
+- Improved predefined detection for `url_category`: fixed `customCategory == False` check (was `is False`, missed SDK-serialized values); added non-numeric ID detection (Zscaler-defined categories have string IDs like `ADULT_SEX_EDUCATION`, custom categories always have numeric IDs)
+- Added `type: "PREDEFINED"` detection to `_is_predefined()` — network services and bandwidth classes carry this field instead of a `predefined: true` boolean, causing them to slip through the predefined check
+- Added `rank`, `defaultRule`, `accessControl`, `configVersion`, `managedBy` to `READONLY_FIELDS` — server-computed fields returned in GET responses but rejected by POST/PUT; `rank` was the likely cause of "Request body is invalid." on `firewall_dns_rule`, `ssl_inspection_rule`, and `forwarding_rule`
+- Config comparison now normalizes list field ordering before comparing — ZIA returns port range arrays in non-deterministic order between API calls, causing false-positive update detections
+- `allowlist`/`denylist` no longer queue as updates when the URL list is empty; fixed URL key lookup to handle both snake_case (`whitelist_urls`) and camelCase (`whitelistUrls`) variants
+
+---
+
 ## [0.10.2] - 2026-03-06
 
 ### Fixed

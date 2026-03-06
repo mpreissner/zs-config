@@ -36,6 +36,7 @@ Usage:
 from __future__ import annotations
 
 import copy
+import json
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -97,6 +98,7 @@ SKIP_IF_PREDEFINED: set = {
     "dlp_engine",
     "dlp_dictionary",
     "network_service",
+    "bandwidth_class",
 }
 
 # Specific resource names that are system-managed and must never be pushed,
@@ -121,6 +123,12 @@ READONLY_FIELDS: set = {
     "isDeleted",
     "dbCategoryIndex",
     "deleted",
+    # Computed/server-assigned ordering fields rejected by POST/PUT
+    "rank",
+    "defaultRule",
+    "accessControl",
+    "configVersion",
+    "managedBy",
 }
 
 # ---------------------------------------------------------------------------
@@ -344,10 +352,20 @@ class ZIAPushService:
 
             entries = resources.get(rtype) or []
 
-            # Allowlist/denylist bypass delta check — always merge
+            # Allowlist/denylist: only queue if there are URLs to add
             if rtype in ("allowlist", "denylist"):
-                if entries:
+                new_urls = []
+                for entry in entries:
+                    raw = entry.get("raw_config", {})
+                    # SDK may return snake_case or camelCase keys
+                    new_urls.extend(
+                        raw.get("whitelistUrls") or raw.get("whitelist_urls") or
+                        raw.get("blacklistUrls") or raw.get("blacklist_urls") or []
+                    )
+                if new_urls:
                     pending[rtype] = list(entries)
+                else:
+                    skipped.append(PushRecord(rtype, rtype, "skipped"))
                 continue
 
             existing_for_type = existing.get(rtype) or {}
@@ -549,8 +567,27 @@ class ZIAPushService:
         return None
 
     def _configs_match(self, baseline_config: dict, existing_config: dict) -> bool:
-        """Return True if both configs are identical after stripping read-only fields."""
-        return self._strip(baseline_config) == self._strip(existing_config)
+        """Return True if both configs are semantically identical after stripping
+        read-only fields and normalizing list ordering (ZIA returns arrays like
+        port ranges in non-deterministic order between API calls)."""
+        return self._normalize(self._strip(baseline_config)) == self._normalize(self._strip(existing_config))
+
+    def _normalize(self, value):
+        """Recursively normalize a config value for stable comparison.
+
+        Lists are sorted by their canonical JSON representation so that
+        semantically equivalent configs with differently-ordered arrays
+        (e.g. port range lists) compare as equal.
+        """
+        if isinstance(value, dict):
+            return {k: self._normalize(v) for k, v in value.items()}
+        if isinstance(value, list):
+            normalized = [self._normalize(item) for item in value]
+            try:
+                return sorted(normalized, key=lambda x: json.dumps(x, sort_keys=True, default=str))
+            except TypeError:
+                return normalized
+        return value
 
     def _single_pass(
         self,
@@ -633,8 +670,9 @@ class ZIAPushService:
             return PushRecord(resource_type=resource_type, name=name, status="created")
         except Exception as exc:
             exc_str = str(exc)
-            # Safety net: 409 means it exists but wasn't in our import snapshot
-            if "409" in exc_str or "already exists" in exc_str.lower() or "conflict" in exc_str.lower():
+            # Safety net: resource already exists (ZIA may return 409 or 400/DUPLICATE_ITEM)
+            if ("409" in exc_str or "DUPLICATE_ITEM" in exc_str
+                    or "already exists" in exc_str.lower() or "conflict" in exc_str.lower()):
                 found_id = self._find_by_name_live(resource_type, name)
                 if found_id:
                     if source_id:
@@ -647,7 +685,7 @@ class ZIAPushService:
                 return PushRecord(
                     resource_type=resource_type,
                     name=name,
-                    status="failed:permanent:409 — resource exists but name lookup failed",
+                    status="failed:permanent:duplicate — resource exists but name lookup failed",
                 )
             return self._classify_error(resource_type, name, exc)
 
@@ -686,7 +724,8 @@ class ZIAPushService:
             return PushRecord(resource_type="cloud_app_control_rule", name=name, status="created")
         except Exception as exc:
             exc_str = str(exc)
-            if "409" in exc_str or "already exists" in exc_str.lower() or "conflict" in exc_str.lower():
+            if ("409" in exc_str or "DUPLICATE_ITEM" in exc_str
+                    or "already exists" in exc_str.lower() or "conflict" in exc_str.lower()):
                 try:
                     existing_rules = self._client.list_cloud_app_rules(rule_type)
                     found = next((r for r in existing_rules if r.get("name") == name), None)
@@ -704,7 +743,7 @@ class ZIAPushService:
                 return PushRecord(
                     resource_type="cloud_app_control_rule",
                     name=name,
-                    status="failed:permanent:409 — rule exists but name lookup failed",
+                    status="failed:permanent:duplicate — rule exists but name lookup failed",
                 )
             return self._classify_error("cloud_app_control_rule", name, exc)
 
@@ -826,7 +865,8 @@ def _is_predefined(resource_type: str, raw_config: dict) -> bool:
 
     Different resource types use different fields to signal predefined status:
     - dlp_engine, dlp_dictionary, network_service: predefined:true boolean
-    - url_category: type:"ZSCALER_DEFINED" (no predefined field)
+    - url_category: type:"ZSCALER_DEFINED", non-numeric id, or customCategory==False
+    - bandwidth_class: predefined:true boolean
     - SKIP_NAMED: hardcoded names that lack the predefined flag but are still system-owned
     """
     if raw_config.get("predefined"):
@@ -834,9 +874,19 @@ def _is_predefined(resource_type: str, raw_config: dict) -> bool:
     name = raw_config.get("name", "")
     if name and name in SKIP_NAMED.get(resource_type, set()):
         return True
+    # network_service and bandwidth_class predefined entries carry type:"PREDEFINED"
+    # rather than a predefined:true boolean field.
+    if raw_config.get("type") == "PREDEFINED":
+        return True
     if resource_type == "url_category":
         if raw_config.get("type") == "ZSCALER_DEFINED":
             return True
-        if raw_config.get("customCategory") is False:
+        # customCategory == False (not 'is False') handles SDK serializing as 0/False
+        if raw_config.get("customCategory") == False:  # noqa: E712
+            return True
+        # Zscaler-defined categories have string IDs (e.g. "ADULT_SEX_EDUCATION");
+        # user-created custom categories always have numeric IDs.
+        cat_id = str(raw_config.get("id", ""))
+        if cat_id and not cat_id.isdigit():
             return True
     return False
