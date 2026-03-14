@@ -4369,6 +4369,16 @@ def _write_push_log(baseline_path, tenant, dry_run, push_records):
                 lines.append(f"    {r.failure_reason}")
             lines.append("")
 
+        # Manual-action warnings
+        warned = [r for r in push_records if r.warnings]
+        if warned:
+            lines.append("=== Manual Action Required ===")
+            for r in warned:
+                for w in r.warnings:
+                    lines.append(f"  {r.resource_type} :: {r.name}")
+                    lines.append(f"    {w}")
+            lines.append("")
+
         # Proposed deletes not yet executed (if any remain in to_delete)
         pending_deletes = [
             r for r in dry_run.to_delete
@@ -4395,7 +4405,7 @@ def apply_baseline_menu(client, tenant):
 
     render_banner()
     console.print("\n[bold]Apply Baseline from JSON[/bold]")
-    console.print("[dim]Reads a ZIA snapshot export file and pushes only deltas to the live tenant.[/dim]\n")
+    console.print("[dim]Reads a ZIA snapshot export file and pushes it to the live tenant.[/dim]\n")
 
     path = questionary.text("Path to baseline JSON file:").ask()
     if not path:
@@ -4432,6 +4442,24 @@ def apply_baseline_menu(client, tenant):
         if rtype not in SKIP_TYPES:
             pushable_types += 1
     console.print(file_table)
+
+    # ── Step 1b: mode selection ────────────────────────────────────────────
+    console.print()
+    mode = questionary.select(
+        "Push mode:",
+        choices=[
+            questionary.Choice(
+                "Wipe-first  — delete resources absent from baseline first, then push",
+                value="wipe",
+            ),
+            questionary.Choice(
+                "Delta-only  — push creates/updates first, review deletes at the end",
+                value="delta",
+            ),
+        ],
+    ).ask()
+    if mode is None:
+        return
 
     confirmed = questionary.confirm(
         f"Compare {pushable_types} resource types against current state of {tenant.name}?",
@@ -4500,12 +4528,49 @@ def apply_baseline_menu(client, tenant):
             console.print(f"  [dim]{rtype}:[/dim] {name}")
         if len(deletes) > _MAX_DETAIL:
             console.print(f"  [dim]... and {len(deletes) - _MAX_DETAIL} more[/dim]")
-        if create_update_count > 0:
+        if mode == "wipe":
+            console.print("[dim]  Wipe-first: deletes will execute before creates/updates.[/dim]")
+        elif create_update_count > 0:
             console.print("[dim]  Deletes will be confirmed separately after creates/updates complete.[/dim]")
         else:
             console.print("[dim]  You will be asked to confirm before any deletes are executed.[/dim]")
 
-    # ── Step 4: push creates + updates ────────────────────────────────────
+    # ── Step 4a (wipe-first): delete extraneous resources before pushing ──
+    delete_records: list = []
+    deleted = 0
+
+    if mode == "wipe" and dry_run.to_delete:
+        console.print()
+        confirm_wipe_deletes = questionary.confirm(
+            f"Delete {len(dry_run.to_delete)} resource(s) absent from baseline before pushing?",
+            default=False,
+        ).ask()
+        if not confirm_wipe_deletes:
+            return
+
+        console.print()
+        with console.status("[red]Deleting extraneous resources...[/red]") as status:
+            def _wipe_del_progress(_, rtype, rec):
+                status.update(f"[red]Deleting {rtype} — {rec.name}[/red]")
+            delete_records = service.execute_deletes(
+                dry_run.to_delete, progress_callback=_wipe_del_progress
+            )
+        deleted = sum(1 for r in delete_records if r.is_deleted)
+        del_failed = sum(1 for r in delete_records if r.is_failed)
+        console.print(f"  [red]Deleted:[/red]  {deleted}")
+        if del_failed:
+            console.print(f"  [red]Failed:[/red]   {del_failed}")
+
+        # Activate deletions before pushing to avoid stale-state ordering errors
+        if deleted > 0:
+            console.print()
+            console.print("[dim]Activating deletions before push...[/dim]")
+            try:
+                client.activate()
+            except Exception as e:
+                console.print(f"[yellow]⚠ Activation after wipe failed: {e} — proceeding anyway[/yellow]")
+
+    # ── Step 4b: push creates + updates ───────────────────────────────────
     push_records = []
     current_pass = [0]
 
@@ -4546,10 +4611,8 @@ def apply_baseline_menu(client, tenant):
         console.print(f"  [dim]Skipped:[/dim]  {skipped}")
         console.print(f"  [red]Failed:[/red]   {failed}")
 
-    # ── Step 5: deferred delete confirmation ─────────────────────────────
-    delete_records: list = []
-    deleted = 0
-    if dry_run.to_delete:
+    # ── Step 5: deferred delete confirmation (delta-only mode) ────────────
+    if mode == "delta" and dry_run.to_delete:
         console.print(f"\n[bold red]Proposed deletes ({len(dry_run.to_delete)})[/bold red] — these resources exist in {tenant.name} but are not in the baseline:")
         for rec in dry_run.to_delete[:_MAX_DETAIL]:
             zia_id = rec.status.partition(":")[2]
@@ -4621,6 +4684,16 @@ def apply_baseline_menu(client, tenant):
         for r in failures:
             fail_table.add_row(r.resource_type, r.name, r.failure_reason[:80])
         console.print(fail_table)
+
+    # Manual-action warnings (location scope stripped, custom cloud apps missing, etc.)
+    warned = [r for r in push_records if r.warnings]
+    if warned:
+        console.print()
+        console.print("[bold yellow]Manual action required:[/bold yellow]")
+        console.print("[yellow]The following resources require manual steps in the target tenant.[/yellow]")
+        for r in warned:
+            for w in r.warnings:
+                console.print(f"  [dim]{r.resource_type}:[/dim] {r.name} — {w}")
 
     # Write push log
     log_path = _write_push_log(path, tenant, dry_run, push_records)
