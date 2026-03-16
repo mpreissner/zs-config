@@ -778,6 +778,23 @@ class ZIAPushService:
             id_remap=dict(self._id_remap),
         )
 
+    def verify_push(
+        self,
+        baseline: dict,
+        import_progress_callback: Optional[Callable[[str, int, int], None]] = None,
+    ) -> DryRunResult:
+        """Re-classify the baseline against the current live state after a push.
+
+        Runs a fresh import of the target tenant then compares against the
+        baseline.  Any remaining creates, updates, or deletes indicate that
+        the push did not fully apply (e.g. ordering constraint, missed delete).
+
+        Returns:
+            A new DryRunResult.  An ideal post-push result has zero pending
+            creates/updates and zero to_delete entries.
+        """
+        return self.classify_baseline(baseline, import_progress_callback=import_progress_callback)
+
     def push_classified(
         self,
         dry_run: DryRunResult,
