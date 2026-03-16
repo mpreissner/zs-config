@@ -26,7 +26,8 @@ def _zia_label() -> str:
 def main_menu():
     while True:
         render_banner()
-        choice = questionary.select(
+
+        q = questionary.select(
             "Main Menu",
             choices=[
                 questionary.Choice(_zia_label(), value="zia"),
@@ -42,9 +43,28 @@ def main_menu():
                 questionary.Choice("  Exit", value="exit"),
             ],
             use_indicator=True,
-        ).ask()
+        )
 
-        if choice == "zpa":
+        # Inject Ctrl+] binding for the hidden plugin manager.
+        # questionary.Question.application lazily creates the prompt_toolkit
+        # Application; we merge in our key binding before running it.
+        from prompt_toolkit.key_binding import KeyBindings, merge_key_bindings
+        _plugin_kb = KeyBindings()
+
+        @_plugin_kb.add("c-]")
+        def _open_plugin_manager(event):
+            event.app.exit(result="__plugins__")
+
+        app = q.application
+        app.key_bindings = merge_key_bindings(
+            [app.key_bindings or KeyBindings(), _plugin_kb]
+        )
+        choice = app.run()
+
+        if choice == "__plugins__":
+            from cli.menus.plugin_menu import plugin_menu
+            plugin_menu()
+        elif choice == "zpa":
             from cli.menus.zpa_menu import zpa_menu
             zpa_menu()
         elif choice == "zia":
