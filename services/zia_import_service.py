@@ -52,6 +52,7 @@ RESOURCE_DEFINITIONS: List[ResourceDef] = [
     ResourceDef("location",              "list_locations"),
     ResourceDef("location_lite",         "list_locations_lite"),
     ResourceDef("location_group",        "list_location_groups"),
+    ResourceDef("device_group",          "list_device_groups"),
     ResourceDef("admin_user",            "list_admin_users"),
     ResourceDef("admin_role",            "list_admin_roles"),
     ResourceDef("department",            "list_departments"),

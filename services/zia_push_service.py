@@ -125,6 +125,7 @@ SKIP_TYPES: set = {
     "location_group",       # read-only in SDK
     "location",             # tenant-specific; public IPs and VPN credentials cannot be copied cross-tenant
     "location_lite",        # predefined/system locations (Road Warrior etc.) — imported for ID remapping only
+    "device_group",         # predefined OS/platform groups (Windows, iOS, etc.) — imported for ID remapping only
     "network_app",          # system-defined, read-only
     "cloud_app_policy",     # reference data, not policy
     "cloud_app_ssl_policy",
@@ -525,6 +526,21 @@ class ZIAPushService:
         # Predefined engines (e.g. id=61 "PCI") are used in default Zscaler rules and
         # are fully accepted by the API in user-created rule payloads.
         self._usable_dlp_engine_ids = set((existing.get("dlp_engine") or {}).keys())
+
+        # Device group name → target ID map.
+        # Device group IDs differ across tenants; remap by name so rules scoped to
+        # predefined OS groups (Windows, iOS, etc.) carry over on push.
+        # Source device_group entries come from the baseline; target from the DB.
+        target_dg_name_map = {
+            entry["name"].lower(): entry["id"]
+            for entry in (existing.get("device_group") or {}).values()
+            if entry.get("name")
+        }
+        for src_entry in (baseline.get("resources", {}).get("device_group") or []):
+            src_id = str(src_entry.get("id", ""))
+            src_name = (src_entry.get("name") or "").lower()
+            if src_id and src_name and src_name in target_dg_name_map:
+                self._register_remap(src_id, target_dg_name_map[src_name])
 
         # CBI profile map: profile name (lowercase) → profile dict.
         # Used to remap cbi_profile UUIDs on ISOLATE url_filtering_rules across tenants.

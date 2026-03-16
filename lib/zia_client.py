@@ -294,6 +294,16 @@ class ZIAClient:
         return _to_dicts(_unwrap(result, resp, err))
 
     # ------------------------------------------------------------------
+    # Device Groups
+    # ------------------------------------------------------------------
+
+    def list_device_groups(self) -> List[Dict]:
+        result, resp, err = self._sdk.zia.device_management.list_device_groups(
+            query_params={"includePseudoGroups": True}
+        )
+        return _to_dicts(_unwrap(result, resp, err))
+
+    # ------------------------------------------------------------------
     # Location Groups
     # ------------------------------------------------------------------
 
