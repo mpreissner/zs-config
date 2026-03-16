@@ -78,6 +78,7 @@ RESOURCE_DEFINITIONS: List[ResourceDef] = [
     ResourceDef("advanced_settings",             "list_advanced_settings",
                 id_field="id", name_field="name"),
     ResourceDef("tenancy_restriction_profile",   "list_tenancy_restriction_profiles"),
+    ResourceDef("sandbox_rule",                  "list_sandbox_rules"),
 ]
 
 
