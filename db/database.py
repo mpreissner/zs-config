@@ -56,6 +56,22 @@ def init_db(db_url: Optional[str] = None) -> None:
     _SessionFactory = sessionmaker(bind=_engine, expire_on_commit=False)
     Base.metadata.create_all(_engine)
     _migrate(_engine)
+    _secure_db_file()
+
+
+def _secure_db_file() -> None:
+    """Ensure the SQLite database file is owner-readable only (chmod 600).
+
+    Skipped on Windows (no Unix permission model) and when a custom DB URL
+    is in use (may not be a local SQLite file).
+    """
+    if platform.system() == "Windows":
+        return
+    if os.environ.get("ZSCALER_DB_URL"):
+        return
+    db_path = Path(os.environ.get("ZSCALER_DB_PATH", str(_DEFAULT_DB_PATH)))
+    if db_path.exists():
+        db_path.chmod(0o600)
 
 
 def _migrate(engine) -> None:

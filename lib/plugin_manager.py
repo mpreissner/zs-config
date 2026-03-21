@@ -12,15 +12,26 @@ Available plugins are listed in manifest.json in the private manifest repo,
 fetched via the GitHub API using the authenticated token.
 """
 
+import os
 import re
+import stat
 import subprocess
 import sys
+import tempfile
 from importlib.metadata import entry_points
 from typing import Optional
 
 import requests
 
 from lib.github_auth import get_token
+
+# PEP 508 package name: letters, digits, hyphens, underscores, dots.
+_SAFE_PACKAGE_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9._-]*$')
+
+# Allowed install URL patterns — must point to github.com via HTTPS or SSH.
+_ALLOWED_URL_RE = re.compile(
+    r'^git\+(?:https://(?:[^@/]+@)?|ssh://git@)github\.com/'
+)
 
 _PLUGIN_GROUP   = "zs_config.plugins"
 _MANIFEST_REPO  = "mpreissner/zs-plugins"
@@ -117,34 +128,69 @@ def fetch_manifest() -> tuple[Optional[list], Optional[str]]:
 # ---------------------------------------------------------------------------
 
 def _to_https_url(url: str) -> str:
-    """Convert a git+ssh GitHub URL to git+https with token auth.
+    """Normalise a git+ssh GitHub URL to a bare git+https URL (no token).
 
-    Manifests may use SSH URLs (git+ssh://git@github.com/...) which require a
-    pre-configured SSH key.  We already hold a GitHub token, so rewrite to
-    HTTPS instead — no SSH key required on the client machine.
+    The token is injected at install time via GIT_ASKPASS rather than embedded
+    in the URL, so it never appears in process listings.
     """
-    token = get_token()
-    if not token:
-        return url
     return re.sub(
         r"^git\+ssh://git@github\.com/",
-        f"git+https://x-access-token:{token}@github.com/",
+        "git+https://github.com/",
         url,
     )
+
+
+def _askpass_env(token: str) -> tuple[dict, str]:
+    """Return (env_dict, temp_script_path) for GIT_ASKPASS-based auth.
+
+    Writes a minimal executable Python helper that echoes the token when git
+    asks for credentials.  The token is passed via an env var rather than baked
+    into the script, keeping it out of the script file itself.
+
+    Caller is responsible for deleting the temp file after use.
+    """
+    script = (
+        "#!/usr/bin/env python3\n"
+        "import os, sys\n"
+        "p = sys.argv[1] if len(sys.argv) > 1 else ''\n"
+        "print('x-access-token' if 'sername' in p else os.environ.get('_ZS_GIT_TOKEN', ''))\n"
+    )
+    fd, path = tempfile.mkstemp(prefix="_zs_askpass_", suffix=".py")
+    try:
+        os.write(fd, script.encode())
+    finally:
+        os.close(fd)
+    os.chmod(path, stat.S_IRWXU)   # 700 — owner execute only
+
+    env = os.environ.copy()
+    env["GIT_ASKPASS"]        = path
+    env["_ZS_GIT_TOKEN"]      = token
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    return env, path
 
 
 def install_plugin(install_url: str) -> tuple[bool, str]:
     """Install a plugin using pip.
 
+    Validates that the URL points to github.com, then installs with the GitHub
+    token passed via GIT_ASKPASS so it does not appear in the process listing.
+
     Returns (True, success_message) or (False, error_output).
     """
-    url = _to_https_url(install_url)
+    if not _ALLOWED_URL_RE.match(install_url):
+        return False, f"Install URL must point to github.com: {install_url!r}"
+
+    url   = _to_https_url(install_url)
+    token = get_token()
+    env, askpass_path = _askpass_env(token) if token else (None, None)
+
     try:
         result = subprocess.run(
             [sys.executable, "-m", "pip", "install", url],
             capture_output=True,
             text=True,
             timeout=120,
+            env=env,
         )
         if result.returncode == 0:
             return True, "Plugin installed successfully."
@@ -154,6 +200,12 @@ def install_plugin(install_url: str) -> tuple[bool, str]:
         return False, "Installation timed out after 120 seconds."
     except Exception as exc:
         return False, str(exc)
+    finally:
+        if askpass_path:
+            try:
+                os.unlink(askpass_path)
+            except OSError:
+                pass
 
 
 def uninstall_plugin(package_name: str) -> tuple[bool, str]:
@@ -161,6 +213,8 @@ def uninstall_plugin(package_name: str) -> tuple[bool, str]:
 
     Returns (True, success_message) or (False, error_output).
     """
+    if not _SAFE_PACKAGE_RE.match(package_name):
+        return False, f"Invalid package name: {package_name!r}"
     try:
         result = subprocess.run(
             [sys.executable, "-m", "pip", "uninstall", "--yes", package_name],
