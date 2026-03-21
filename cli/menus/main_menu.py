@@ -27,23 +27,32 @@ def main_menu():
     while True:
         render_banner()
 
-        q = questionary.select(
-            "Main Menu",
-            choices=[
-                questionary.Choice(_zia_label(), value="zia"),
-                questionary.Choice("  ZPA   Zscaler Private Access", value="zpa"),
-                questionary.Choice("  ZCC   Zscaler Client Connector", value="zcc"),
-                questionary.Choice("  ZDX   Zscaler Digital Experience", value="zdx"),
-                questionary.Choice("  ZIdentity", value="zidentity"),
-                questionary.Separator(),
-                questionary.Choice(_active_tenant_label(), value="switch_tenant"),
-                questionary.Choice("  Settings", value="settings"),
-                questionary.Choice("  Audit Log", value="audit"),
-                questionary.Separator(),
-                questionary.Choice("  Exit", value="exit"),
-            ],
-            use_indicator=True,
-        )
+        from lib.plugin_manager import get_installed_plugins
+        plugins = [p for p in get_installed_plugins() if not p.get("error")]
+
+        choices = [
+            questionary.Choice(_zia_label(), value="zia"),
+            questionary.Choice("  ZPA   Zscaler Private Access", value="zpa"),
+            questionary.Choice("  ZCC   Zscaler Client Connector", value="zcc"),
+            questionary.Choice("  ZDX   Zscaler Digital Experience", value="zdx"),
+            questionary.Choice("  ZIdentity", value="zidentity"),
+        ]
+
+        if plugins:
+            choices.append(questionary.Separator())
+            for p in plugins:
+                choices.append(questionary.Choice(f"  {p['name']}", value=f"__plugin__{p['entry_point']}"))
+
+        choices += [
+            questionary.Separator(),
+            questionary.Choice(_active_tenant_label(), value="switch_tenant"),
+            questionary.Choice("  Settings", value="settings"),
+            questionary.Choice("  Audit Log", value="audit"),
+            questionary.Separator(),
+            questionary.Choice("  Exit", value="exit"),
+        ]
+
+        q = questionary.select("Main Menu", choices=choices, use_indicator=True)
 
         # Inject Ctrl+] binding for the hidden plugin manager.
         # questionary.Question.application lazily creates the prompt_toolkit
@@ -64,6 +73,11 @@ def main_menu():
         if choice == "__plugins__":
             from cli.menus.plugin_menu import plugin_menu
             plugin_menu()
+        elif isinstance(choice, str) and choice.startswith("__plugin__"):
+            entry_point = choice[len("__plugin__"):]
+            plugin = next((p for p in plugins if p["entry_point"] == entry_point), None)
+            if plugin:
+                plugin["menu"]()
         elif choice == "zpa":
             from cli.menus.zpa_menu import zpa_menu
             zpa_menu()
