@@ -238,7 +238,10 @@ def check_plugin_updates() -> None:
     if any_updated:
         console.print(
             Panel(
-                "[green]Plugin update complete.[/green] Re-launch zs-config to load the updated plugin(s).",
+                "[green]Plugin update complete.[/green] zs-config will now exit — "
+                "please re-launch to load the updated plugin(s).",
                 border_style="green",
             )
         )
+        questionary.press_any_key_to_continue("Press any key to exit...").ask()
+        sys.exit(0)

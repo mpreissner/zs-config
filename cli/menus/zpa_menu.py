@@ -7,6 +7,7 @@ from rich.table import Table
 from cli.banner import render_banner
 from cli.menus import get_zpa_client
 from cli.menus.snapshots_menu import snapshots_menu
+from lib.defaults import DEFAULT_WORK_DIR
 
 console = Console()
 
@@ -548,7 +549,7 @@ def _bulk_create(client, tenant):
     console.print("\n[bold]Bulk Create Application Segments from CSV[/bold]\n")
 
     # 1. Prompt for CSV path
-    csv_path = questionary.path("Path to CSV file:").ask()
+    csv_path = questionary.path("Path to CSV file:", default=str(DEFAULT_WORK_DIR)).ask()
     if not csv_path:
         return
     csv_path = os.path.expanduser(csv_path)
@@ -784,7 +785,7 @@ def _csv_field_reference():
 def _export_template():
     from services.zpa_segment_service import CSV_FIELDNAMES, TEMPLATE_ROWS
 
-    default_path = os.path.expanduser("~/app_segment_template.csv")
+    default_path = str(DEFAULT_WORK_DIR / "app_segment_template.csv")
     out_path = questionary.path(
         "Output path:", default=default_path
     ).ask()
@@ -2982,7 +2983,7 @@ def _export_policy_rules_to_csv(tenant):
 
     rows.sort(key=lambda r: int(r["raw_config"].get("rule_order") or 0))
 
-    default_path = os.path.expanduser(f"~/access_policy_{tenant.name}.csv")
+    default_path = str(DEFAULT_WORK_DIR / f"access_policy_{tenant.name}.csv")
     out_path = questionary.path("Output path:", default=default_path).ask()
     if not out_path:
         return
@@ -3023,7 +3024,7 @@ def _export_policy_rules_to_csv(tenant):
 def _export_policy_template():
     from services.zpa_policy_service import CSV_FIELDNAMES, TEMPLATE_ROWS
 
-    default_path = os.path.expanduser("~/access_policy_template.csv")
+    default_path = str(DEFAULT_WORK_DIR / "access_policy_template.csv")
     out_path = questionary.path("Output path:", default=default_path).ask()
     if not out_path:
         return
@@ -3045,7 +3046,7 @@ def _bulk_create_policy_rules(client, tenant):
 
     console.print("\n[bold]Bulk Create Access Policy Rules from CSV[/bold]\n")
 
-    csv_path = questionary.path("Path to CSV file:").ask()
+    csv_path = questionary.path("Path to CSV file:", default=str(DEFAULT_WORK_DIR)).ask()
     if not csv_path:
         return
     csv_path = os.path.expanduser(csv_path)
@@ -3143,7 +3144,7 @@ def _sync_policy_rules(client, tenant):
 
     console.print("\n[bold]Import / Sync Access Policy Rules from CSV[/bold]\n")
 
-    csv_path = questionary.path("Path to CSV file:").ask()
+    csv_path = questionary.path("Path to CSV file:", default=str(DEFAULT_WORK_DIR)).ask()
     if not csv_path:
         return
     csv_path = os.path.expanduser(csv_path)

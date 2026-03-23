@@ -4,6 +4,8 @@ Not listed in the main menu.  Allows authenticated users to browse
 available plugins from the private manifest repo and install/uninstall them.
 """
 
+import sys
+
 import questionary
 from rich.console import Console
 from rich.panel import Panel
@@ -264,12 +266,17 @@ def _do_install(plugin: dict) -> None:
     if success:
         console.print(f"[green]✓ {message}[/green]")
         console.print(
-            "[dim]Restart zs-config to activate the plugin.[/dim]"
+            Panel(
+                "[green]Plugin installed.[/green] zs-config will now exit — "
+                "please re-launch to activate the new plugin.",
+                border_style="green",
+            )
         )
+        questionary.press_any_key_to_continue("Press any key to exit...").ask()
+        sys.exit(0)
     else:
         console.print(f"[red]✗ Installation failed:[/red]\n{message}")
-
-    questionary.press_any_key_to_continue("Press any key...").ask()
+        questionary.press_any_key_to_continue("Press any key...").ask()
 
 
 def _install_plugin_by_url() -> None:

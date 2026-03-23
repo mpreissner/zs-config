@@ -5,6 +5,7 @@ from rich.table import Table
 from cli.banner import render_banner
 from cli.menus import get_zia_client
 from cli.menus.snapshots_menu import snapshots_menu
+from lib.defaults import DEFAULT_WORK_DIR
 
 console = Console()
 
@@ -538,7 +539,7 @@ def _export_firewall_rules_to_csv(tenant):
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    default_path = os.path.expanduser(f"~/firewall_rules_{tenant.name}.csv")
+    default_path = str(DEFAULT_WORK_DIR / f"firewall_rules_{tenant.name}.csv")
     out_path = questionary.path("Output path:", default=default_path).ask()
     if not out_path:
         return
@@ -561,7 +562,7 @@ def _sync_firewall_rules(client, tenant):
 
     console.print("\n[bold]Import / Sync Cloud Firewall Rules from CSV[/bold]\n")
 
-    csv_path = questionary.path("Path to CSV file:").ask()
+    csv_path = questionary.path("Path to CSV file:", default=str(DEFAULT_WORK_DIR)).ask()
     if not csv_path:
         return
     csv_path = os.path.expanduser(csv_path)
@@ -1650,7 +1651,7 @@ def _create_ip_source_groups(client, tenant):
     ).ask()
 
     if choice == "template":
-        default_path = os.path.expanduser("~/ip_source_groups_template.csv")
+        default_path = str(DEFAULT_WORK_DIR / "ip_source_groups_template.csv")
         out_path = questionary.path("Output path:", default=default_path).ask()
         if out_path:
             out_path = os.path.expanduser(out_path)
@@ -1665,7 +1666,7 @@ def _create_ip_source_groups(client, tenant):
     if choice in (None, "cancel"):
         return
 
-    csv_path = questionary.path("Path to CSV file:").ask()
+    csv_path = questionary.path("Path to CSV file:", default=str(DEFAULT_WORK_DIR)).ask()
     if not csv_path:
         return
     csv_path = os.path.expanduser(csv_path)
@@ -1732,7 +1733,7 @@ def _create_ip_dest_groups(client, tenant):
     ).ask()
 
     if choice == "template":
-        default_path = os.path.expanduser("~/ip_dest_groups_template.csv")
+        default_path = str(DEFAULT_WORK_DIR / "ip_dest_groups_template.csv")
         out_path = questionary.path("Output path:", default=default_path).ask()
         if out_path:
             out_path = os.path.expanduser(out_path)
@@ -1747,7 +1748,7 @@ def _create_ip_dest_groups(client, tenant):
     if choice in (None, "cancel"):
         return
 
-    csv_path = questionary.path("Path to CSV file:").ask()
+    csv_path = questionary.path("Path to CSV file:", default=str(DEFAULT_WORK_DIR)).ask()
     if not csv_path:
         return
     csv_path = os.path.expanduser(csv_path)

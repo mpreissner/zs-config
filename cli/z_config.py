@@ -99,6 +99,10 @@ def main():
     if _ca_bundle.exists() and "REQUESTS_CA_BUNDLE" not in os.environ:
         os.environ["REQUESTS_CA_BUNDLE"] = str(_ca_bundle)
 
+    # ── Ensure default working directory exists ────────────────────────────
+    from lib.defaults import DEFAULT_WORK_DIR
+    DEFAULT_WORK_DIR.mkdir(parents=True, exist_ok=True)
+
     from db.database import init_db
     from cli.banner import render_banner
     from cli.menus import select_tenant
