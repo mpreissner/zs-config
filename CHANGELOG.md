@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [1.0.9] - 2026-03-23
+
+### Fixed
+
+#### Core
+- **Banner version** — version string in `cli/banner.py` was not bumped during the 1.0.8 release; corrected to stay in sync with `pyproject.toml`.
+
+---
+
 ## [1.0.8] - 2026-03-23
 
 ### Added
