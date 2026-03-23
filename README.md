@@ -73,7 +73,7 @@ pip install zs-config
 zs-config
 ```
 
-On first launch an encryption key is generated at `~/.config/zs-config/secret.key`. Go to **Settings → Add Tenant** to register a tenant, then run **Import Config** under ZIA or ZPA to populate the local cache.
+On first launch an encryption key is generated at `~/.config/zs-config/secret.key` and a default working directory is created at `~/Documents/zs-config`. File export and import prompts default to this directory. Go to **Settings → Add Tenant** to register a tenant, then run **Import Config** under ZIA or ZPA to populate the local cache.
 
 **Dev setup:**
 ```bash

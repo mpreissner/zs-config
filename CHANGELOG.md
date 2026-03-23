@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [1.0.7] - 2026-03-23
+
+### Added
+
+#### Core
+- **Default working directory** — `~/Documents/zs-config` is created automatically on first launch. All file export and import prompts now default to this directory, so users no longer need to type a path for every operation.
+
+#### Plugin Manager
+- **Exit after plugin install or update** — installing or updating a plugin now exits zs-config immediately after success (same behaviour as the self-update flow), ensuring the updated plugin code is active on the next launch rather than requiring a manual restart.
+
+---
+
 ## [1.0.6] - 2026-03-22
 
 ### Added

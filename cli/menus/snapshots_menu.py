@@ -9,6 +9,8 @@ import os
 import re
 from datetime import datetime, timezone
 
+from lib.defaults import DEFAULT_WORK_DIR
+
 import questionary
 from rich.console import Console
 from rich.panel import Panel
@@ -206,7 +208,7 @@ def _export_snapshot(tenant, product: str) -> None:
     if snap is None:
         return
 
-    export_dir = questionary.path("Export directory:", default=os.getcwd()).ask()
+    export_dir = questionary.path("Export directory:", default=str(DEFAULT_WORK_DIR)).ask()
     if not export_dir:
         return
 
