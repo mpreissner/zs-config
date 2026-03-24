@@ -264,8 +264,13 @@ def url_for_branch(base_url: str, branch: str) -> str:
     git+https://github.com/org/repo.git#sub        → …@branch#sub
     git+https://github.com/org/repo.git@dev#sub     → …@branch#sub
     """
-    # Strip any existing @ref before the fragment
-    stripped = re.sub(r'(git\+https://github\.com/[^@#]+)@[^#]+', r'\1', base_url)
+    # Strip any existing @ref before the fragment (handles both https and ssh URLs).
+    # SSH URLs contain 'git@github.com' so the pattern anchors past that literal.
+    stripped = re.sub(
+        r'(git\+(?:https://(?:[^@/]+@)?|ssh://git@)github\.com/[^@#]+)@[^#]+',
+        r'\1',
+        base_url,
+    )
     if '#' in stripped:
         base, fragment = stripped.split('#', 1)
         return f"{base}@{branch}#{fragment}"
