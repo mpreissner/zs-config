@@ -252,3 +252,24 @@ Plugins are pip-installable packages distributed via a private GitHub repository
 **Workaround:** After pushing a baseline that includes Smart Isolation, log in to the target tenant's ZIA admin console and enable Smart Browser Isolation manually. All other `browser_control_settings` fields (CBI profile, etc.) push correctly.
 
 **Rule ordering:** When the source tenant has Smart Isolation enabled (and thus "Smart Isolation One Click Rule" at order 1), the push automatically detects that the rule could not be provisioned on the target and renumbers the remaining SSL Inspection rules to fill the gap — so they remain in the correct relative order starting at 1.
+
+---
+
+### SDK known issues (zscaler-sdk-python)
+
+The following SDK limitations affect this project. Direct HTTP workarounds are in place for each and will be revisited as the SDK is updated.
+
+#### ZIA — Browser Isolation `profileSeq` missing (`lib/zia_client.py`)
+`CBIProfileAPI.list_profiles()` returns objects that omit the `profileSeq` field. This field is required to set `smartIsolationProfileId` when remapping CBI profiles cross-tenant. Workaround: `list_browser_isolation_profiles()` uses direct HTTP against `/zia/api/v1/browserIsolation/profiles`.
+
+#### ZIA — URL Categories lite endpoint missing (`lib/zia_client.py`)
+The SDK has no `/urlCategories/lite` equivalent. Workaround: `list_url_categories_lite()` uses direct HTTP.
+
+#### ZCC — `download_disable_reasons` content-type validation (`lib/zcc_client.py`)
+`DevicesAPI.download_disable_reasons()` raises if the API response `Content-Type` is not `application/octet-stream` and the CSV header does not start with `"User","Device type"`. The actual response columns are `User, UDID, Platform, Service, Disable Time, Disable Reason`. Workaround: `download_disable_reasons()` uses direct HTTP and writes raw bytes.
+
+#### ZCC — Entitlement update methods accept no payload (`lib/zcc_client.py`)
+`EntitlementAPI.update_zpa_group_entitlement()` and `update_zdx_group_entitlement()` send an empty body (`{}`). Workaround: `update_zpa_entitlements()` / `update_zdx_entitlements()` use direct HTTP PUT with the actual payload.
+
+#### ZIdentity — Password and MFA endpoints not in SDK (`lib/zidentity_client.py`)
+`reset_password`, `update_password`, and `skip_mfa` are not implemented in the SDK. Workaround: direct HTTP against `/zidentity/api/v1/users/{id}:resetpassword`, `:updatepassword`, and `:setskipmfa`.
