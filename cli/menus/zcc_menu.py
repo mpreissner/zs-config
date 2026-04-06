@@ -440,7 +440,7 @@ def _export_devices(client, tenant):
     default_path = os.path.expanduser(
         f"~/zcc-devices-{datetime.now().strftime('%Y%m%d-%H%M%S')}.csv"
     )
-    filename = questionary.text("Save to:", default=default_path).ask()
+    filename = questionary.path("Save to:", default=default_path).ask()
     if not filename:
         return
 
@@ -485,7 +485,7 @@ def _export_service_status(client, tenant):
     default_path = os.path.expanduser(
         f"~/zcc-service-status-{datetime.now().strftime('%Y%m%d-%H%M%S')}.csv"
     )
-    filename = questionary.text("Save to:", default=default_path).ask()
+    filename = questionary.path("Save to:", default=default_path).ask()
     if not filename:
         return
 
@@ -535,7 +535,7 @@ def _export_disable_reasons(client, tenant):
     default_path = os.path.expanduser(
         f"~/zcc-disable-reasons-{datetime.now().strftime('%Y%m%d-%H%M%S')}.csv"
     )
-    filename = questionary.text("Save to:", default=default_path).ask()
+    filename = questionary.path("Save to:", default=default_path).ask()
     if not filename:
         return
 

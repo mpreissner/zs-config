@@ -7,13 +7,10 @@ Interactive TUI for Zscaler OneAPI — manage ZPA, ZIA, ZCC, ZDX, and ZIdentity 
 
 ---
 
-## What's New — v1.0.12
+## What's New — v1.0.15
 
-- **ZPA Access Policy CSV — POSTURE, RISK SCORE, SCIM attributes** — three new scoping columns: `posture_profiles` (resolved by name to `posture_udid`), `risk_factor_types` (`LOW` / `MEDIUM` / `HIGH` / `CRITICAL`), and `scim_attributes` (`AttributeName=Value` format). Fixes a long-standing bug where SCIM individual attribute conditions (`object_type: SCIM`) were silently dropped on export and rejected on import.
-- **SCIM_GROUP export/import fixed** — SCIM_GROUP condition operands return `name: null` from the ZPA API. Export now resolves group names from the local DB cache (`IdpName:GroupName` format) and import correctly passes `lhs=idp_id` to the API.
-- **Identity & Directory views** — new ZPA menu section: SAML Attributes, SCIM User Attributes, and SCIM Groups are now viewable as searchable tables.
-- **Policy Scoping Reference export** — new markdown export under Access Policy listing every available value per criteria category (Client Types, Platforms, Risk Factor Types, IdPs, SAML Attributes, SCIM Attributes, SCIM Groups, Machine Groups, Trusted Networks, Posture Profiles, Country Codes).
-- **Apps & Groups Reference export** — new markdown export under App Segments listing all Application Segments and Segment Groups with their IDs.
+- **SSL Inspection rule ordering with Smart Browser Isolation** — when pushing to a target where Smart Browser Isolation isn't enabled, the push now detects the unprovisioned "Smart Isolation One Click Rule" and renumbers the remaining SSL Inspection rules to fill the gap, maintaining the correct relative order starting at 1.
+- **Tab completion for file/path prompts** — all file and directory path prompts across ZCC, ZIA, and setup now support tab-to-complete.
 
 ---
 
@@ -241,3 +238,17 @@ Plugins are pip-installable packages distributed via a private GitHub repository
 | `ZCCResource` | Full JSON snapshot of ZCC resources; SHA-256 change detection |
 | `SyncLog` | Import run outcomes (status, counters, errors) |
 | `RestorePoint` | Point-in-time config snapshots |
+
+---
+
+## Known Issues
+
+### Smart Browser Isolation — cannot be enabled via API
+
+**Symptom:** Pushing `browser_control_settings` with `enableSmartIsolation: true` appears to succeed (HTTP 200), but Smart Browser Isolation remains disabled on the target tenant.
+
+**Cause:** The ZIA API accepts the payload but does not honour the `enableSmartIsolation` toggle. This is a Zscaler platform limitation — enabling Smart Browser Isolation requires a manual step in the ZIA admin console (Policy → Browser Control → Smart Isolation).
+
+**Workaround:** After pushing a baseline that includes Smart Isolation, log in to the target tenant's ZIA admin console and enable Smart Browser Isolation manually. All other `browser_control_settings` fields (CBI profile, etc.) push correctly.
+
+**Rule ordering:** When the source tenant has Smart Isolation enabled (and thus "Smart Isolation One Click Rule" at order 1), the push automatically detects that the rule could not be provisioned on the target and renumbers the remaining SSL Inspection rules to fill the gap — so they remain in the correct relative order starting at 1.
