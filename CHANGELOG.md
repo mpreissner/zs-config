@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [1.0.15] - 2026-04-06
+
+### Fixed
+
+#### ZIA Baseline Push
+- **Smart Browser Isolation — SSL Inspection rule ordering** — when the source tenant has Smart Browser Isolation enabled ("Smart Isolation One Click Rule" at order N) but the target does not (due to the API limitation), the push now detects the unprovisioned rule and renumbers the remaining SSL Inspection rules to fill the gap. Rules maintain the same relative order as the source, starting at 1.
+- **Tab completion for file/path prompts** — all file and directory path prompts across ZCC, ZIA, and setup now use `questionary.path()` instead of `questionary.text()`, enabling tab-to-complete in the terminal.
+
+---
+
 ## [1.0.14] - 2026-04-05
 
 ### Fixed

@@ -3359,7 +3359,7 @@ def _view_dlp_engine(tenant):
 def _create_dlp_engine(client, tenant):
     import json
     console.print("\n[bold]Create DLP Engine from JSON File[/bold]")
-    path = questionary.text("Path to JSON file:").ask()
+    path = questionary.path("Path to JSON file:").ask()
     if not path:
         return
     try:
@@ -3391,7 +3391,7 @@ def _edit_dlp_engine(client, tenant):
     _view_raw_json(chosen["name"], chosen["raw_config"])
 
     console.print("\n[bold]Edit DLP Engine[/bold]")
-    path = questionary.text("Path to JSON file with updated config:").ask()
+    path = questionary.path("Path to JSON file with updated config:").ask()
     if not path:
         return
     try:
@@ -3602,7 +3602,7 @@ def _read_csv_entries(path: str) -> list:
 def _create_dlp_dictionary_json(client, tenant):
     import json
     console.print("\n[bold]Create DLP Dictionary from JSON File[/bold]")
-    path = questionary.text("Path to JSON file:").ask()
+    path = questionary.path("Path to JSON file:").ask()
     if not path:
         return
     try:
@@ -3649,7 +3649,7 @@ def _create_dlp_dictionary_csv(client, tenant):
         ],
     ).ask()
 
-    path = questionary.text("Path to CSV file:").ask()
+    path = questionary.path("Path to CSV file:").ask()
     if not path:
         return
     try:
@@ -3699,7 +3699,7 @@ def _edit_dlp_dictionary(client, tenant):
     _view_raw_json(chosen["name"], chosen["raw_config"])
 
     console.print("\n[bold]Edit DLP Dictionary[/bold]")
-    path = questionary.text("Path to JSON file with updated config:").ask()
+    path = questionary.path("Path to JSON file with updated config:").ask()
     if not path:
         return
     try:
@@ -3743,7 +3743,7 @@ def _edit_dlp_dictionary_csv(client, tenant):
         ],
     ).ask()
 
-    path = questionary.text("Path to CSV file:").ask()
+    path = questionary.path("Path to CSV file:").ask()
     if not path:
         return
     try:
@@ -4199,7 +4199,7 @@ def _create_cloud_app_rule(client, tenant, rule_type: str):
     import json
     from services import audit_service
     console.print(f"\n[bold]Create Cloud App Control Rule — {rule_type.replace('_', ' ').title()}[/bold]")
-    path = questionary.text("Path to JSON file:").ask()
+    path = questionary.path("Path to JSON file:").ask()
     if not path:
         return
     try:
@@ -4234,7 +4234,7 @@ def _edit_cloud_app_rule(client, tenant, rule_type: str):
 
     _view_raw_json(f"Current — {chosen['name']}", chosen["raw_config"])
 
-    path = questionary.text("Path to JSON file with updated config:").ask()
+    path = questionary.path("Path to JSON file with updated config:").ask()
     if not path:
         return
     try:
@@ -4419,7 +4419,7 @@ def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None):
     console.print("[dim]Reads a ZIA snapshot export file and pushes it to the live tenant.[/dim]\n")
 
     if baseline is None:
-        path = questionary.text("Path to baseline JSON file:", default=str(DEFAULT_WORK_DIR)).ask()
+        path = questionary.path("Path to baseline JSON file:", default=str(DEFAULT_WORK_DIR)).ask()
         if not path:
             return
         baseline_path = path.strip()

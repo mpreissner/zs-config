@@ -74,7 +74,7 @@ def main():
     ).ask()
 
     # --- Output path ---
-    conf_path = args.output or questionary.text(
+    conf_path = args.output or questionary.path(
         "Configuration file path:",
         default=DEFAULT_CONF_PATH,
     ).ask()

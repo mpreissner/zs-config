@@ -933,6 +933,10 @@ class ZIAPushService:
             _reimport_svc.run(resource_types=list(one_click_pending.keys()))
             refreshed = self._load_existing_from_db()
 
+            # Track orders of unprovisioned one-click rules per type so we can
+            # collapse the gap they leave in the source order sequence.
+            unprovisioned_orders_by_type: Dict[str, List[int]] = {}
+
             for rtype, entries in one_click_pending.items():
                 refreshed_for_type = refreshed.get(rtype, {})
                 for entry in entries:
@@ -953,6 +957,28 @@ class ZIAPushService:
                             name=dname,
                             status="skipped:one_click_not_provisioned",
                         ))
+                        order = (entry.get("raw_config") or {}).get("order") or 0
+                        if order > 0:
+                            unprovisioned_orders_by_type.setdefault(rtype, []).append(order)
+
+            # Renumber ordered-rule entries whose source order sits above a gap
+            # left by an unprovisioned one-click rule.  Each pending entry whose
+            # order exceeds a skipped rule's position is decremented by the count
+            # of skipped rules positioned strictly before it, so the target ends
+            # up with a contiguous sequence starting at 1.
+            for rtype, skipped_orders in unprovisioned_orders_by_type.items():
+                skipped_sorted = sorted(skipped_orders)
+                for pool in (other_managed_pending, user_pending):
+                    for entry in pool.get(rtype, []):
+                        if not entry.get("__set_order"):
+                            continue
+                        raw = entry.get("raw_config") or {}
+                        current = raw.get("order") or 0
+                        if current <= 0:
+                            continue
+                        gap = sum(1 for so in skipped_sorted if so < current)
+                        if gap:
+                            entry["raw_config"] = dict(raw, order=current - gap)
 
         # Pass 1b — remaining managed resources (including resolved one-click items)
         if other_managed_pending:
