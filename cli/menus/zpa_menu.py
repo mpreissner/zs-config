@@ -4281,6 +4281,157 @@ def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None):
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
+    def _run_migration_readiness(resources: dict, tenant) -> bool:
+        from db.database import get_session
+        from db.models import ZPAResource
+
+        IDENTITY_TYPES = ("saml_attribute", "scim_group", "scim_attribute")
+        IDP_TYPE = "idp"
+
+        console.print()
+        console.print(
+            "[dim]If you are performing a cross-tenant migration, it is recommended that you "
+            "pre-configure your IdPs and sync Users, Groups, and Attributes in the target "
+            "tenant prior to executing this operation.[/dim]"
+        )
+        console.print()
+        is_migration = questionary.confirm("Is this a migration?", default=False).ask()
+        if not is_migration:
+            return True
+
+        # -- source names from baseline --
+        source_names = {
+            rtype: {
+                e["name"]
+                for e in resources.get(rtype, [])
+                if isinstance(e, dict) and e.get("name")
+            }
+            for rtype in IDENTITY_TYPES
+        }
+        source_idp_count = len([
+            e for e in resources.get(IDP_TYPE, []) if isinstance(e, dict)
+        ])
+
+        # -- target names from DB (no import) --
+        target_names = {t: set() for t in IDENTITY_TYPES}
+        target_idp_count = 0
+        with get_session() as session:
+            rows = (
+                session.query(ZPAResource)
+                .filter(
+                    ZPAResource.tenant_id == tenant.id,
+                    ZPAResource.is_deleted == False,
+                    ZPAResource.resource_type.in_(list(IDENTITY_TYPES) + [IDP_TYPE]),
+                )
+                .all()
+            )
+            for row in rows:
+                if row.resource_type in IDENTITY_TYPES and row.name:
+                    target_names[row.resource_type].add(row.name)
+                elif row.resource_type == IDP_TYPE:
+                    target_idp_count += 1
+
+        # -- no-import warning --
+        total_source = sum(len(source_names[t]) for t in IDENTITY_TYPES)
+        if (
+            total_source > 0
+            and sum(len(v) for v in target_names.values()) == 0
+            and target_idp_count == 0
+        ):
+            console.print(
+                f"[yellow]Warning: No identity resources found in DB for "
+                f"{tenant.name}. Run 'Import Config' first for a more accurate "
+                "assessment.[/yellow]"
+            )
+            console.print()
+
+        # -- per-type stats --
+        type_labels = {
+            "saml_attribute": "SAML Attributes",
+            "scim_group":     "SCIM Groups",
+            "scim_attribute": "SCIM Attributes",
+        }
+        per_type = {}
+        for rtype in IDENTITY_TYPES:
+            src = source_names[rtype]
+            matched = src & target_names[rtype]
+            pct = (len(matched) / len(src) * 100) if src else 100.0
+            per_type[rtype] = (len(src), len(matched), pct)
+
+        total_matched = sum(len(source_names[t] & target_names[t]) for t in IDENTITY_TYPES)
+        overall_pct = (total_matched / total_source * 100) if total_source > 0 else 100.0
+
+        # -- build table --
+        tbl = Table(title="Migration Readiness Assessment", show_lines=False)
+        tbl.add_column("Identity Type")
+        tbl.add_column("In Baseline", justify="right")
+        tbl.add_column("In Target",   justify="right")
+        tbl.add_column("Coverage",    justify="right")
+
+        for rtype in IDENTITY_TYPES:
+            src_count, matched_count, pct = per_type[rtype]
+            if pct >= 80:
+                row_style = "green"
+            elif pct >= 40:
+                row_style = "yellow"
+            else:
+                row_style = "red"
+            tbl.add_row(
+                type_labels[rtype],
+                str(src_count),
+                str(matched_count),
+                f"{pct:.0f}%",
+                style=row_style,
+            )
+
+        tbl.add_section()
+
+        if source_idp_count == 0:
+            idp_label, idp_style = "N/A", "dim"
+        elif target_idp_count >= 1:
+            idp_label, idp_style = "Present", "green"
+        else:
+            idp_label, idp_style = "None configured", "red"
+        tbl.add_row(
+            "IdP",
+            str(source_idp_count),
+            str(target_idp_count),
+            idp_label,
+            style=idp_style,
+        )
+
+        console.print(tbl)
+        console.print()
+
+        # -- verdict --
+        if overall_pct >= 80:
+            console.print(
+                f"[green]Migration readiness: GOOD[/green] — {overall_pct:.0f}% of identity "
+                "scoping criteria found in target. Policies will be applied with minimal stripping."
+            )
+        else:
+            console.print(
+                f"[red]Migration readiness: LOW[/red] — only {overall_pct:.0f}% of identity "
+                "scoping criteria found in target. Many policy conditions will have operand "
+                "values stripped, leaving rules with reduced or no scoping."
+            )
+        console.print()
+
+        # -- decision prompt --
+        if overall_pct >= 80:
+            proceed = questionary.confirm("Proceed with migration?", default=True).ask()
+        else:
+            proceed = questionary.confirm(
+                "Coverage is below 80%. Proceed anyway?", default=False
+            ).ask()
+
+        if not proceed:
+            return False
+        return True
+
+    if not _run_migration_readiness(resources, tenant):
+        return
+
     # ── Step 1: show what's in the file ───────────────────────────────
     file_table = Table(title="Baseline File Contents", show_lines=False)
     file_table.add_column("Resource Type")
