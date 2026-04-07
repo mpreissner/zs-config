@@ -4185,7 +4185,7 @@ def _write_push_log(baseline_path, tenant, dry_run, push_records):
         lines = []
         lines.append(f"ZPA Baseline Push Log — {datetime.now(timezone.utc).isoformat()}")
         lines.append(f"Tenant  : {tenant.name} (id={tenant.id})")
-        lines.append(f"Baseline: {baseline_path}")
+        lines.append(f"Baseline: {baseline_path or '<in-memory>'}")
         lines.append("")
 
         lines.append("=== Dry-Run Classification ===")
@@ -4281,15 +4281,6 @@ def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None):
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    # ── Infra warning ─────────────────────────────────────────────────
-    infra_present = [t for t in SKIP_WITH_WARNING if t in resources]
-    if infra_present:
-        console.print("[yellow]Warning: The following infrastructure resource types will be skipped:[/yellow]")
-        for t in infra_present:
-            msg = SKIP_WITH_WARNING_MESSAGES.get(t, "Infrastructure resource; skip manually.")
-            console.print(f"  [dim]{t}[/dim] — {msg}")
-        console.print()
-
     # ── Step 1: show what's in the file ───────────────────────────────
     file_table = Table(title="Baseline File Contents", show_lines=False)
     file_table.add_column("Resource Type")
@@ -4307,13 +4298,22 @@ def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None):
         file_table.add_row(rtype + skipped_note, str(count))
     console.print(file_table)
 
+    # Infra warning — shown after file table so context is clear
+    infra_present = [t for t in SKIP_WITH_WARNING if t in resources]
+    if infra_present:
+        console.print()
+        console.print("[yellow]Warning: The following infrastructure resource types will be skipped:[/yellow]")
+        for t in infra_present:
+            msg = SKIP_WITH_WARNING_MESSAGES.get(t, "Infrastructure resource; skip manually.")
+            console.print(f"  [dim]{t}[/dim] — {msg}")
+
     # ── Step 1b: mode selection ────────────────────────────────────────
     console.print()
     mode = questionary.select(
         "Push mode:",
         choices=[
             questionary.Choice(
-                "Wipe-first  — delete resources absent from baseline first, then push",
+                "Wipe-first  — delete ALL user-created resources first, then push baseline",
                 value="wipe",
             ),
             questionary.Choice(
@@ -4325,6 +4325,48 @@ def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None):
     if mode is None:
         return
 
+    service = ZPAPushService(client, tenant_id=tenant.id)
+
+    # ── Step 2 (wipe-first): identify + delete all user-created resources ─
+    delete_records: list = []
+    deleted = 0
+
+    if mode == "wipe":
+        console.print()
+        with console.status(f"[cyan]Scanning {tenant.name} for user-created resources...[/cyan]"):
+            wipe_result = service.classify_wipe()
+
+        if wipe_result.to_delete:
+            wipe_summary = wipe_result.type_summary()
+            wipe_table = Table(title="Resources to Delete (wipe-first)", show_lines=False)
+            wipe_table.add_column("Resource Type")
+            wipe_table.add_column("Count", justify="right", style="red")
+            for rtype, count in sorted(wipe_summary.items()):
+                wipe_table.add_row(rtype, str(count))
+            console.print(wipe_table)
+
+            console.print()
+            confirm_wipe = questionary.confirm(
+                f"Delete all {wipe_result.delete_count} user-created resource(s) from {tenant.name} before pushing?",
+                default=False,
+            ).ask()
+            if not confirm_wipe:
+                return
+
+            console.print()
+            with console.status("[red]Wiping user-created resources...[/red]") as status:
+                def _wipe_progress(rtype, rec):
+                    status.update(f"[red]Deleting {rtype} — {rec.name}[/red]")
+                delete_records = service.execute_wipe(wipe_result, progress_callback=_wipe_progress)
+            deleted = sum(1 for r in delete_records if r.is_deleted)
+            del_failed = sum(1 for r in delete_records if r.is_failed)
+            console.print(f"  [red]Deleted:[/red]  {deleted}")
+            if del_failed:
+                console.print(f"  [red]Failed:[/red]   {del_failed}")
+        else:
+            console.print("[dim]No user-created resources found — tenant is already empty.[/dim]")
+
+    # ── Step 3: classify baseline against (post-wipe) current state ───
     confirmed = questionary.confirm(
         f"Compare {pushable_types} resource types against current state of {tenant.name}?",
         default=True,
@@ -4332,10 +4374,7 @@ def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None):
     if not confirmed:
         return
 
-    # ── Step 2: import + classify (dry run) ───────────────────────────
-    service = ZPAPushService(client, tenant_id=tenant.id)
     console.print()
-
     with console.status(f"[cyan]Syncing current state from {tenant.name}...[/cyan]") as status:
         def _import_progress(rtype, done, total):
             status.update(f"[cyan]Comparing: {rtype} ({done}/{total})[/cyan]")
@@ -4345,7 +4384,7 @@ def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None):
     creates, updates, deletes = dry_run.changes_by_action()
     create_update_count = len(creates) + len(updates)
 
-    # ── Step 3: show dry-run summary ──────────────────────────────────
+    # ── Step 4: show dry-run summary ──────────────────────────────────
     console.print()
     summary = dry_run.type_summary()
     delta_table = Table(title="Comparison Result (dry run)", show_lines=False)
@@ -4386,44 +4425,13 @@ def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None):
             console.print(f"  [dim]... and {len(updates) - _MAX_DETAIL} more[/dim]")
 
     if deletes:
-        if mode == "wipe":
-            console.print(f"\n[red]To delete ({len(deletes)}) — present in tenant but not in baseline:[/red]")
-        else:
-            console.print(f"\n[dim]Not in baseline ({len(deletes)}) — skipped in delta mode (use wipe-first to remove):[/dim]")
+        console.print(f"\n[dim]Not in baseline ({len(deletes)}) — skipped in delta mode (use wipe-first to remove):[/dim]")
         for rtype, name in deletes[:_MAX_DETAIL]:
             console.print(f"  [dim]{rtype}:[/dim] {name}")
         if len(deletes) > _MAX_DETAIL:
             console.print(f"  [dim]... and {len(deletes) - _MAX_DETAIL} more[/dim]")
-        if mode == "wipe":
-            console.print("[dim]  Wipe-first: deletes will execute before creates/updates.[/dim]")
 
-    # ── Step 4a (wipe-first): delete extraneous resources ─────────────
-    delete_records: list = []
-    deleted = 0
-
-    if mode == "wipe" and dry_run.to_delete:
-        console.print()
-        confirm_wipe_deletes = questionary.confirm(
-            f"Delete {len(dry_run.to_delete)} resource(s) absent from baseline before pushing?",
-            default=False,
-        ).ask()
-        if not confirm_wipe_deletes:
-            return
-
-        console.print()
-        with console.status("[red]Deleting extraneous resources...[/red]") as status:
-            def _wipe_del_progress(_, rtype, rec):
-                status.update(f"[red]Deleting {rtype} — {rec.name}[/red]")
-            delete_records = service.execute_deletes(
-                dry_run.to_delete, progress_callback=_wipe_del_progress
-            )
-        deleted = sum(1 for r in delete_records if r.is_deleted)
-        del_failed = sum(1 for r in delete_records if r.is_failed)
-        console.print(f"  [red]Deleted:[/red]  {deleted}")
-        if del_failed:
-            console.print(f"  [red]Failed:[/red]   {del_failed}")
-
-    # ── Step 4b: push creates + updates ───────────────────────────────
+    # ── Step 5: push creates + updates ────────────────────────────────
     push_records = []
     current_pass = [0]
 

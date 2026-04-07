@@ -884,6 +884,15 @@ class ZPAPushService:
                     update_method(target_id, **payload)
                 rec = PushRecord(resource_type, name, "updated")
                 rec.warnings.extend(warnings)
+                self._write_audit_events([dict(
+                    product="ZPA",
+                    operation="apply_baseline",
+                    action="UPDATE",
+                    status="SUCCESS",
+                    tenant_id=self._tenant_id,
+                    resource_type=resource_type,
+                    resource_name=name,
+                )])
                 return rec
 
             else:
@@ -922,7 +931,8 @@ class ZPAPushService:
                             if source_id:
                                 self._register_remap(source_id, target_id)
                             update_method = getattr(self._client, _WRITE_METHODS[resource_type][1])
-                            if resource_type == "application":
+                            if resource_type in ("application", "pra_portal", "pra_console",
+                                                 "app_connector_group"):
                                 update_method(target_id, payload)
                             elif resource_type in ("segment_group", "server_group"):
                                 update_method(target_id, **payload)
@@ -1110,13 +1120,14 @@ class ZPAPushService:
                 for v in values:
                     if isinstance(v, str):
                         remapped = self._id_remap.get(v, v)
-                        # Check if the (potentially remapped) value is known in target
-                        # We do a best-effort check across all known IDs
+                        # Keep if: (a) the value was successfully remapped to a different ID,
+                        # or (b) the value is already present verbatim in the target's known IDs
+                        # (e.g. a cross-tenant-stable constant like a CLIENT_TYPE string).
+                        # Strip values that are unchanged source-tenant UUIDs not in the target.
                         all_known = set()
                         for s in self._target_known_ids.values():
                             all_known.update(s)
-                        if remapped in all_known or remapped == v:
-                            # Either remapped to a known target ID, or unchanged (may be OK)
+                        if remapped != v or remapped in all_known:
                             cleaned_values.append(remapped)
                         else:
                             warnings.append(
