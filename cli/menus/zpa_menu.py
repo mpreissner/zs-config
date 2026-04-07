@@ -48,9 +48,10 @@ def zpa_menu():
                 questionary.Choice("Privileged Remote Access", value="pra"),
                 questionary.Separator("── Certificates ──"),
                 questionary.Choice("Certificate Management", value="certs"),
-                questionary.Separator(),
+                questionary.Separator("── Config & Admin ──"),
                 questionary.Choice("Import Config", value="import"),
                 questionary.Choice("Config Snapshots", value="snapshots"),
+                questionary.Choice("Apply Config Baseline", value="apply_baseline"),
                 questionary.Choice("Reset N/A Resource Types", value="reset_na"),
                 questionary.Choice("← Back", value="back"),
             ],
@@ -81,6 +82,8 @@ def zpa_menu():
             _import_config(client, tenant)
         elif choice == "snapshots":
             snapshots_menu(tenant, "ZPA")
+        elif choice == "apply_baseline":
+            apply_baseline_menu(client, tenant)
         elif choice == "reset_na":
             _reset_na_resources(client, tenant)
         elif choice in ("back", None):
@@ -4154,3 +4157,576 @@ def _update_resource_enabled_in_db(tenant_id: int, resource_type: str, zpa_id: s
             cfg["enabled"] = enabled
             rec.raw_config = cfg
             flag_modified(rec, "raw_config")
+
+
+# ------------------------------------------------------------------
+# Apply Config Baseline
+# ------------------------------------------------------------------
+
+def _write_push_log(baseline_path, tenant, dry_run, push_records):
+    """Write a full ZPA push log to the zs-config data directory.
+
+    Returns the path written, or None if writing failed.
+    """
+    import platform
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    try:
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        if platform.system() == "Windows":
+            import os as _os
+            log_dir = Path(_os.environ.get("APPDATA", Path.home())) / "zs-config" / "logs"
+        else:
+            log_dir = Path.home() / ".local" / "share" / "zs-config" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / f"zpa-push-{ts}.log"
+
+        lines = []
+        lines.append(f"ZPA Baseline Push Log — {datetime.now(timezone.utc).isoformat()}")
+        lines.append(f"Tenant  : {tenant.name} (id={tenant.id})")
+        lines.append(f"Baseline: {baseline_path or '<in-memory>'}")
+        lines.append("")
+
+        lines.append("=== Dry-Run Classification ===")
+        lines.append(f"  To create : {dry_run.create_count}")
+        lines.append(f"  To update : {dry_run.update_count}")
+        lines.append(f"  To delete : {dry_run.delete_count}")
+        lines.append(f"  Skipped   : {dry_run.skip_count}")
+        lines.append("")
+
+        created = sum(1 for r in push_records if r.is_created)
+        updated = sum(1 for r in push_records if r.is_updated)
+        deleted = sum(1 for r in push_records if r.is_deleted)
+        failed  = sum(1 for r in push_records if r.is_failed)
+        lines.append("=== Push Results ===")
+        lines.append(f"  Created : {created}")
+        lines.append(f"  Updated : {updated}")
+        lines.append(f"  Deleted : {deleted}")
+        lines.append(f"  Failed  : {failed}")
+        lines.append("")
+
+        lines.append("=== All Records ===")
+        for r in push_records:
+            lines.append(f"  [{r.status}] {r.resource_type} :: {r.name}")
+        lines.append("")
+
+        failures = [r for r in push_records if r.is_failed]
+        if failures:
+            lines.append("=== Failures (full detail) ===")
+            for r in failures:
+                lines.append(f"  {r.resource_type} :: {r.name}")
+                lines.append(f"    {r.failure_reason}")
+            lines.append("")
+
+        warned = [r for r in push_records if r.warnings]
+        if warned:
+            lines.append("=== Manual Action Required ===")
+            for r in warned:
+                for w in r.warnings:
+                    lines.append(f"  {r.resource_type} :: {r.name}")
+                    lines.append(f"    {w}")
+            lines.append("")
+
+        pending_deletes = [
+            r for r in dry_run.to_delete
+            if not any(pr.name == r.name and pr.resource_type == r.resource_type
+                       and pr.is_deleted for pr in push_records)
+        ]
+        if pending_deletes:
+            lines.append("=== Proposed Deletes (not executed — user declined or delta mode) ===")
+            for r in pending_deletes:
+                zpa_id = r.status.partition(":")[2]
+                lines.append(f"  {r.resource_type} :: {r.name}  (id={zpa_id})")
+            lines.append("")
+
+        log_file.write_text("\n".join(lines), encoding="utf-8")
+        return str(log_file)
+    except Exception:
+        return None
+
+
+def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None):
+    import json
+    from collections import defaultdict
+    from services.zpa_push_service import (
+        SKIP_TYPES, SKIP_WITH_WARNING, SKIP_WITH_WARNING_MESSAGES, ZPAPushService,
+    )
+
+    render_banner()
+    console.print("\n[bold]Apply Config Baseline[/bold]")
+    console.print("[dim]Reads a ZPA snapshot export file and pushes it to the live tenant.[/dim]\n")
+
+    if baseline is None:
+        path = questionary.path("Path to baseline JSON file:", default=str(DEFAULT_WORK_DIR)).ask()
+        if not path:
+            return
+        baseline_path = path.strip()
+        try:
+            with open(baseline_path) as fh:
+                baseline = json.load(fh)
+        except Exception as e:
+            console.print(f"[red]✗ Could not read file: {e}[/red]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            return
+
+    if baseline.get("product") != "ZPA":
+        console.print("[red]✗ Invalid baseline file — 'product' must be 'ZPA'.[/red]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    resources = baseline.get("resources")
+    if not resources:
+        console.print("[red]✗ Baseline file has no 'resources' key.[/red]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    def _run_migration_readiness(resources: dict, tenant) -> bool:
+        from db.database import get_session
+        from db.models import ZPAResource
+
+        IDENTITY_TYPES = ("saml_attribute", "scim_group", "scim_attribute")
+        IDP_TYPE = "idp"
+
+        console.print()
+        console.print(
+            "[dim]If you are performing a cross-tenant migration, it is recommended that you "
+            "pre-configure your IdPs and sync Users, Groups, and Attributes in the target "
+            "tenant prior to executing this operation.[/dim]"
+        )
+        console.print()
+        is_migration = questionary.confirm("Is this a migration?", default=False).ask()
+        if is_migration is None:
+            return False
+        if not is_migration:
+            return True
+
+        # -- source names from baseline --
+        source_names = {
+            rtype: {
+                e["name"]
+                for e in resources.get(rtype, [])
+                if isinstance(e, dict) and e.get("name")
+            }
+            for rtype in IDENTITY_TYPES
+        }
+        source_idp_count = len([
+            e for e in resources.get(IDP_TYPE, []) if isinstance(e, dict)
+        ])
+
+        # -- target names from DB (no import) --
+        target_names = {t: set() for t in IDENTITY_TYPES}
+        target_idp_count = 0
+        with get_session() as session:
+            rows = (
+                session.query(ZPAResource)
+                .filter(
+                    ZPAResource.tenant_id == tenant.id,
+                    ZPAResource.is_deleted == False,
+                    ZPAResource.resource_type.in_(list(IDENTITY_TYPES) + [IDP_TYPE]),
+                )
+                .all()
+            )
+            for row in rows:
+                if row.resource_type in IDENTITY_TYPES and row.name:
+                    target_names[row.resource_type].add(row.name)
+                elif row.resource_type == IDP_TYPE:
+                    target_idp_count += 1
+
+        # -- no-import warning --
+        total_source = sum(len(source_names[t]) for t in IDENTITY_TYPES)
+        if (
+            total_source > 0
+            and sum(len(v) for v in target_names.values()) == 0
+            and target_idp_count == 0
+        ):
+            console.print(
+                f"[yellow]Warning: No identity resources found in DB for "
+                f"{tenant.name}. Run 'Import Config' first for a more accurate "
+                "assessment.[/yellow]"
+            )
+            console.print()
+
+        # -- per-type stats --
+        type_labels = {
+            "saml_attribute": "SAML Attributes",
+            "scim_group":     "SCIM Groups",
+            "scim_attribute": "SCIM Attributes",
+        }
+        per_type = {}
+        for rtype in IDENTITY_TYPES:
+            src = source_names[rtype]
+            matched = src & target_names[rtype]
+            pct = (len(matched) / len(src) * 100) if src else 100.0
+            per_type[rtype] = (len(src), len(matched), pct)
+
+        total_matched = sum(len(source_names[t] & target_names[t]) for t in IDENTITY_TYPES)
+        overall_pct = (total_matched / total_source * 100) if total_source > 0 else 100.0
+
+        # -- build table --
+        tbl = Table(title="Migration Readiness Assessment", show_lines=False)
+        tbl.add_column("Identity Type")
+        tbl.add_column("In Baseline", justify="right")
+        tbl.add_column("In Target",   justify="right")
+        tbl.add_column("Coverage",    justify="right")
+
+        for rtype in IDENTITY_TYPES:
+            src_count, matched_count, pct = per_type[rtype]
+            if pct >= 80:
+                row_style = "green"
+            elif pct >= 40:
+                row_style = "yellow"
+            else:
+                row_style = "red"
+            tbl.add_row(
+                type_labels[rtype],
+                str(src_count),
+                str(matched_count),
+                f"{pct:.0f}%",
+                style=row_style,
+            )
+
+        tbl.add_section()
+
+        if source_idp_count == 0:
+            idp_label, idp_style = "N/A", "dim"
+        elif target_idp_count >= 1:
+            idp_label, idp_style = "Present", "green"
+        else:
+            idp_label, idp_style = "None configured", "red"
+        tbl.add_row(
+            "IdP",
+            str(source_idp_count),
+            str(target_idp_count),
+            idp_label,
+            style=idp_style,
+        )
+
+        console.print(tbl)
+        console.print()
+
+        # -- verdict --
+        if overall_pct >= 80:
+            console.print(
+                f"[green]Migration readiness: GOOD[/green] — {overall_pct:.0f}% of identity "
+                "scoping criteria found in target. Policies will be applied with minimal stripping."
+            )
+        else:
+            console.print(
+                f"[yellow]Migration readiness: LOW[/yellow] — only {overall_pct:.0f}% of identity "
+                "scoping criteria found in target. Many policy conditions will have operand "
+                "values stripped, leaving rules with reduced or no scoping."
+            )
+        console.print()
+
+        # -- decision prompt --
+        if overall_pct >= 80:
+            proceed = questionary.confirm("Proceed with migration?", default=True).ask()
+        else:
+            proceed = questionary.confirm(
+                "Coverage is below 80%. Proceed anyway?", default=False
+            ).ask()
+
+        if proceed is None or not proceed:
+            return False
+        return True
+
+    if not _run_migration_readiness(resources, tenant):
+        return
+
+    # ── Step 1: show what's in the file ───────────────────────────────
+    file_table = Table(title="Baseline File Contents", show_lines=False)
+    file_table.add_column("Resource Type")
+    file_table.add_column("In File", justify="right")
+    pushable_types = 0
+    for rtype, entries in sorted(resources.items()):
+        count = len(entries) if isinstance(entries, list) else 1
+        if rtype in SKIP_TYPES:
+            skipped_note = "  [dim](env-specific, skipped)[/dim]"
+        elif rtype in SKIP_WITH_WARNING:
+            skipped_note = "  [dim](infrastructure, skipped)[/dim]"
+        else:
+            skipped_note = ""
+            pushable_types += 1
+        file_table.add_row(rtype + skipped_note, str(count))
+    console.print(file_table)
+
+    # Infra warning — shown after file table so context is clear
+    infra_present = [t for t in SKIP_WITH_WARNING if t in resources]
+    if infra_present:
+        console.print()
+        console.print("[yellow]Warning: The following infrastructure resource types will be skipped:[/yellow]")
+        for t in infra_present:
+            msg = SKIP_WITH_WARNING_MESSAGES.get(t, "Infrastructure resource; skip manually.")
+            console.print(f"  [dim]{t}[/dim] — {msg}")
+
+    # ── Step 1b: mode selection ────────────────────────────────────────
+    console.print()
+    mode = questionary.select(
+        "Push mode:",
+        choices=[
+            questionary.Choice(
+                "Wipe-first  — delete ALL user-created resources first, then push baseline",
+                value="wipe",
+            ),
+            questionary.Choice(
+                "Delta-only  — non-destructive merge: creates and updates only, no deletes",
+                value="delta",
+            ),
+        ],
+    ).ask()
+    if mode is None:
+        return
+
+    service = ZPAPushService(client, tenant_id=tenant.id)
+
+    # ── Step 2 (wipe-first): identify + delete all user-created resources ─
+    delete_records: list = []
+    deleted = 0
+
+    if mode == "wipe":
+        console.print()
+        with console.status(f"[cyan]Scanning {tenant.name} for user-created resources...[/cyan]"):
+            wipe_result = service.classify_wipe()
+
+        if wipe_result.to_delete:
+            wipe_summary = wipe_result.type_summary()
+            wipe_table = Table(title="Resources to Delete (wipe-first)", show_lines=False)
+            wipe_table.add_column("Resource Type")
+            wipe_table.add_column("Count", justify="right", style="red")
+            for rtype, count in sorted(wipe_summary.items()):
+                wipe_table.add_row(rtype, str(count))
+            console.print(wipe_table)
+
+            console.print()
+            confirm_wipe = questionary.confirm(
+                f"Delete all {wipe_result.delete_count} user-created resource(s) from {tenant.name} before pushing?",
+                default=False,
+            ).ask()
+            if not confirm_wipe:
+                return
+
+            console.print()
+            with console.status("[red]Wiping user-created resources...[/red]") as status:
+                def _wipe_progress(rtype, rec):
+                    status.update(f"[red]Deleting {rtype} — {rec.name}[/red]")
+                delete_records = service.execute_wipe(wipe_result, progress_callback=_wipe_progress)
+            deleted = sum(1 for r in delete_records if r.is_deleted)
+            del_failed = sum(1 for r in delete_records if r.is_failed)
+            console.print(f"  [red]Deleted:[/red]  {deleted}")
+            if del_failed:
+                console.print(f"  [red]Failed:[/red]   {del_failed}")
+        else:
+            console.print("[dim]No user-created resources found — tenant is already empty.[/dim]")
+
+    # ── Step 3: classify baseline against (post-wipe) current state ───
+    confirmed = questionary.confirm(
+        f"Compare {pushable_types} resource types against current state of {tenant.name}?",
+        default=True,
+    ).ask()
+    if not confirmed:
+        return
+
+    console.print()
+    with console.status(f"[cyan]Syncing current state from {tenant.name}...[/cyan]") as status:
+        def _import_progress(rtype, done, total):
+            status.update(f"[cyan]Comparing: {rtype} ({done}/{total})[/cyan]")
+
+        dry_run = service.classify_baseline(baseline, import_progress_callback=_import_progress)
+
+    creates, updates, deletes = dry_run.changes_by_action()
+    create_update_count = len(creates) + len(updates)
+
+    # ── Step 4: show dry-run summary ──────────────────────────────────
+    console.print()
+    summary = dry_run.type_summary()
+    delta_table = Table(title="Comparison Result (dry run)", show_lines=False)
+    delta_table.add_column("Resource Type")
+    delta_table.add_column("Create", justify="right", style="green")
+    delta_table.add_column("Update", justify="right", style="cyan")
+    delta_table.add_column("Delete", justify="right", style="red")
+    delta_table.add_column("Skip", justify="right", style="dim")
+    for rtype in sorted(summary):
+        counts = summary[rtype]
+        delta_table.add_row(
+            rtype,
+            str(counts["create"]) if counts["create"] else "—",
+            str(counts["update"]) if counts["update"] else "—",
+            str(counts["delete"]) if counts["delete"] else "—",
+            str(counts["skip"])   if counts["skip"]   else "—",
+        )
+    console.print(delta_table)
+
+    if create_update_count == 0 and not deletes:
+        console.print("\n[green]✓ Nothing to push — target is already in sync with the baseline.[/green]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    _MAX_DETAIL = 30
+    if creates:
+        console.print(f"\n[green]To create ({len(creates)}):[/green]")
+        for rtype, name in creates[:_MAX_DETAIL]:
+            console.print(f"  [dim]{rtype}:[/dim] {name}")
+        if len(creates) > _MAX_DETAIL:
+            console.print(f"  [dim]... and {len(creates) - _MAX_DETAIL} more[/dim]")
+
+    if updates:
+        console.print(f"\n[cyan]To update ({len(updates)}):[/cyan]")
+        for rtype, name in updates[:_MAX_DETAIL]:
+            console.print(f"  [dim]{rtype}:[/dim] {name}")
+        if len(updates) > _MAX_DETAIL:
+            console.print(f"  [dim]... and {len(updates) - _MAX_DETAIL} more[/dim]")
+
+    if deletes:
+        console.print(f"\n[dim]Not in baseline ({len(deletes)}) — skipped in delta mode (use wipe-first to remove):[/dim]")
+        for rtype, name in deletes[:_MAX_DETAIL]:
+            console.print(f"  [dim]{rtype}:[/dim] {name}")
+        if len(deletes) > _MAX_DETAIL:
+            console.print(f"  [dim]... and {len(deletes) - _MAX_DETAIL} more[/dim]")
+
+    # ── Step 5: push creates + updates ────────────────────────────────
+    push_records = []
+    current_pass = [0]
+
+    if create_update_count > 0:
+        console.print()
+        action_summary = []
+        if creates:
+            action_summary.append(f"[green]{len(creates)} create(s)[/green]")
+        if updates:
+            action_summary.append(f"[cyan]{len(updates)} update(s)[/cyan]")
+        confirmed = questionary.confirm(
+            f"Apply {', '.join(action_summary)} to {tenant.name}?",
+            default=False,
+        ).ask()
+        if not confirmed:
+            return
+
+        console.print()
+        with console.status("[cyan]Pushing...[/cyan]") as status:
+            def _push_progress(pass_num, rtype, rec):
+                if pass_num != current_pass[0]:
+                    current_pass[0] = pass_num
+                status.update(f"[cyan][Pass {pass_num}] {rtype} — {rec.name}[/cyan]")
+
+            push_records = service.push_classified(dry_run, progress_callback=_push_progress)
+
+    all_records = dry_run.skipped + push_records
+    created  = sum(1 for r in push_records if r.is_created)
+    updated  = sum(1 for r in push_records if r.is_updated)
+    skipped  = sum(1 for r in all_records  if r.is_skipped)
+    failed   = sum(1 for r in push_records if r.is_failed)
+    passes   = current_pass[0] or 1
+
+    if push_records:
+        console.print(f"\n[bold]Push complete[/bold] — {passes} pass(es)")
+        console.print(f"  [green]Created:[/green]  {created}")
+        console.print(f"  [cyan]Updated:[/cyan]  {updated}")
+        console.print(f"  [dim]Skipped:[/dim]  {skipped}")
+        console.print(f"  [red]Failed:[/red]   {failed}")
+
+    push_records = push_records + delete_records
+
+    if push_records:
+        by_type = defaultdict(lambda: {"created": 0, "updated": 0, "deleted": 0, "failed": 0})
+        for r in push_records:
+            if r.is_created:
+                by_type[r.resource_type]["created"] += 1
+            elif r.is_updated:
+                by_type[r.resource_type]["updated"] += 1
+            elif r.is_deleted:
+                by_type[r.resource_type]["deleted"] += 1
+            elif r.is_failed:
+                by_type[r.resource_type]["failed"] += 1
+
+        results_table = Table(title="Push Results by Type", show_lines=False)
+        results_table.add_column("Resource Type")
+        results_table.add_column("Created", justify="right", style="green")
+        results_table.add_column("Updated", justify="right", style="cyan")
+        results_table.add_column("Deleted", justify="right", style="red")
+        results_table.add_column("Failed",  justify="right", style="red")
+        for rtype, counts in sorted(by_type.items()):
+            results_table.add_row(
+                rtype,
+                str(counts["created"]) if counts["created"] else "—",
+                str(counts["updated"]) if counts["updated"] else "—",
+                str(counts["deleted"]) if counts["deleted"] else "—",
+                str(counts["failed"])  if counts["failed"]  else "—",
+            )
+        console.print(results_table)
+
+    failures = [r for r in push_records if r.is_failed]
+    if failures:
+        console.print("\n[bold red]Failures:[/bold red]")
+        fail_table = Table(show_lines=False)
+        fail_table.add_column("Type")
+        fail_table.add_column("Name")
+        fail_table.add_column("Reason")
+        for r in failures:
+            fail_table.add_row(r.resource_type, r.name, r.failure_reason[:80])
+        console.print(fail_table)
+
+    warned = [r for r in push_records if r.warnings]
+    if warned:
+        console.print()
+        console.print("[bold yellow]Manual action required:[/bold yellow]")
+        console.print("[yellow]The following resources require manual steps in the target tenant.[/yellow]")
+        for r in warned:
+            for w in r.warnings:
+                console.print(f"  [dim]{r.resource_type}:[/dim] {r.name} — {w}")
+
+    # Write push log
+    log_path = _write_push_log(baseline_path, tenant, dry_run, push_records)
+    if log_path:
+        console.print(f"\n[dim]Push log: {log_path}[/dim]")
+
+    # Post-push consistency check
+    if created > 0 or updated > 0 or delete_records:
+        console.print()
+        verify_result = None
+        with console.status("[cyan]Verifying push consistency...[/cyan]") as status:
+            def _verify_progress(rtype, done, total):
+                status.update(f"[cyan]Verifying: {rtype} ({done}/{total})[/cyan]")
+            try:
+                verify_result = service.verify_push(baseline, import_progress_callback=_verify_progress)
+            except Exception as exc:
+                console.print(f"[yellow]⚠ Consistency check failed: {exc}[/yellow]")
+
+        if verify_result is not None:
+            v_creates, v_updates, v_deletes = verify_result.changes_by_action()
+            discrepancies = len(v_creates) + len(v_updates) + len(v_deletes)
+            if discrepancies == 0:
+                console.print("[green]✓ Consistency check passed — tenant state matches baseline[/green]")
+            else:
+                console.print(f"[bold yellow]⚠ Consistency check found {discrepancies} discrepancy(ies):[/bold yellow]")
+                disc_table = Table(show_lines=False)
+                disc_table.add_column("Issue", style="yellow")
+                disc_table.add_column("Resource Type")
+                disc_table.add_column("Name")
+                for rtype, name in v_creates:
+                    disc_table.add_row("Not created", rtype, name)
+                for rtype, name in v_updates:
+                    disc_table.add_row("Config / order mismatch", rtype, name)
+                for rtype, name in v_deletes:
+                    disc_table.add_row("Not deleted", rtype, name)
+                console.print(disc_table)
+
+                remediate = questionary.confirm(
+                    f"Attempt to remediate {discrepancies} discrepancy(ies) now?", default=True
+                ).ask()
+                if remediate:
+                    remediate_pass = [0]
+                    with console.status("[cyan]Remediating...[/cyan]") as status:
+                        def _rem_progress(pass_num, rtype, rec):
+                            if pass_num != remediate_pass[0]:
+                                remediate_pass[0] = pass_num
+                            status.update(f"[cyan][Pass {pass_num}] {rtype} — {rec.name}[/cyan]")
+                        rem_records = service.push_classified(verify_result, progress_callback=_rem_progress)
+                    rem_created = sum(1 for r in rem_records if r.is_created)
+                    rem_updated = sum(1 for r in rem_records if r.is_updated)
+                    rem_failed  = sum(1 for r in rem_records if r.is_failed)
+                    console.print(f"  [green]Created:[/green] {rem_created}  "
+                                  f"[cyan]Updated:[/cyan] {rem_updated}  "
+                                  f"[red]Failed:[/red] {rem_failed}")
+
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
