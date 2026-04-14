@@ -338,6 +338,11 @@ def restore_snapshot_menu(tenant, client, snap) -> None:
 
         if verify1_result is not None:
             v_creates, v_updates, v_deletes = verify1_result.changes_by_action()
+            # Exclude resources already queued for deletion — they're expected to
+            # still be present at this point since deletes haven't run yet.
+            pending_deletes = {(r.resource_type, r.name) for r in delete_candidates}
+            v_deletes = [(rtype, name) for rtype, name in v_deletes
+                         if (rtype, name) not in pending_deletes]
             discrepancies = len(v_creates) + len(v_updates) + len(v_deletes)
             if discrepancies == 0:
                 console.print("[green]✓ Creates/updates confirmed.[/green]")
