@@ -246,7 +246,7 @@ def install_plugin(install_url: str, force: bool = False) -> tuple[bool, str]:
 
     cmd = [sys.executable, "-m", "pip", "install"]
     if force:
-        cmd.append("--force-reinstall")
+        cmd.extend(["--force-reinstall", "--no-cache-dir"])
     cmd.append(url)
 
     try:
