@@ -330,6 +330,11 @@ def _branch_override_menu(installed: list[dict], overrides: dict) -> None:
         questionary.press_any_key_to_continue("Press any key...").ask()
         return
 
+    from lib.plugin_manager import (
+        fetch_manifest, fetch_plugin_branches, install_plugin,
+        set_plugin_branch_override, url_for_branch, effective_install_url,
+    )
+
     console.print()
     console.print(Panel(
         "Set a branch override to install a plugin from a specific git branch.\n"
@@ -360,48 +365,19 @@ def _branch_override_menu(installed: list[dict], overrides: dict) -> None:
     pkg = selected["package"]
     current_override = overrides.get(pkg)
 
-    # ── Step 2: branch input or clear ────────────────────────────────────
-    action_choices = [
-        questionary.Choice("Enter a branch name", value="set"),
-    ]
-    if current_override:
-        action_choices.append(questionary.Choice(
-            f"Clear override (revert to channel default)", value="clear"
-        ))
-    action_choices.append(questionary.Choice("← Cancel", value=None))
-
-    action = questionary.select(
-        f"Branch override for {pkg}:",
-        choices=action_choices,
-        use_indicator=True,
-    ).ask()
-    if not action:
-        return
-
-    if action == "clear":
-        target_branch = None
-    else:
-        target_branch = questionary.text(
-            "Branch name:",
-            default=current_override or "",
-        ).ask()
-        if not target_branch or not target_branch.strip():
-            return
-        target_branch = target_branch.strip()
-
-    # ── Step 3: fetch manifest, resolve URL, reinstall ────────────────────
+    # ── Step 2: fetch manifest + available feature branches ───────────────
     console.print()
-    with console.status("[cyan]Fetching manifest...[/cyan]"):
-        available, error = fetch_manifest()
+    with console.status(f"[cyan]Fetching branches for {pkg}...[/cyan]"):
+        available, manifest_error = fetch_manifest()
+        branches, branch_error = fetch_plugin_branches(pkg)
 
-    if error:
-        console.print(f"[red]✗ {error}[/red]")
+    if manifest_error:
+        console.print(f"[red]✗ {manifest_error}[/red]")
         questionary.press_any_key_to_continue("Press any key...").ask()
         return
 
     plugin_entry = next(
-        (p for p in (available or []) if p.get("package") == pkg),
-        None,
+        (p for p in (available or []) if p.get("package") == pkg), None
     )
     if not plugin_entry:
         console.print(f"[red]✗ {pkg} not found in manifest.[/red]")
@@ -414,15 +390,55 @@ def _branch_override_menu(installed: list[dict], overrides: dict) -> None:
         questionary.press_any_key_to_continue("Press any key...").ask()
         return
 
-    if target_branch is None:
-        # Clearing: reinstall from the channel default URL
-        from lib.plugin_manager import effective_install_url
-        install_url = effective_install_url(plugin_entry)
-        action_label = "channel default"
-    else:
-        install_url = url_for_branch(base_url, target_branch)
-        action_label = target_branch
+    # ── Step 3: branch picker or no-branches handling ─────────────────────
+    if not branches:
+        if branch_error:
+            console.print(f"[red]✗ {branch_error}[/red]")
+        else:
+            console.print(f"[yellow]No feature branches found for {pkg}.[/yellow]")
 
+        if current_override:
+            clear = questionary.confirm(
+                f"Clear override '{current_override}' and revert to channel default?",
+                default=True,
+            ).ask()
+            if not clear:
+                return
+            target_branch = None
+            action_label = "channel default"
+            install_url = effective_install_url(plugin_entry)
+        else:
+            questionary.press_any_key_to_continue("Press any key...").ask()
+            return
+    else:
+        _USE_DEFAULT = object()  # sentinel for "channel default" choice
+        branch_choices = [
+            questionary.Choice(b, value=b) for b in branches
+        ]
+        branch_choices.append(questionary.Separator())
+        branch_choices.append(questionary.Choice(
+            "channel default (no override)", value=_USE_DEFAULT
+        ))
+        branch_choices.append(questionary.Choice("← Cancel", value=None))
+
+        picked = questionary.select(
+            f"Select branch for {pkg}:",
+            choices=branch_choices,
+            use_indicator=True,
+        ).ask()
+        if picked is None:
+            return
+
+        if picked is _USE_DEFAULT:
+            target_branch = None
+            action_label = "channel default"
+            install_url = effective_install_url(plugin_entry)
+        else:
+            target_branch = picked
+            action_label = target_branch
+            install_url = url_for_branch(base_url, target_branch)
+
+    # ── Step 4: confirm and reinstall ─────────────────────────────────────
     confirmed = questionary.confirm(
         f"Reinstall {pkg} from '{action_label}' and restart?",
         default=False,
