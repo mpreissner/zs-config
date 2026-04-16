@@ -4487,27 +4487,48 @@ def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None):
     from services.zia_push_service import SKIP_TYPES, ZIAPushService
 
     render_banner()
-    console.print("\n[bold]Apply Baseline from JSON[/bold]")
-    console.print("[dim]Reads a ZIA snapshot export file and pushes it to the live tenant.[/dim]\n")
+
+    # Determine source context for display strings.
+    # A cross-tenant baseline_path looks like "TenantA/snap-name" (no leading slash).
+    # A file-based baseline_path is an absolute filesystem path.
+    import os as _os
+    _is_file_source = baseline_path is None or _os.path.isabs(str(baseline_path))
+    if _is_file_source:
+        _page_title    = "Apply Baseline from JSON"
+        _page_subtitle = "Reads a ZIA snapshot export file and pushes it to the live tenant."
+        _table_title   = "Baseline File Contents"
+        _count_col     = "In File"
+        _err_prefix    = "baseline file"
+    else:
+        _src_tenant  = baseline.get("tenant_name", baseline_path.split("/")[0]) if baseline else baseline_path.split("/")[0]
+        _snap_name   = baseline.get("snapshot_name", "") if baseline else ""
+        _page_title    = "Apply Snapshot from Another Tenant"
+        _page_subtitle = f"Applying snapshot '{_snap_name}' from {_src_tenant} to {tenant.name}."
+        _table_title   = "Snapshot Contents"
+        _count_col     = "Count"
+        _err_prefix    = "snapshot"
+
+    console.print(f"\n[bold]{_page_title}[/bold]")
+    console.print(f"[dim]{_page_subtitle}[/dim]\n")
 
     if baseline is None:
         return
 
     if baseline.get("product") != "ZIA":
-        console.print("[red]✗ Invalid baseline file — 'product' must be 'ZIA'.[/red]")
+        console.print(f"[red]✗ Invalid {_err_prefix} — 'product' must be 'ZIA'.[/red]")
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
     resources = baseline.get("resources")
     if not resources:
-        console.print("[red]✗ Baseline file has no 'resources' key.[/red]")
+        console.print(f"[red]✗ {_err_prefix.capitalize()} has no 'resources' key.[/red]")
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    # ── Step 1: show what's in the file ───────────────────────────────────
-    file_table = Table(title="Baseline File Contents", show_lines=False)
+    # ── Step 1: show what's in the baseline ───────────────────────────────
+    file_table = Table(title=_table_title, show_lines=False)
     file_table.add_column("Resource Type")
-    file_table.add_column("In File", justify="right")
+    file_table.add_column(_count_col, justify="right")
     pushable_types = 0
     for rtype, entries in sorted(resources.items()):
         count = len(entries) if isinstance(entries, list) else 1
