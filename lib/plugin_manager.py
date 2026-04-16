@@ -42,7 +42,7 @@ _MANIFEST_FILE  = "manifest.json"
 # Add an entry here whenever a new plugin is added to zs-plugins.
 _PLUGIN_BRANCH_FILTERS: dict[str, str] = {
     "palo-tools":          "pan",
-    "zia-snapshot-tools":  "snap",
+    "snapshot-tools":      "snap",
 }
 
 
