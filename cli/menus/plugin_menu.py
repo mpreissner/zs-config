@@ -23,15 +23,7 @@ def plugin_menu() -> None:
         from lib.github_auth import get_token, is_authenticated, verify_token
         from lib.plugin_manager import (
             get_installed_plugins, get_plugin_channel, get_plugin_branch_overrides,
-            get_pending_plugin_install, clear_pending_plugin_install,
         )
-
-        # ── Complete any deferred install from a previous branch-override ──
-        pending = get_pending_plugin_install()
-        if pending:
-            _complete_pending_install(pending)
-            clear_pending_plugin_install()
-            continue
 
         installed  = get_installed_plugins()
         channel    = get_plugin_channel()
@@ -137,6 +129,14 @@ def plugin_menu() -> None:
 # ---------------------------------------------------------------------------
 # Actions
 # ---------------------------------------------------------------------------
+
+def _channel_default_url(plugin_entry: dict) -> str:
+    """Return the channel's install URL for a manifest entry, ignoring any override."""
+    from lib.plugin_manager import get_plugin_channel
+    if get_plugin_channel() == "dev":
+        return plugin_entry.get("install_url_dev") or plugin_entry.get("install_url", "")
+    return plugin_entry.get("install_url", "")
+
 
 def _login() -> None:
     from lib.github_auth import authenticate, is_authenticated
@@ -365,8 +365,8 @@ def _branch_override_menu(installed: list[dict], overrides: dict) -> None:
         return
 
     from lib.plugin_manager import (
-        fetch_manifest, fetch_plugin_branches, install_plugin,
-        set_plugin_branch_override, url_for_branch, effective_install_url,
+        fetch_manifest, fetch_plugin_branches,
+        set_plugin_branch_override, url_for_branch,
     )
 
     console.print()
@@ -440,7 +440,7 @@ def _branch_override_menu(installed: list[dict], overrides: dict) -> None:
                 return
             target_branch = None
             action_label = "channel default"
-            install_url = effective_install_url(plugin_entry)
+            install_url = _channel_default_url(plugin_entry)
         else:
             questionary.press_any_key_to_continue("Press any key...").ask()
             return
@@ -466,7 +466,7 @@ def _branch_override_menu(installed: list[dict], overrides: dict) -> None:
         if picked is _USE_DEFAULT:
             target_branch = None
             action_label = "channel default"
-            install_url = effective_install_url(plugin_entry)
+            install_url = _channel_default_url(plugin_entry)
         else:
             target_branch = picked
             action_label = target_branch
