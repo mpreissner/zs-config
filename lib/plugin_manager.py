@@ -184,6 +184,20 @@ def fetch_plugin_branches(package_name: str) -> tuple[list[str], Optional[str]]:
 # Install / uninstall
 # ---------------------------------------------------------------------------
 
+def _pip_install_args() -> list[str]:
+    """Return extra pip args for plugin install. Adds --user in container mode."""
+    if os.environ.get("ZS_CONTAINER_MODE") == "1":
+        return ["--user"]
+    return []
+
+
+def _pip_uninstall_args() -> list[str]:
+    """Return extra pip args for plugin uninstall. Adds --user in container mode."""
+    if os.environ.get("ZS_CONTAINER_MODE") == "1":
+        return ["--user"]
+    return []
+
+
 def _to_https_url(url: str) -> str:
     """Normalise a git+ssh GitHub URL to a bare git+https URL (no token).
 
@@ -243,7 +257,7 @@ def install_plugin(install_url: str) -> tuple[bool, str]:
 
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", url],
+            [sys.executable, "-m", "pip", "install", *_pip_install_args(), url],
             capture_output=True,
             text=True,
             timeout=120,
@@ -379,7 +393,7 @@ def uninstall_plugin(package_name: str) -> tuple[bool, str]:
         return False, f"Invalid package name: {package_name!r}"
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "pip", "uninstall", "--yes", package_name],
+            [sys.executable, "-m", "pip", "uninstall", "--yes", *_pip_uninstall_args(), package_name],
             capture_output=True,
             text=True,
             timeout=30,

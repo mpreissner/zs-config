@@ -22,7 +22,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routers import zia, zpa
+import pathlib
+
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+
+from api.routers import system, zia, zpa
 
 
 @asynccontextmanager
@@ -53,6 +58,7 @@ app.add_middleware(
 
 app.include_router(zpa.router, prefix="/api/v1/zpa", tags=["ZPA"])
 app.include_router(zia.router, prefix="/api/v1/zia", tags=["ZIA"])
+app.include_router(system.router)
 
 
 @app.get("/health", tags=["System"])
@@ -99,3 +105,21 @@ def get_audit_log(tenant_id: int = None, product: str = None, limit: int = 100):
         }
         for e in logs
     ]
+
+
+# ── Static files and SPA fallback (must be registered last) ─────────────────
+# Conditional on api/static/ existing so that bare-metal dev mode works without
+# requiring the frontend to be built first.
+_STATIC_DIR = pathlib.Path(__file__).parent / "static"
+
+if _STATIC_DIR.exists() and (_STATIC_DIR / "assets").exists():
+    # Mount compiled Vite assets (JS/CSS/fonts) — Vite outputs these under assets/
+    app.mount("/assets", StaticFiles(directory=str(_STATIC_DIR / "assets")), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa_fallback(full_path: str):
+        """Catch-all: return index.html for any path not matched by an API router."""
+        index = _STATIC_DIR / "index.html"
+        if index.exists():
+            return FileResponse(str(index))
+        return {"detail": "Frontend not built"}, 404
