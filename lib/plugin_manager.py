@@ -192,9 +192,6 @@ def _pip_install_args() -> list[str]:
 
 
 def _pip_uninstall_args() -> list[str]:
-    """Return extra pip args for plugin uninstall. Adds --user in container mode."""
-    if os.environ.get("ZS_CONTAINER_MODE") == "1":
-        return ["--user"]
     return []
 
 

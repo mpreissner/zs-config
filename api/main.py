@@ -28,6 +28,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from api.routers import system, zia, zpa
+from cli.banner import VERSION
 
 
 @asynccontextmanager
@@ -43,7 +44,7 @@ app = FastAPI(
         "REST API layer for Zscaler OneAPI automation. "
         "Powers the GUI client — all endpoints mirror the CLI service layer."
     ),
-    version="1.0.13",
+    version=VERSION,
     lifespan=lifespan,
 )
 
@@ -63,7 +64,7 @@ app.include_router(system.router)
 
 @app.get("/health", tags=["System"])
 def health():
-    return {"status": "ok", "version": "1.0.13"}
+    return {"status": "ok", "version": VERSION}
 
 
 @app.get("/api/v1/tenants", tags=["System"])
