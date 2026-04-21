@@ -47,7 +47,9 @@ def init_db(db_url: Optional[str] = None) -> None:
     global _engine, _SessionFactory
     if not os.environ.get("ZSCALER_DB_URL") and not os.environ.get("ZSCALER_DB_PATH"):
         _migrate_db_path()
-    _DEFAULT_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _DEFAULT_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    elif not os.environ.get("ZSCALER_DB_URL"):
+        Path(os.environ["ZSCALER_DB_PATH"]).parent.mkdir(parents=True, exist_ok=True)
     _engine = create_engine(
         db_url or get_db_url(),
         echo=False,
