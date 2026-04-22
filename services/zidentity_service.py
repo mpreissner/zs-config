@@ -42,6 +42,47 @@ class ZIdentityService:
         )
         return result
 
+    def create_user(self, payload: Dict) -> Dict:
+        result = self.client.create_user(payload)
+        audit_service.log(
+            product="ZIdentity",
+            operation="create_user",
+            action="CREATE",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="user",
+            resource_id=str(result.get("id", "")),
+            resource_name=payload.get("loginName", ""),
+        )
+        return result
+
+    def update_user(self, user_id: str, username: str, payload: Dict) -> Dict:
+        result = self.client.update_user(user_id, payload)
+        audit_service.log(
+            product="ZIdentity",
+            operation="update_user",
+            action="UPDATE",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="user",
+            resource_id=user_id,
+            resource_name=username,
+        )
+        return result
+
+    def delete_user(self, user_id: str, username: str) -> None:
+        self.client.delete_user(user_id)
+        audit_service.log(
+            product="ZIdentity",
+            operation="delete_user",
+            action="DELETE",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="user",
+            resource_id=user_id,
+            resource_name=username,
+        )
+
     def get_user(self, user_id: str) -> Dict:
         return self.client.get_user(user_id)
 

@@ -10,7 +10,7 @@ export interface AuditEntry {
   resource_type: string | null;
   resource_id: string | null;
   resource_name: string | null;
-  details: string | null;
+  details: Record<string, unknown> | string | null;
   error_message: string | null;
 }
 

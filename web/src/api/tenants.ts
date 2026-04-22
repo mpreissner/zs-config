@@ -3,6 +3,7 @@ import { apiFetch } from "./client";
 export interface Tenant {
   id: number;
   name: string;
+  vanity_domain: string;
   zidentity_base_url: string;
   oneapi_base_url: string;
   client_id: string;
@@ -18,21 +19,21 @@ export interface Tenant {
 
 export interface TenantCreate {
   name: string;
-  zidentity_base_url: string;
+  vanity_domain: string;
   client_id: string;
   client_secret: string;
-  oneapi_base_url?: string;
   govcloud?: boolean;
+  govcloud_oneapi_url?: string;
   zpa_customer_id?: string;
   notes?: string;
 }
 
 export interface TenantUpdate {
-  zidentity_base_url?: string;
+  vanity_domain?: string;
   client_id?: string;
   client_secret?: string;
-  oneapi_base_url?: string;
   govcloud?: boolean;
+  govcloud_oneapi_url?: string;
   zpa_customer_id?: string;
   notes?: string;
 }

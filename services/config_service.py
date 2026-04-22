@@ -145,21 +145,40 @@ def add_tenant(
 ) -> TenantConfig:
     """Add a new tenant configuration to the database."""
     with get_session() as session:
-        tenant = TenantConfig(
-            name=name,
-            zidentity_base_url=zidentity_base_url.rstrip("/"),
-            oneapi_base_url=oneapi_base_url.rstrip("/"),
-            client_id=client_id,
-            client_secret_enc=encrypt_secret(client_secret),
-            govcloud=govcloud,
-            zpa_customer_id=zpa_customer_id or None,
-            zpa_tenant_cloud=zpa_tenant_cloud or None,
-            zia_tenant_id=zia_tenant_id or None,
-            zia_cloud=zia_cloud or None,
-            zia_subscriptions=zia_subscriptions or None,
-            notes=notes,
-        )
-        session.add(tenant)
+        tenant = session.query(TenantConfig).filter_by(name=name).first()
+        if tenant and tenant.is_active:
+            raise ValueError(f"Tenant '{name}' already exists.")
+        if tenant:
+            # Reactivate a previously soft-deleted tenant with fresh credentials.
+            tenant.zidentity_base_url = zidentity_base_url.rstrip("/")
+            tenant.oneapi_base_url = oneapi_base_url.rstrip("/")
+            tenant.client_id = client_id
+            tenant.client_secret_enc = encrypt_secret(client_secret)
+            tenant.govcloud = govcloud
+            tenant.zpa_customer_id = zpa_customer_id or None
+            tenant.zpa_tenant_cloud = zpa_tenant_cloud or None
+            tenant.zia_tenant_id = zia_tenant_id or None
+            tenant.zia_cloud = zia_cloud or None
+            tenant.zia_subscriptions = zia_subscriptions or None
+            tenant.notes = notes
+            tenant.last_validation_error = None
+            tenant.is_active = True
+        else:
+            tenant = TenantConfig(
+                name=name,
+                zidentity_base_url=zidentity_base_url.rstrip("/"),
+                oneapi_base_url=oneapi_base_url.rstrip("/"),
+                client_id=client_id,
+                client_secret_enc=encrypt_secret(client_secret),
+                govcloud=govcloud,
+                zpa_customer_id=zpa_customer_id or None,
+                zpa_tenant_cloud=zpa_tenant_cloud or None,
+                zia_tenant_id=zia_tenant_id or None,
+                zia_cloud=zia_cloud or None,
+                zia_subscriptions=zia_subscriptions or None,
+                notes=notes,
+            )
+            session.add(tenant)
         session.flush()
         session.refresh(tenant)
         return tenant

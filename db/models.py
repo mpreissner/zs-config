@@ -292,3 +292,27 @@ class User(Base):
 
     def __repr__(self) -> str:
         return f"<User username={self.username!r} role={self.role!r}>"
+
+
+class UserTenantEntitlement(Base):
+    """Maps zs-config users to the tenants they are permitted to access.
+
+    Admin users bypass this table (they can access all tenants).
+    For role="user" accounts, only tenants with an entitlement row are visible.
+    """
+
+    __tablename__ = "user_tenant_entitlements"
+    __table_args__ = (
+        UniqueConstraint("user_id", "tenant_id", name="uq_user_tenant"),
+    )
+
+    id         = Column(Integer, primary_key=True)
+    user_id    = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    tenant_id  = Column(Integer, ForeignKey("tenant_configs.id", ondelete="CASCADE"), nullable=False)
+    granted_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user   = relationship("User", backref="tenant_entitlements")
+    tenant = relationship("TenantConfig", backref="user_entitlements")
+
+    def __repr__(self) -> str:
+        return f"<UserTenantEntitlement user_id={self.user_id} tenant_id={self.tenant_id}>"

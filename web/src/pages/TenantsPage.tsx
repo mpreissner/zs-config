@@ -96,15 +96,17 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 
 // ── Create Modal ─────────────────────────────────────────────────────────────
 
+const GOVCLOUD_ONEAPI_DEFAULT = "https://api.zscalergov.us";
+
 function CreateModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const [form, setForm] = useState<TenantCreate>({
     name: "",
-    zidentity_base_url: "",
+    vanity_domain: "",
     client_id: "",
     client_secret: "",
-    oneapi_base_url: "https://api.zsapi.net",
     govcloud: false,
+    govcloud_oneapi_url: GOVCLOUD_ONEAPI_DEFAULT,
     zpa_customer_id: "",
     notes: "",
   });
@@ -124,11 +126,16 @@ function CreateModal({ onClose }: { onClose: () => void }) {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  const vanityHint = form.govcloud
+    ? `→ https://${form.vanity_domain || "acme"}.zidentitygov.us`
+    : `→ https://${form.vanity_domain || "acme"}.zslogin.net`;
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     mut.mutate({
       ...form,
+      govcloud_oneapi_url: form.govcloud ? (form.govcloud_oneapi_url || GOVCLOUD_ONEAPI_DEFAULT) : undefined,
       zpa_customer_id: form.zpa_customer_id || undefined,
       notes: form.notes || undefined,
     });
@@ -162,11 +169,27 @@ function CreateModal({ onClose }: { onClose: () => void }) {
     <Modal title="Add Tenant" onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-3">
         <Field label="Name" value={form.name} onChange={(v) => set("name", v)} required />
-        <Field label="ZIdentity Base URL" value={form.zidentity_base_url} onChange={(v) => set("zidentity_base_url", v)} required placeholder="https://..." />
+        <CheckboxField label="GovCloud" checked={form.govcloud ?? false} onChange={(v) => set("govcloud", v)} />
+        <div>
+          <Field
+            label="Vanity Domain"
+            value={form.vanity_domain}
+            onChange={(v) => set("vanity_domain", v)}
+            required
+            placeholder="acme"
+          />
+          <p className="text-xs text-gray-400 mt-1 font-mono">{vanityHint}</p>
+        </div>
+        {form.govcloud && (
+          <Field
+            label="OneAPI Base URL"
+            value={form.govcloud_oneapi_url ?? GOVCLOUD_ONEAPI_DEFAULT}
+            onChange={(v) => set("govcloud_oneapi_url", v)}
+            placeholder={GOVCLOUD_ONEAPI_DEFAULT}
+          />
+        )}
         <Field label="Client ID" value={form.client_id} onChange={(v) => set("client_id", v)} required />
         <Field label="Client Secret" value={form.client_secret} onChange={(v) => set("client_secret", v)} type="password" required />
-        <Field label="OneAPI Base URL" value={form.oneapi_base_url ?? ""} onChange={(v) => set("oneapi_base_url", v)} placeholder="https://api.zsapi.net" />
-        <CheckboxField label="GovCloud" checked={form.govcloud ?? false} onChange={(v) => set("govcloud", v)} />
         <Field label="ZPA Customer ID" value={form.zpa_customer_id ?? ""} onChange={(v) => set("zpa_customer_id", v)} />
         <Field label="Notes" value={form.notes ?? ""} onChange={(v) => set("notes", v)} />
         {error && <p className="text-red-600 text-xs">{error}</p>}
@@ -189,11 +212,11 @@ function CreateModal({ onClose }: { onClose: () => void }) {
 function EditModal({ tenant, onClose }: { tenant: Tenant; onClose: () => void }) {
   const qc = useQueryClient();
   const [form, setForm] = useState<TenantUpdate & { client_secret: string }>({
-    zidentity_base_url: tenant.zidentity_base_url,
+    vanity_domain: tenant.vanity_domain,
     client_id: tenant.client_id,
     client_secret: "",
-    oneapi_base_url: tenant.oneapi_base_url,
     govcloud: tenant.govcloud,
+    govcloud_oneapi_url: tenant.govcloud ? tenant.oneapi_base_url : GOVCLOUD_ONEAPI_DEFAULT,
     zpa_customer_id: tenant.zpa_customer_id ?? "",
     notes: tenant.notes ?? "",
   });
@@ -212,14 +235,18 @@ function EditModal({ tenant, onClose }: { tenant: Tenant; onClose: () => void })
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  const vanityHint = form.govcloud
+    ? `→ https://${form.vanity_domain || "acme"}.zidentitygov.us`
+    : `→ https://${form.vanity_domain || "acme"}.zslogin.net`;
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     const body: TenantUpdate = {
-      zidentity_base_url: form.zidentity_base_url,
+      vanity_domain: form.vanity_domain,
       client_id: form.client_id,
-      oneapi_base_url: form.oneapi_base_url,
       govcloud: form.govcloud,
+      govcloud_oneapi_url: form.govcloud ? (form.govcloud_oneapi_url || GOVCLOUD_ONEAPI_DEFAULT) : undefined,
       zpa_customer_id: form.zpa_customer_id || undefined,
       notes: form.notes || undefined,
     };
@@ -231,11 +258,21 @@ function EditModal({ tenant, onClose }: { tenant: Tenant; onClose: () => void })
     <Modal title={`Edit: ${tenant.name}`} onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-3">
         <Field label="Name" value={tenant.name} onChange={() => {}} readOnly />
-        <Field label="ZIdentity Base URL" value={form.zidentity_base_url ?? ""} onChange={(v) => set("zidentity_base_url", v)} placeholder="https://..." />
+        <CheckboxField label="GovCloud" checked={form.govcloud ?? false} onChange={(v) => set("govcloud", v)} />
+        <div>
+          <Field label="Vanity Domain" value={form.vanity_domain ?? ""} onChange={(v) => set("vanity_domain", v)} placeholder="acme" />
+          <p className="text-xs text-gray-400 mt-1 font-mono">{vanityHint}</p>
+        </div>
+        {form.govcloud && (
+          <Field
+            label="OneAPI Base URL"
+            value={form.govcloud_oneapi_url ?? GOVCLOUD_ONEAPI_DEFAULT}
+            onChange={(v) => set("govcloud_oneapi_url", v)}
+            placeholder={GOVCLOUD_ONEAPI_DEFAULT}
+          />
+        )}
         <Field label="Client ID" value={form.client_id ?? ""} onChange={(v) => set("client_id", v)} />
         <Field label="Client Secret (leave blank to keep existing)" value={form.client_secret} onChange={(v) => set("client_secret", v)} type="password" placeholder="(unchanged)" />
-        <Field label="OneAPI Base URL" value={form.oneapi_base_url ?? ""} onChange={(v) => set("oneapi_base_url", v)} />
-        <CheckboxField label="GovCloud" checked={form.govcloud ?? false} onChange={(v) => set("govcloud", v)} />
         <Field label="ZPA Customer ID" value={form.zpa_customer_id ?? ""} onChange={(v) => set("zpa_customer_id", v)} />
         <Field label="Notes" value={form.notes ?? ""} onChange={(v) => set("notes", v)} />
         {error && <p className="text-red-600 text-xs">{error}</p>}
@@ -341,7 +378,7 @@ function ImportModal({ tenant, onClose }: { tenant: Tenant; onClose: () => void 
           <ResultBadge result={ziaResult} error={ziaError} />
         </div>
 
-        {tenant.zpa_customer_id && (
+        {tenant.zpa_customer_id && !tenant.govcloud && (
           <div className="p-3 border border-gray-200 rounded-lg">
             <div className="flex items-center justify-between">
               <div>

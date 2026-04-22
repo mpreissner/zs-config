@@ -28,4 +28,8 @@ services:
 
 volumes:
   zs-db:
+    external: true
+    name: agent-a1b97818_zs-db
   zs-plugins:
+    external: true
+    name: agent-a1b97818_zs-plugins

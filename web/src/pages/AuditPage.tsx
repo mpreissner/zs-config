@@ -86,8 +86,12 @@ export default function AuditPage() {
                     <td className="whitespace-nowrap px-3 py-2 text-gray-500">
                       {e.resource_name ?? e.resource_type ?? "-"}
                     </td>
-                    <td className="max-w-xs truncate px-3 py-2 text-gray-500">
-                      {e.details ?? e.error_message ?? "-"}
+                    <td className="max-w-xs truncate px-3 py-2 text-gray-500 font-mono text-xs">
+                      {e.details != null
+                        ? typeof e.details === "object"
+                          ? JSON.stringify(e.details)
+                          : e.details
+                        : (e.error_message ?? "-")}
                     </td>
                   </tr>
                 ))}

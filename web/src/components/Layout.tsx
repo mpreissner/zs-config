@@ -38,13 +38,18 @@ function StatusIndicator() {
   );
 }
 
-const navItems = [
+const baseNavItems = [
   { to: "/tenants", label: "Tenants" },
   { to: "/audit", label: "Audit Log" },
 ];
 
+const adminNavItems = [
+  { to: "/admin/users", label: "Users" },
+  { to: "/admin/entitlements", label: "Tenant Access" },
+];
+
 export default function Layout({ children }: LayoutProps) {
-  const { logout } = useAuth();
+  const { logout, isAdmin } = useAuth();
   const navigate = useNavigate();
 
   async function handleLogout() {
@@ -60,7 +65,7 @@ export default function Layout({ children }: LayoutProps) {
           <span className="text-lg font-semibold text-white tracking-tight">zs-config</span>
         </div>
         <nav className="flex-1 px-2 space-y-1">
-          {navItems.map((item) => (
+          {baseNavItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -75,6 +80,26 @@ export default function Layout({ children }: LayoutProps) {
               {item.label}
             </NavLink>
           ))}
+          {isAdmin && (
+            <>
+              <p className="px-3 pt-4 pb-1 text-xs font-semibold text-blue-300 uppercase tracking-wider">Admin</p>
+              {adminNavItems.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={({ isActive }) =>
+                    `block px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      isActive
+                        ? "bg-white text-zs-500 font-semibold"
+                        : "text-blue-100 hover:bg-zs-600 hover:text-white"
+                    }`
+                  }
+                >
+                  {item.label}
+                </NavLink>
+              ))}
+            </>
+          )}
         </nav>
         <div className="px-2 pb-2">
           <button

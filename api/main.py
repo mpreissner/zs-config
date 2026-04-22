@@ -31,7 +31,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from api.routers import system, zia, zpa
-from api.routers import auth as auth_router, tenants as tenants_router
+from api.routers import auth as auth_router, tenants as tenants_router, admin as admin_router
 from api.auth_utils import decode_token
 from api.dependencies import require_auth, AuthUser
 from cli.banner import VERSION
@@ -114,6 +114,7 @@ app.include_router(zia.router, prefix="/api/v1/zia", tags=["ZIA"])
 app.include_router(system.router)
 app.include_router(auth_router.router)
 app.include_router(tenants_router.router)
+app.include_router(admin_router.router)
 
 
 @app.get("/health", tags=["System"])

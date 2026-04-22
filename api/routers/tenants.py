@@ -3,14 +3,23 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
 from api.dependencies import require_admin, AuthUser
+from lib.conf_writer import build_zidentity_url, GOVCLOUD_ONEAPI_URL
+
+COMMERCIAL_ONEAPI_URL = "https://api.zsapi.net"
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["Tenants"])
+
+
+def _vanity(zidentity_base_url: str) -> str:
+    from urllib.parse import urlparse
+    return urlparse(zidentity_base_url).hostname.split(".")[0]
 
 
 def _serialize(t) -> dict:
     return {
         "id": t.id,
         "name": t.name,
+        "vanity_domain": _vanity(t.zidentity_base_url),
         "zidentity_base_url": t.zidentity_base_url,
         "oneapi_base_url": t.oneapi_base_url,
         "client_id": t.client_id,
@@ -37,21 +46,21 @@ def _write_audit(events: list) -> None:
 
 class TenantCreate(BaseModel):
     name: str
-    zidentity_base_url: str
+    vanity_domain: str
     client_id: str
     client_secret: str
-    oneapi_base_url: str = "https://api.zsapi.net"
     govcloud: bool = False
+    govcloud_oneapi_url: Optional[str] = None  # only used for GovCloud; defaults to GOVCLOUD_ONEAPI_URL
     zpa_customer_id: Optional[str] = None
     notes: Optional[str] = None
 
 
 class TenantUpdate(BaseModel):
-    zidentity_base_url: Optional[str] = None
+    vanity_domain: Optional[str] = None
     client_id: Optional[str] = None
     client_secret: Optional[str] = None
-    oneapi_base_url: Optional[str] = None
     govcloud: Optional[bool] = None
+    govcloud_oneapi_url: Optional[str] = None
     zpa_customer_id: Optional[str] = None
     notes: Optional[str] = None
 
@@ -79,13 +88,19 @@ def create_tenant(body: TenantCreate, user: AuthUser = Depends(require_admin)):
     from db.database import get_session
     from db.models import TenantConfig
 
+    zidentity_base_url = build_zidentity_url(body.vanity_domain, govcloud=body.govcloud)
+    if body.govcloud:
+        oneapi_base_url = (body.govcloud_oneapi_url or GOVCLOUD_ONEAPI_URL).rstrip("/")
+    else:
+        oneapi_base_url = COMMERCIAL_ONEAPI_URL
+
     try:
         t = add_tenant(
             name=body.name,
-            zidentity_base_url=body.zidentity_base_url,
+            zidentity_base_url=zidentity_base_url,
             client_id=body.client_id,
             client_secret=body.client_secret,
-            oneapi_base_url=body.oneapi_base_url,
+            oneapi_base_url=oneapi_base_url,
             govcloud=body.govcloud,
             zpa_customer_id=body.zpa_customer_id,
             notes=body.notes,
@@ -98,10 +113,10 @@ def create_tenant(body: TenantCreate, user: AuthUser = Depends(require_admin)):
 
     # Validate credentials and pull org metadata
     org_info, subscriptions, err = fetch_org_info(
-        zidentity_base_url=body.zidentity_base_url,
+        zidentity_base_url=zidentity_base_url,
         client_id=body.client_id,
         client_secret=body.client_secret,
-        oneapi_base_url=body.oneapi_base_url,
+        oneapi_base_url=oneapi_base_url,
     )
 
     with get_session() as session:
@@ -155,12 +170,25 @@ def update_tenant(tenant_id: int, body: TenantUpdate, user: AuthUser = Depends(r
         if not t:
             raise HTTPException(status_code=404, detail="Tenant not found")
         name = t.name
+    # Rebuild URLs from vanity if provided; otherwise leave existing values in place.
+    new_govcloud = body.govcloud  # may be None (no change)
+    new_zidentity = (
+        build_zidentity_url(body.vanity_domain, govcloud=bool(new_govcloud))
+        if body.vanity_domain else None
+    )
+    if new_govcloud is True:
+        new_oneapi = (body.govcloud_oneapi_url or GOVCLOUD_ONEAPI_URL).rstrip("/")
+    elif new_govcloud is False:
+        new_oneapi = COMMERCIAL_ONEAPI_URL
+    else:
+        new_oneapi = None  # no change
+
     updated = _update(
         name=name,
-        zidentity_base_url=body.zidentity_base_url,
+        zidentity_base_url=new_zidentity,
         client_id=body.client_id,
         client_secret=body.client_secret,
-        oneapi_base_url=body.oneapi_base_url,
+        oneapi_base_url=new_oneapi,
         govcloud=body.govcloud,
         zpa_customer_id=body.zpa_customer_id,
         notes=body.notes,
@@ -221,9 +249,10 @@ def _get_import_client(tenant_id: int):
         client_id = t.client_id
         secret = decrypt_secret(t.client_secret_enc)
         oneapi = t.oneapi_base_url
+        govcloud = t.govcloud
         name = t.name
 
-    auth = ZscalerAuth(zidentity, client_id, secret)
+    auth = ZscalerAuth(zidentity, client_id, secret, govcloud=govcloud)
     client = ZIAClient(auth, oneapi)
     return client, name
 
@@ -290,11 +319,13 @@ def import_zpa(tenant_id: int, user: AuthUser = Depends(require_admin)):
         client_id = t.client_id
         secret = decrypt_secret(t.client_secret_enc)
         oneapi = t.oneapi_base_url
+        govcloud = t.govcloud
+        govcloud_cloud = t.zpa_tenant_cloud if t.govcloud else None
         customer_id = t.zpa_customer_id
         tenant_name = t.name
 
-    auth = ZscalerAuth(zidentity, client_id, secret)
-    client = ZPAClient(auth, customer_id, oneapi_base_url=oneapi)
+    auth = ZscalerAuth(zidentity, client_id, secret, govcloud=govcloud)
+    client = ZPAClient(auth, customer_id, oneapi_base_url=oneapi, govcloud_cloud=govcloud_cloud)
 
     try:
         sync_log = ZPAImportService(client, tenant_id=tenant_id).run()
