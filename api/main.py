@@ -158,6 +158,10 @@ if _STATIC_DIR.exists() and (_STATIC_DIR / "assets").exists():
     # Mount compiled Vite assets (JS/CSS/fonts) — Vite outputs these under assets/
     app.mount("/assets", StaticFiles(directory=str(_STATIC_DIR / "assets")), name="assets")
 
+    @app.get("/favicon.svg", include_in_schema=False)
+    def favicon():
+        return FileResponse(str(_STATIC_DIR / "favicon.svg"), media_type="image/svg+xml")
+
     @app.get("/{full_path:path}", include_in_schema=False)
     def spa_fallback(full_path: str):
         """Catch-all: return index.html for any path not matched by an API router."""
