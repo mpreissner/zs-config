@@ -11,6 +11,7 @@ class AuthUser:
     username: str
     role: str
     force_password_change: bool
+    mfa_enroll: bool = False
 
 
 def require_auth(authorization: Optional[str] = Header(default=None)) -> AuthUser:
@@ -25,6 +26,7 @@ def require_auth(authorization: Optional[str] = Header(default=None)) -> AuthUse
         username=payload["username"],
         role=payload["role"],
         force_password_change=payload.get("fpc", False),
+        mfa_enroll=payload.get("mfa_enroll", False),
     )
 
 
@@ -50,6 +52,7 @@ def require_auth_sse(
         username=payload["username"],
         role=payload["role"],
         force_password_change=payload.get("fpc", False),
+        mfa_enroll=payload.get("mfa_enroll", False),
     )
 
 

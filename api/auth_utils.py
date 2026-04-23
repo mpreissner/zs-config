@@ -38,14 +38,14 @@ def verify_password(plaintext: str, hashed: str) -> bool:
     return bcrypt.checkpw(plaintext.encode(), hashed.encode())
 
 
-def issue_access_token(user) -> str:
+def issue_access_token(user, *, mfa_enroll: bool = False) -> str:
     now = int(time.time())
     ttl = _access_ttl()
-    return jwt.encode(
-        {"sub": str(user.id), "username": user.username, "role": user.role,
-         "fpc": user.force_password_change, "iat": now, "exp": now + ttl},
-        _secret(), algorithm=_ALGORITHM,
-    )
+    payload: dict = {"sub": str(user.id), "username": user.username, "role": user.role,
+                     "fpc": user.force_password_change, "iat": now, "exp": now + ttl}
+    if mfa_enroll:
+        payload["mfa_enroll"] = True
+    return jwt.encode(payload, _secret(), algorithm=_ALGORITHM)
 
 
 def issue_refresh_token(user) -> str:

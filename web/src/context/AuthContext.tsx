@@ -6,6 +6,7 @@ interface TokenPayload {
   username: string;
   role: string;
   fpc: boolean;
+  mfa_enroll?: boolean;
   exp: number;
 }
 
@@ -19,6 +20,7 @@ interface AuthContextValue extends AuthState {
   logout: () => void;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  mfaEnrollRequired: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -66,6 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       isAuthenticated: !!auth.token,
       isAdmin: auth.user?.role === "admin",
+      mfaEnrollRequired: !!auth.user?.mfa_enroll,
     }}>
       {children}
     </AuthContext.Provider>

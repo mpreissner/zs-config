@@ -4,6 +4,7 @@ export interface LoginResponse {
   access_token: string;
   token_type: string;
   force_password_change: boolean;
+  mfa_enrollment_required?: boolean;
 }
 
 export function login(username: string, password: string): Promise<LoginResponse> {

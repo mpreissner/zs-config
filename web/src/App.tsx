@@ -7,6 +7,7 @@ import TenantWorkspacePage from "./pages/TenantWorkspacePage";
 import AuditPage from "./pages/AuditPage";
 import LoginPage from "./pages/LoginPage";
 import ChangePasswordPage from "./pages/ChangePasswordPage";
+import MfaEnrollPage from "./pages/MfaEnrollPage";
 import AdminUsersPage from "./pages/AdminUsersPage";
 import AdminEntitlementsPage from "./pages/AdminEntitlementsPage";
 import AdminSettingsPage from "./pages/AdminSettingsPage";
@@ -38,6 +39,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/change-password" element={<ChangePasswordPage />} />
+      <Route path="/mfa-enroll" element={<MfaEnrollPage />} />
       <Route
         path="/*"
         element={

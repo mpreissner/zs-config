@@ -15,9 +15,13 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [keyLoading, setKeyLoading] = useState(false);
 
-  function postLogin(accessToken: string, forcePasswordChange: boolean) {
+  function postLogin(accessToken: string, forcePasswordChange: boolean, mfaEnrollRequired?: boolean) {
     setToken(accessToken);
-    navigate(forcePasswordChange ? "/change-password" : "/");
+    if (mfaEnrollRequired) {
+      navigate("/mfa-enroll");
+    } else {
+      navigate(forcePasswordChange ? "/change-password" : "/");
+    }
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -26,14 +30,12 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const res = await login(username, password);
-      postLogin(res.access_token, res.force_password_change);
+      postLogin(res.access_token, res.force_password_change, res.mfa_enrollment_required);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Login failed";
       setError(
         msg === "mfa_required"
           ? "This account requires a security key. Use 'Sign in with Security Key' below."
-          : msg === "mfa_required_no_key"
-          ? "This account requires a security key or passkey. No key is enrolled — contact your administrator."
           : msg,
       );
     } finally {

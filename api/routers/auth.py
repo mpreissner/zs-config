@@ -100,7 +100,13 @@ def login(body: LoginRequest, response: Response):
         if not verify_password(body.password, user.password_hash):
             raise HTTPException(status_code=401, detail="Invalid credentials")
         if user.mfa_required:
-            raise HTTPException(status_code=401, detail="mfa_required")
+            has_key = session.query(WebAuthnCredential).filter_by(user_id=user.id).first() is not None
+            if has_key:
+                raise HTTPException(status_code=401, detail="mfa_required")
+            # No key enrolled — issue a restricted enrollment-only token
+            access = issue_access_token(user, mfa_enroll=True)
+            return {"access_token": access, "token_type": "bearer",
+                    "force_password_change": False, "mfa_enrollment_required": True}
         user.last_login_at = datetime.utcnow()
         session.flush()
         session.refresh(user)

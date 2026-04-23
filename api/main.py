@@ -79,6 +79,29 @@ async def lifespan(app: FastAPI):
     yield
 
 
+class MfaEnrollMiddleware(BaseHTTPMiddleware):
+    _EXEMPT = {
+        "/api/v1/auth/webauthn/register/begin",
+        "/api/v1/auth/webauthn/register/complete",
+        "/api/v1/auth/logout", "/api/v1/auth/refresh",
+        "/api/v1/auth/login",
+        "/health", "/docs", "/openapi.json", "/redoc",
+    }
+
+    async def dispatch(self, request, call_next):
+        if request.url.path in self._EXEMPT:
+            return await call_next(request)
+        auth = request.headers.get("authorization", "")
+        if auth.startswith("Bearer "):
+            try:
+                payload = decode_token(auth.removeprefix("Bearer "))
+                if payload.get("mfa_enroll"):
+                    return JSONResponse({"detail": "mfa_enrollment_required"}, status_code=403)
+            except Exception:
+                pass
+        return await call_next(request)
+
+
 class ForcePasswordChangeMiddleware(BaseHTTPMiddleware):
     _EXEMPT = {
         "/api/v1/auth/change-password", "/api/v1/auth/login",
@@ -112,6 +135,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(MfaEnrollMiddleware)
 app.add_middleware(ForcePasswordChangeMiddleware)
 
 # Allow the future GUI (any origin in dev, lock down in production)
