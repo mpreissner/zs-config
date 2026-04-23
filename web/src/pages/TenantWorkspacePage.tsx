@@ -1,0 +1,1686 @@
+import { useState, useEffect } from "react";
+import { Link, useParams, useLocation, useNavigate } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { fetchTenant, Tenant } from "../api/tenants";
+import {
+  fetchActivationStatus,
+  activateTenant,
+  fetchUrlCategories,
+  lookupUrls,
+  fetchUrlFilteringRules,
+  fetchUsers,
+  fetchLocations,
+  fetchDepartments,
+  fetchGroups,
+  fetchAllowlist,
+  fetchDenylist,
+  UrlCategory,
+  UrlFilteringRule,
+  ZiaUser,
+  ZiaLocation,
+  ZiaDepartment,
+  ZiaGroup,
+} from "../api/zia";
+import {
+  fetchCertificates,
+  fetchApplications,
+  fetchPraPortals,
+  listAppConnectors,
+  listServiceEdges,
+  listSegmentGroups,
+  ZpaCertificate,
+  ZpaApplication,
+  ZpaPraPortal,
+  ZpaAppConnector,
+  ZpaServiceEdge,
+  ZpaSegmentGroup,
+} from "../api/zpa";
+import {
+  listDevices as listZccDevices,
+  listTrustedNetworks,
+  listForwardingProfiles,
+  listWebPolicies,
+  listWebAppServices,
+  getDeviceOtp,
+  ZccDevice,
+  ZccTrustedNetwork,
+  ZccForwardingProfile,
+  ZccWebPolicy,
+  ZccWebAppService,
+} from "../api/zcc";
+import {
+  searchDevices as searchZdxDevices,
+  lookupUsers as lookupZdxUsers,
+  ZdxDevice,
+  ZdxUser,
+} from "../api/zdx";
+import {
+  listUsers as listZidUsers,
+  listGroups as listZidGroups,
+  getGroupMembers,
+  listApiClients,
+  getApiClientSecrets,
+  resetUserPassword,
+  ZidUser,
+  ZidGroup,
+  ZidApiClient,
+  ZidApiClientSecret,
+} from "../api/zid";
+import LoadingSpinner from "../components/LoadingSpinner";
+import ErrorMessage from "../components/ErrorMessage";
+import Accordion from "../components/Accordion";
+import CopyButton from "../components/CopyButton";
+import ConfirmDialog from "../components/ConfirmDialog";
+import { useAuth } from "../context/AuthContext";
+import { useActiveTenant } from "../context/ActiveTenantContext";
+
+// ── Shared helpers ────────────────────────────────────────────────────────────
+
+function ValidationBadge({ tenant }: { tenant: Tenant }) {
+  if (tenant.last_validation_error) {
+    return (
+      <span
+        title={tenant.last_validation_error}
+        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 cursor-help"
+      >
+        Invalid
+      </span>
+    );
+  }
+  if (tenant.zia_tenant_id) {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+        Valid
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500">
+      Unverified
+    </span>
+  );
+}
+
+// ── ZIA sections ──────────────────────────────────────────────────────────────
+
+function ActivationSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const qc = useQueryClient();
+  const { isAdmin } = useAuth();
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zia-activation", tenantName],
+    queryFn: () => fetchActivationStatus(tenantName),
+    enabled: isOpen,
+  });
+
+  const activateMut = useMutation({
+    mutationFn: () => activateTenant(tenantName),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["zia-activation", tenantName] }),
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  const isActive = data.status === "ACTIVE";
+
+  return (
+    <div className="flex items-center gap-4">
+      <span
+        className={`inline-flex items-center px-2.5 py-1 rounded text-xs font-semibold ${
+          isActive ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"
+        }`}
+      >
+        {data.status}
+      </span>
+      {isAdmin && (
+        <button
+          onClick={() => activateMut.mutate()}
+          disabled={activateMut.isPending}
+          className="px-3 py-1.5 text-xs rounded-md bg-zs-500 hover:bg-zs-600 text-white disabled:opacity-60"
+        >
+          {activateMut.isPending ? "Activating..." : "Activate Now"}
+        </button>
+      )}
+      {activateMut.isError && (
+        <span className="text-xs text-red-600">
+          {activateMut.error instanceof Error ? activateMut.error.message : "Activation failed"}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function UrlCategoriesSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const [filter, setFilter] = useState("");
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zia-url-categories", tenantName],
+    queryFn: () => fetchUrlCategories(tenantName),
+    enabled: isOpen,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  const filtered = data.filter((c: UrlCategory) =>
+    c.name.toLowerCase().includes(filter.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-3">
+      <input
+        type="text"
+        placeholder="Filter by name..."
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+        className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+      />
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 bg-white">
+            {filtered.map((c: UrlCategory) => (
+              <tr key={c.id}>
+                <td className="px-3 py-2 font-mono text-xs text-gray-500">{c.id}</td>
+                <td className="px-3 py-2 text-gray-900">{c.name}</td>
+                <td className="px-3 py-2 text-gray-500">{c.type}</td>
+              </tr>
+            ))}
+            {filtered.length === 0 && (
+              <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">No results</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function UrlLookupSection({ tenantName }: { tenantName: string }) {
+  const [input, setInput] = useState("");
+
+  const mut = useMutation({
+    mutationFn: () => {
+      const urls = input.split("\n").map((u) => u.trim()).filter(Boolean);
+      return lookupUrls(tenantName, urls);
+    },
+  });
+
+  return (
+    <div className="space-y-3">
+      <textarea
+        rows={4}
+        placeholder="Paste URLs, one per line..."
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-zs-500"
+      />
+      <button
+        onClick={() => mut.mutate()}
+        disabled={mut.isPending || !input.trim()}
+        className="px-3 py-1.5 text-xs rounded-md bg-zs-500 hover:bg-zs-600 text-white disabled:opacity-60"
+      >
+        {mut.isPending ? "Looking up..." : "Lookup"}
+      </button>
+      {mut.isPending && <LoadingSpinner />}
+      {mut.isError && (
+        <ErrorMessage message={mut.error instanceof Error ? mut.error.message : "Lookup failed"} />
+      )}
+      {mut.data && (
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">URL</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Classifications</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Security Alerts</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 bg-white">
+              {mut.data.map((r, i) => (
+                <tr key={i}>
+                  <td className="px-3 py-2 font-mono text-xs text-gray-700">{r.url}</td>
+                  <td className="px-3 py-2 text-gray-600">{r.urlClassifications?.join(", ") || "-"}</td>
+                  <td className="px-3 py-2 text-gray-600">{r.urlClassificationsWithSecurityAlert?.join(", ") || "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UrlFilteringRulesSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zia-url-filtering-rules", tenantName],
+    queryFn: () => fetchUrlFilteringRules(tenantName),
+    enabled: isOpen,
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Order</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">State</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100 bg-white">
+          {data.map((r: UrlFilteringRule) => (
+            <tr key={r.id}>
+              <td className="px-3 py-2 text-gray-500">{r.order}</td>
+              <td className="px-3 py-2 text-gray-900">{r.name}</td>
+              <td className="px-3 py-2 text-gray-600">{r.action}</td>
+              <td className="px-3 py-2 text-gray-600">{r.state}</td>
+            </tr>
+          ))}
+          {data.length === 0 && (
+            <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400">No rules</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function UsersSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const [filter, setFilter] = useState("");
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zia-users", tenantName],
+    queryFn: () => fetchUsers(tenantName),
+    enabled: isOpen,
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  const q = filter.toLowerCase();
+  const filtered = data.filter((u: ZiaUser) =>
+    u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
+  );
+
+  return (
+    <div className="space-y-3">
+      <input
+        type="text"
+        placeholder="Filter by name or email..."
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+        className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+      />
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 bg-white">
+            {filtered.map((u: ZiaUser) => (
+              <tr key={u.id}>
+                <td className="px-3 py-2 text-gray-900">{u.name}</td>
+                <td className="px-3 py-2 text-gray-600 font-mono text-xs">{u.email}</td>
+                <td className="px-3 py-2 text-gray-500">{u.department?.name ?? "-"}</td>
+              </tr>
+            ))}
+            {filtered.length === 0 && (
+              <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">No results</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function LocationsSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zia-locations", tenantName],
+    queryFn: () => fetchLocations(tenantName),
+    enabled: isOpen,
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Country</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">IP Addresses</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100 bg-white">
+          {data.map((loc: ZiaLocation) => {
+            const ips = loc.ipAddresses ?? [];
+            const shown = ips.slice(0, 3).join(", ");
+            const extra = ips.length > 3 ? ` +${ips.length - 3} more` : "";
+            return (
+              <tr key={loc.id}>
+                <td className="px-3 py-2 text-gray-900">{loc.name}</td>
+                <td className="px-3 py-2 text-gray-500">{loc.country ?? "-"}</td>
+                <td className="px-3 py-2 text-gray-500 font-mono text-xs">{ips.length ? shown + extra : "-"}</td>
+              </tr>
+            );
+          })}
+          {data.length === 0 && (
+            <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">No locations</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function DepartmentsSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zia-departments", tenantName],
+    queryFn: () => fetchDepartments(tenantName),
+    enabled: isOpen,
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100 bg-white">
+          {data.map((d: ZiaDepartment) => (
+            <tr key={d.id}>
+              <td className="px-3 py-2 font-mono text-xs text-gray-500">{d.id}</td>
+              <td className="px-3 py-2 text-gray-900">{d.name}</td>
+            </tr>
+          ))}
+          {data.length === 0 && (
+            <tr><td colSpan={2} className="px-3 py-4 text-center text-gray-400">No departments</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function GroupsSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zia-groups", tenantName],
+    queryFn: () => fetchGroups(tenantName),
+    enabled: isOpen,
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100 bg-white">
+          {data.map((g: ZiaGroup) => (
+            <tr key={g.id}>
+              <td className="px-3 py-2 font-mono text-xs text-gray-500">{g.id}</td>
+              <td className="px-3 py-2 text-gray-900">{g.name}</td>
+            </tr>
+          ))}
+          {data.length === 0 && (
+            <tr><td colSpan={2} className="px-3 py-4 text-center text-gray-400">No groups</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AllowDenySection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const allowQuery = useQuery({
+    queryKey: ["zia-allowlist", tenantName],
+    queryFn: () => fetchAllowlist(tenantName),
+    enabled: isOpen,
+  });
+  const denyQuery = useQuery({
+    queryKey: ["zia-denylist", tenantName],
+    queryFn: () => fetchDenylist(tenantName),
+    enabled: isOpen,
+  });
+
+  if (allowQuery.isLoading || denyQuery.isLoading) return <LoadingSpinner />;
+
+  return (
+    <div className="flex flex-col sm:flex-row gap-6">
+      <div className="flex-1">
+        <h4 className="text-sm font-semibold text-gray-700 mb-2">Allowlist</h4>
+        {allowQuery.error ? (
+          <ErrorMessage message={allowQuery.error instanceof Error ? allowQuery.error.message : "Failed to load"} />
+        ) : (
+          <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-md p-2">
+            {(allowQuery.data?.whitelistUrls ?? []).length === 0 ? (
+              <p className="text-xs text-gray-400 p-1">No entries</p>
+            ) : (
+              (allowQuery.data?.whitelistUrls ?? []).map((url, i) => (
+                <p key={i} className="text-xs font-mono text-gray-700 py-0.5">{url}</p>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+      <div className="flex-1">
+        <h4 className="text-sm font-semibold text-gray-700 mb-2">Denylist</h4>
+        {denyQuery.error ? (
+          <ErrorMessage message={denyQuery.error instanceof Error ? denyQuery.error.message : "Failed to load"} />
+        ) : (
+          <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-md p-2">
+            {(denyQuery.data?.blacklistUrls ?? []).length === 0 ? (
+              <p className="text-xs text-gray-400 p-1">No entries</p>
+            ) : (
+              (denyQuery.data?.blacklistUrls ?? []).map((url, i) => (
+                <p key={i} className="text-xs font-mono text-gray-700 py-0.5">{url}</p>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── ZPA sections ──────────────────────────────────────────────────────────────
+
+function CertificatesSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zpa-certificates", tenantName],
+    queryFn: () => fetchCertificates(tenantName),
+    enabled: isOpen,
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  const now = Math.floor(Date.now() / 1000);
+
+  return (
+    <div className="space-y-3">
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Issued To</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Expires</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 bg-white">
+            {data.map((c: ZpaCertificate) => {
+              const expEpoch = c.expireTime ? parseInt(c.expireTime, 10) : null;
+              const expired = expEpoch !== null && expEpoch < now;
+              return (
+                <tr key={c.id}>
+                  <td className="px-3 py-2 text-gray-900">{c.name}</td>
+                  <td className="px-3 py-2 text-gray-600">{c.issuedTo ?? "-"}</td>
+                  <td className="px-3 py-2 text-gray-500 text-xs">
+                    {expEpoch ? new Date(expEpoch * 1000).toLocaleDateString() : "-"}
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${expired ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}`}>
+                      {expired ? "Expired" : "Valid"}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+            {data.length === 0 && (
+              <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400">No certificates</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-gray-400">
+        Certificate rotation is only available via the CLI (<span className="font-mono">zs-config</span>).
+      </p>
+    </div>
+  );
+}
+
+function ApplicationsSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const [filter, setFilter] = useState("");
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zpa-applications", tenantName],
+    queryFn: () => fetchApplications(tenantName),
+    enabled: isOpen,
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  const filtered = data.filter((a: ZpaApplication) =>
+    a.name.toLowerCase().includes(filter.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-3">
+      <input
+        type="text"
+        placeholder="Filter by name..."
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+        className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+      />
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Domains</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Enabled</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 bg-white">
+            {filtered.map((a: ZpaApplication) => {
+              const domains = a.domainNames ?? [];
+              const shown = domains.slice(0, 3).join(", ");
+              const extra = domains.length > 3 ? ` +${domains.length - 3} more` : "";
+              return (
+                <tr key={a.id}>
+                  <td className="px-3 py-2 text-gray-900">{a.name}</td>
+                  <td className="px-3 py-2 text-gray-500">{a.applicationType ?? "-"}</td>
+                  <td className="px-3 py-2 text-gray-500 font-mono text-xs">{domains.length ? shown + extra : "-"}</td>
+                  <td className="px-3 py-2">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${a.enabled ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-500"}`}>
+                      {a.enabled ? "Yes" : "No"}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+            {filtered.length === 0 && (
+              <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400">No results</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function PraPortalsSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zpa-pra-portals", tenantName],
+    queryFn: () => fetchPraPortals(tenantName),
+    enabled: isOpen,
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Certificate</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100 bg-white">
+          {data.map((p: ZpaPraPortal) => (
+            <tr key={p.id}>
+              <td className="px-3 py-2 text-gray-900">{p.name}</td>
+              <td className="px-3 py-2 text-gray-500 font-mono text-xs">{p.domain ?? "-"}</td>
+              <td className="px-3 py-2 text-gray-500">{p.certificateName ?? "-"}</td>
+            </tr>
+          ))}
+          {data.length === 0 && (
+            <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">No PRA portals</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function AppConnectorsSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zpa-app-connectors", tenantName],
+    queryFn: () => listAppConnectors(tenantName),
+    enabled: isOpen,
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100 bg-white">
+          {data.map((c: ZpaAppConnector) => (
+            <tr key={c.id}>
+              <td className="px-3 py-2 font-mono text-xs text-gray-500">{c.id}</td>
+              <td className="px-3 py-2 text-gray-900">{c.name}</td>
+            </tr>
+          ))}
+          {data.length === 0 && (
+            <tr><td colSpan={2} className="px-3 py-4 text-center text-gray-400">No app connectors</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ServiceEdgesSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zpa-service-edges", tenantName],
+    queryFn: () => listServiceEdges(tenantName),
+    enabled: isOpen,
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100 bg-white">
+          {data.map((e: ZpaServiceEdge) => (
+            <tr key={e.id}>
+              <td className="px-3 py-2 font-mono text-xs text-gray-500">{e.id}</td>
+              <td className="px-3 py-2 text-gray-900">{e.name}</td>
+            </tr>
+          ))}
+          {data.length === 0 && (
+            <tr><td colSpan={2} className="px-3 py-4 text-center text-gray-400">No service edges</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SegmentGroupsSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zpa-segment-groups", tenantName],
+    queryFn: () => listSegmentGroups(tenantName),
+    enabled: isOpen,
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100 bg-white">
+          {data.map((g: ZpaSegmentGroup) => (
+            <tr key={g.id}>
+              <td className="px-3 py-2 font-mono text-xs text-gray-500">{g.id}</td>
+              <td className="px-3 py-2 text-gray-900">{g.name}</td>
+            </tr>
+          ))}
+          {data.length === 0 && (
+            <tr><td colSpan={2} className="px-3 py-4 text-center text-gray-400">No segment groups</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── ZDX sections ──────────────────────────────────────────────────────────────
+
+function ZdxDeviceSearchSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const [query, setQuery] = useState("");
+  const [hours, setHours] = useState(2);
+  const [submitted, setSubmitted] = useState(false);
+
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ["zdx-devices", tenantName, query, hours],
+    queryFn: () => searchZdxDevices(tenantName, query || undefined, hours),
+    enabled: isOpen && submitted,
+  });
+
+  function handleSearch(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitted(true);
+    refetch();
+  }
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="space-y-4">
+      <form onSubmit={handleSearch} className="flex items-end gap-3 flex-wrap">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Search query</label>
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Device name or user..."
+            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Time range (hours)</label>
+          <select
+            value={hours}
+            onChange={(e) => setHours(Number(e.target.value))}
+            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+          >
+            {[1, 2, 6, 12, 24, 48].map((h) => (
+              <option key={h} value={h}>{h}h</option>
+            ))}
+          </select>
+        </div>
+        <button
+          type="submit"
+          className="px-3 py-1.5 text-xs rounded-md bg-zs-500 hover:bg-zs-600 text-white"
+        >
+          Search
+        </button>
+      </form>
+      {isLoading && <LoadingSpinner />}
+      {error && <ErrorMessage message={error instanceof Error ? error.message : "Search failed"} />}
+      {data && (
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">User</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 bg-white">
+              {data.map((d: ZdxDevice, i: number) => (
+                <tr key={d.id ?? i}>
+                  <td className="px-3 py-2 font-mono text-xs text-gray-500">{d.id ?? "-"}</td>
+                  <td className="px-3 py-2 text-gray-900">{d.name ?? "-"}</td>
+                  <td className="px-3 py-2 text-gray-600">{d.user ?? "-"}</td>
+                </tr>
+              ))}
+              {data.length === 0 && (
+                <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">No results</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ZdxUserLookupSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const [query, setQuery] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ["zdx-users", tenantName, query],
+    queryFn: () => lookupZdxUsers(tenantName, query || undefined),
+    enabled: isOpen && submitted,
+  });
+
+  function handleSearch(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitted(true);
+    refetch();
+  }
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="space-y-4">
+      <form onSubmit={handleSearch} className="flex items-end gap-3">
+        <div className="flex-1">
+          <label className="block text-xs font-medium text-gray-600 mb-1">Search users</label>
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Username or email..."
+            className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+          />
+        </div>
+        <button
+          type="submit"
+          className="px-3 py-1.5 text-xs rounded-md bg-zs-500 hover:bg-zs-600 text-white"
+        >
+          Search
+        </button>
+      </form>
+      {isLoading && <LoadingSpinner />}
+      {error && <ErrorMessage message={error instanceof Error ? error.message : "Lookup failed"} />}
+      {data && (
+        <ul className="divide-y divide-gray-100 border border-gray-200 rounded-md">
+          {data.map((u: ZdxUser, i: number) => (
+            <li key={u.id ?? i} className="px-3 py-2 text-sm">
+              <span className="font-medium text-gray-900">{u.name ?? u.email ?? u.id ?? "Unknown"}</span>
+              {u.email && u.name && (
+                <span className="ml-2 text-gray-500 font-mono text-xs">{u.email}</span>
+              )}
+            </li>
+          ))}
+          {data.length === 0 && (
+            <li className="px-3 py-4 text-center text-gray-400 text-sm">No results</li>
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ── ZCC sections ──────────────────────────────────────────────────────────────
+
+const OS_TYPE_LABELS: Record<number, string> = {
+  1: "Windows",
+  2: "macOS",
+  3: "iOS",
+  4: "Android",
+  5: "Linux",
+  6: "ChromeOS",
+};
+
+function OtpModal({ tenantName, device, onClose }: { tenantName: string; device: ZccDevice; onClose: () => void }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zcc-otp", tenantName, device.udid],
+    queryFn: () => getDeviceOtp(tenantName, device.udid),
+    enabled: true,
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4">
+        <div className="px-6 py-5">
+          <h3 className="text-base font-semibold text-gray-900 mb-1">OTP for {device.hostname ?? device.udid}</h3>
+          {isLoading && <LoadingSpinner />}
+          {error && <ErrorMessage message={error instanceof Error ? error.message : "Failed to get OTP"} />}
+          {data && (
+            <div className="mt-3 flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-md px-3 py-2">
+              <span className="font-mono text-lg font-bold text-gray-900 flex-1">{data.otp}</span>
+              <CopyButton text={data.otp} />
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end px-6 pb-5">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ZccDevicesSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const [usernameFilter, setUsernameFilter] = useState("");
+  const [osFilter, setOsFilter] = useState<number | "">("");
+  const [otpDevice, setOtpDevice] = useState<ZccDevice | null>(null);
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zcc-devices", tenantName, usernameFilter, osFilter],
+    queryFn: () => listZccDevices(tenantName, {
+      username: usernameFilter || undefined,
+      os_type: osFilter !== "" ? osFilter : undefined,
+    }),
+    enabled: isOpen,
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  return (
+    <div className="space-y-3">
+      {otpDevice && (
+        <OtpModal tenantName={tenantName} device={otpDevice} onClose={() => setOtpDevice(null)} />
+      )}
+      <div className="flex items-end gap-3 flex-wrap">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Username</label>
+          <input
+            type="text"
+            value={usernameFilter}
+            onChange={(e) => setUsernameFilter(e.target.value)}
+            placeholder="Filter by username..."
+            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">OS</label>
+          <select
+            value={osFilter}
+            onChange={(e) => setOsFilter(e.target.value === "" ? "" : Number(e.target.value))}
+            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+          >
+            <option value="">All</option>
+            {Object.entries(OS_TYPE_LABELS).map(([v, label]) => (
+              <option key={v} value={v}>{label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Hostname</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">User</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">OS</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">State</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 bg-white">
+            {data.map((d: ZccDevice) => (
+              <tr key={d.udid}>
+                <td className="px-3 py-2 text-gray-900">{d.hostname ?? "-"}</td>
+                <td className="px-3 py-2 text-gray-600">{d.username ?? d.owner ?? "-"}</td>
+                <td className="px-3 py-2 text-gray-500">
+                  {d.os_type ? OS_TYPE_LABELS[d.os_type] ?? String(d.os_type) : "-"}
+                </td>
+                <td className="px-3 py-2 text-gray-500">{d.registration_state ?? "-"}</td>
+                <td className="px-3 py-2">
+                  <button
+                    onClick={() => setOtpDevice(d)}
+                    className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-700"
+                  >
+                    Get OTP
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {data.length === 0 && (
+              <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400">No devices</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ZccReadOnlySection<T extends { id?: string; name?: string }>({
+  queryKey,
+  queryFn,
+  isOpen,
+  emptyMessage,
+}: {
+  queryKey: unknown[];
+  queryFn: () => Promise<T[]>;
+  isOpen: boolean;
+  emptyMessage: string;
+}) {
+  const { data, isLoading, error } = useQuery({
+    queryKey,
+    queryFn,
+    enabled: isOpen,
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100 bg-white">
+          {data.map((item: T, i: number) => (
+            <tr key={item.id ?? i}>
+              <td className="px-3 py-2 font-mono text-xs text-gray-500">{item.id ?? "-"}</td>
+              <td className="px-3 py-2 text-gray-900">{item.name ?? "-"}</td>
+            </tr>
+          ))}
+          {data.length === 0 && (
+            <tr><td colSpan={2} className="px-3 py-4 text-center text-gray-400">{emptyMessage}</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── ZID sections ──────────────────────────────────────────────────────────────
+
+function ZidUsersSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const [filter, setFilter] = useState("");
+  const [resetResult, setResetResult] = useState<{ userId: string; password: string } | null>(null);
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zid-users", tenantName],
+    queryFn: () => listZidUsers(tenantName),
+    enabled: isOpen,
+  });
+
+  const resetMut = useMutation({
+    mutationFn: (userId: string) => resetUserPassword(tenantName, userId),
+    onSuccess: (result, userId) => {
+      setResetResult({ userId, password: result.temporary_password });
+    },
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  const q = filter.toLowerCase();
+  const filtered = data.filter((u: ZidUser) =>
+    (u.login_name ?? "").toLowerCase().includes(q) ||
+    (u.display_name ?? "").toLowerCase().includes(q) ||
+    (u.primary_email ?? "").toLowerCase().includes(q)
+  );
+
+  return (
+    <div className="space-y-3">
+      {resetResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4">
+            <div className="px-6 py-5">
+              <h3 className="text-base font-semibold text-gray-900 mb-1">Temporary Password</h3>
+              <p className="text-xs text-gray-500 mb-3">This password will not be shown again. Save it now.</p>
+              <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-md px-3 py-2">
+                <span className="font-mono text-sm font-bold text-gray-900 flex-1 break-all">
+                  {resetResult.password}
+                </span>
+                <CopyButton text={resetResult.password} />
+              </div>
+            </div>
+            <div className="flex justify-end px-6 pb-5">
+              <button
+                onClick={() => setResetResult(null)}
+                className="px-4 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      <input
+        type="text"
+        placeholder="Filter by login name, display name, or email..."
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+        className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+      />
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Login Name</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Display Name</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 bg-white">
+            {filtered.map((u: ZidUser, i: number) => (
+              <tr key={u.id ?? i}>
+                <td className="px-3 py-2 text-gray-900 font-mono text-xs">{u.login_name ?? "-"}</td>
+                <td className="px-3 py-2 text-gray-700">{u.display_name ?? "-"}</td>
+                <td className="px-3 py-2 text-gray-500 font-mono text-xs">{u.primary_email ?? "-"}</td>
+                <td className="px-3 py-2">
+                  <button
+                    onClick={() => u.id && resetMut.mutate(u.id)}
+                    disabled={resetMut.isPending}
+                    className="text-xs px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-700 disabled:opacity-60"
+                  >
+                    Reset PW
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {filtered.length === 0 && (
+              <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400">No results</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ZidGroupsSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zid-groups", tenantName],
+    queryFn: () => listZidGroups(tenantName),
+    enabled: isOpen,
+  });
+
+  const membersQuery = useQuery({
+    queryKey: ["zid-group-members", tenantName, expandedGroup],
+    queryFn: () => getGroupMembers(tenantName, expandedGroup!),
+    enabled: !!expandedGroup,
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  return (
+    <div className="space-y-2">
+      {data.map((g: ZidGroup, i: number) => {
+        const gid = g.id ?? String(i);
+        const isExpanded = expandedGroup === gid;
+        return (
+          <div key={gid} className="border border-gray-200 rounded-lg overflow-hidden">
+            <button
+              onClick={() => setExpandedGroup(isExpanded ? null : gid)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 text-left text-sm"
+            >
+              <span className="font-medium text-gray-900">{g.name ?? gid}</span>
+              <div className="flex items-center gap-3">
+                {g.type && <span className="text-xs text-gray-400">{g.type}</span>}
+                <svg
+                  className={`h-4 w-4 text-gray-500 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                  fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </button>
+            {isExpanded && (
+              <div className="px-4 py-3">
+                {membersQuery.isLoading && <LoadingSpinner />}
+                {membersQuery.error && <ErrorMessage message="Failed to load members" />}
+                {membersQuery.data && (
+                  <table className="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Login Name</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 bg-white">
+                      {membersQuery.data.map((m: ZidUser, mi: number) => (
+                        <tr key={m.id ?? mi}>
+                          <td className="px-3 py-2 text-gray-900 font-mono text-xs">{m.login_name ?? "-"}</td>
+                          <td className="px-3 py-2 text-gray-500 font-mono text-xs">{m.primary_email ?? "-"}</td>
+                        </tr>
+                      ))}
+                      {membersQuery.data.length === 0 && (
+                        <tr><td colSpan={2} className="px-3 py-4 text-center text-gray-400">No members</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {data.length === 0 && <p className="text-sm text-gray-400 text-center py-4">No groups</p>}
+    </div>
+  );
+}
+
+function ZidApiClientsSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const [expandedClient, setExpandedClient] = useState<string | null>(null);
+  const [newSecret, setNewSecret] = useState<{ clientSecret: string; secretId: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const qc = useQueryClient();
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zid-api-clients", tenantName],
+    queryFn: () => listApiClients(tenantName),
+    enabled: isOpen,
+  });
+
+  const secretsQuery = useQuery({
+    queryKey: ["zid-api-client-secrets", tenantName, expandedClient],
+    queryFn: () => getApiClientSecrets(tenantName, expandedClient!),
+    enabled: !!expandedClient,
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  function handleDeleteConfirm() {
+    // deleteTarget is a clientId here for simplicity
+    if (deleteTarget) {
+      qc.invalidateQueries({ queryKey: ["zid-api-clients", tenantName] });
+    }
+    setDeleteTarget(null);
+  }
+
+  return (
+    <div className="space-y-2">
+      {newSecret && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4">
+            <div className="px-6 py-5">
+              <h3 className="text-base font-semibold text-gray-900 mb-1">New Client Secret</h3>
+              <p className="text-xs text-red-600 font-medium mb-3">This secret will not be shown again.</p>
+              <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-md px-3 py-2">
+                <span className="font-mono text-sm text-gray-900 flex-1 break-all">{newSecret.clientSecret}</span>
+                <CopyButton text={newSecret.clientSecret} />
+              </div>
+              <p className="mt-2 text-xs text-gray-500">Secret ID: {newSecret.secretId}</p>
+            </div>
+            <div className="flex justify-end px-6 pb-5">
+              <button
+                onClick={() => setNewSecret(null)}
+                className="px-4 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {deleteTarget && (
+        <ConfirmDialog
+          title="Delete API Client"
+          message="Are you sure you want to delete this API client? This action cannot be undone."
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteTarget(null)}
+          destructive
+        />
+      )}
+      {data.map((client: ZidApiClient, i: number) => {
+        const cid = client.id ?? String(i);
+        const isExpanded = expandedClient === cid;
+        return (
+          <div key={cid} className="border border-gray-200 rounded-lg overflow-hidden">
+            <button
+              onClick={() => setExpandedClient(isExpanded ? null : cid)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 text-left text-sm"
+            >
+              <span className="font-medium text-gray-900">{client.name ?? cid}</span>
+              <svg
+                className={`h-4 w-4 text-gray-500 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                fill="none" viewBox="0 0 24 24" stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {isExpanded && (
+              <div className="px-4 py-3 space-y-3">
+                {secretsQuery.isLoading && <LoadingSpinner />}
+                {secretsQuery.error && <ErrorMessage message="Failed to load secrets" />}
+                {secretsQuery.data && (
+                  <table className="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Secret ID</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Expires</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 bg-white">
+                      {secretsQuery.data.map((s: ZidApiClientSecret, si: number) => (
+                        <tr key={s.secret_id ?? si}>
+                          <td className="px-3 py-2 font-mono text-xs text-gray-500">{s.secret_id ?? "-"}</td>
+                          <td className="px-3 py-2 text-gray-500 text-xs">{s.created_at ?? "-"}</td>
+                          <td className="px-3 py-2 text-gray-500 text-xs">{s.expires_at ?? "Never"}</td>
+                        </tr>
+                      ))}
+                      {secretsQuery.data.length === 0 && (
+                        <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">No secrets</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {data.length === 0 && <p className="text-sm text-gray-400 text-center py-4">No API clients</p>}
+    </div>
+  );
+}
+
+// ── Tab panels ────────────────────────────────────────────────────────────────
+
+type TabId = "zia" | "zpa" | "zdx" | "zcc" | "zid";
+
+function ZiaTab({ tenant }: { tenant: Tenant }) {
+  const [open, setOpen] = useState<Record<string, boolean>>({ activation: true });
+  function toggle(key: string) {
+    setOpen((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  return (
+    <div className="space-y-3">
+      <Accordion title="Activation" isOpen={!!open.activation} onToggle={() => toggle("activation")}>
+        <ActivationSection tenantName={tenant.name} isOpen={!!open.activation} />
+      </Accordion>
+      <Accordion title="URL Filtering Rules" isOpen={!!open.urlFilteringRules} onToggle={() => toggle("urlFilteringRules")}>
+        <UrlFilteringRulesSection tenantName={tenant.name} isOpen={!!open.urlFilteringRules} />
+      </Accordion>
+      <Accordion title="URL Categories" isOpen={!!open.urlCategories} onToggle={() => toggle("urlCategories")}>
+        <UrlCategoriesSection tenantName={tenant.name} isOpen={!!open.urlCategories} />
+      </Accordion>
+      <Accordion title="URL Lookup" isOpen={!!open.urlLookup} onToggle={() => toggle("urlLookup")}>
+        <UrlLookupSection tenantName={tenant.name} />
+      </Accordion>
+      <Accordion title="Security Policy (Allow / Deny Lists)" isOpen={!!open.allowdeny} onToggle={() => toggle("allowdeny")}>
+        <AllowDenySection tenantName={tenant.name} isOpen={!!open.allowdeny} />
+      </Accordion>
+      <Accordion title="Users" isOpen={!!open.users} onToggle={() => toggle("users")}>
+        <UsersSection tenantName={tenant.name} isOpen={!!open.users} />
+      </Accordion>
+      <Accordion title="Locations" isOpen={!!open.locations} onToggle={() => toggle("locations")}>
+        <LocationsSection tenantName={tenant.name} isOpen={!!open.locations} />
+      </Accordion>
+      <Accordion title="Departments" isOpen={!!open.departments} onToggle={() => toggle("departments")}>
+        <DepartmentsSection tenantName={tenant.name} isOpen={!!open.departments} />
+      </Accordion>
+      <Accordion title="Groups" isOpen={!!open.groups} onToggle={() => toggle("groups")}>
+        <GroupsSection tenantName={tenant.name} isOpen={!!open.groups} />
+      </Accordion>
+    </div>
+  );
+}
+
+function ZpaTab({ tenant }: { tenant: Tenant }) {
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  function toggle(key: string) {
+    setOpen((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  return (
+    <div className="space-y-3">
+      <Accordion title="App Connectors" isOpen={!!open.appConnectors} onToggle={() => toggle("appConnectors")}>
+        <AppConnectorsSection tenantName={tenant.name} isOpen={!!open.appConnectors} />
+      </Accordion>
+      <Accordion title="Service Edges" isOpen={!!open.serviceEdges} onToggle={() => toggle("serviceEdges")}>
+        <ServiceEdgesSection tenantName={tenant.name} isOpen={!!open.serviceEdges} />
+      </Accordion>
+      <Accordion title="Application Segments" isOpen={!!open.applications} onToggle={() => toggle("applications")}>
+        <ApplicationsSection tenantName={tenant.name} isOpen={!!open.applications} />
+      </Accordion>
+      <Accordion title="Segment Groups" isOpen={!!open.segmentGroups} onToggle={() => toggle("segmentGroups")}>
+        <SegmentGroupsSection tenantName={tenant.name} isOpen={!!open.segmentGroups} />
+      </Accordion>
+      <Accordion title="Certificates" isOpen={!!open.certificates} onToggle={() => toggle("certificates")}>
+        <CertificatesSection tenantName={tenant.name} isOpen={!!open.certificates} />
+      </Accordion>
+      <Accordion title="PRA Portals" isOpen={!!open.praPortals} onToggle={() => toggle("praPortals")}>
+        <PraPortalsSection tenantName={tenant.name} isOpen={!!open.praPortals} />
+      </Accordion>
+    </div>
+  );
+}
+
+function ZdxTab({ tenant }: { tenant: Tenant }) {
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  function toggle(key: string) {
+    setOpen((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  return (
+    <div className="space-y-3">
+      <Accordion title="Device Search" isOpen={!!open.deviceSearch} onToggle={() => toggle("deviceSearch")}>
+        <ZdxDeviceSearchSection tenantName={tenant.name} isOpen={!!open.deviceSearch} />
+      </Accordion>
+      <Accordion title="User Lookup" isOpen={!!open.userLookup} onToggle={() => toggle("userLookup")}>
+        <ZdxUserLookupSection tenantName={tenant.name} isOpen={!!open.userLookup} />
+      </Accordion>
+    </div>
+  );
+}
+
+function ZccTab({ tenant }: { tenant: Tenant }) {
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  function toggle(key: string) {
+    setOpen((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  return (
+    <div className="space-y-3">
+      <Accordion title="Devices" isOpen={!!open.devices} onToggle={() => toggle("devices")}>
+        <ZccDevicesSection tenantName={tenant.name} isOpen={!!open.devices} />
+      </Accordion>
+      <Accordion title="Trusted Networks" isOpen={!!open.trustedNetworks} onToggle={() => toggle("trustedNetworks")}>
+        <ZccReadOnlySection<ZccTrustedNetwork>
+          queryKey={["zcc-trusted-networks", tenant.name]}
+          queryFn={() => listTrustedNetworks(tenant.name)}
+          isOpen={!!open.trustedNetworks}
+          emptyMessage="No trusted networks"
+        />
+      </Accordion>
+      <Accordion title="Forwarding Profiles" isOpen={!!open.forwardingProfiles} onToggle={() => toggle("forwardingProfiles")}>
+        <ZccReadOnlySection<ZccForwardingProfile>
+          queryKey={["zcc-forwarding-profiles", tenant.name]}
+          queryFn={() => listForwardingProfiles(tenant.name)}
+          isOpen={!!open.forwardingProfiles}
+          emptyMessage="No forwarding profiles"
+        />
+      </Accordion>
+      <Accordion title="App Profiles (Web Policies)" isOpen={!!open.webPolicies} onToggle={() => toggle("webPolicies")}>
+        <ZccReadOnlySection<ZccWebPolicy>
+          queryKey={["zcc-web-policies", tenant.name]}
+          queryFn={() => listWebPolicies(tenant.name)}
+          isOpen={!!open.webPolicies}
+          emptyMessage="No app profiles"
+        />
+      </Accordion>
+      <Accordion title="Bypass App Services" isOpen={!!open.webAppServices} onToggle={() => toggle("webAppServices")}>
+        <ZccReadOnlySection<ZccWebAppService>
+          queryKey={["zcc-web-app-services", tenant.name]}
+          queryFn={() => listWebAppServices(tenant.name)}
+          isOpen={!!open.webAppServices}
+          emptyMessage="No bypass app services"
+        />
+      </Accordion>
+    </div>
+  );
+}
+
+function ZidTab({ tenant }: { tenant: Tenant }) {
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  function toggle(key: string) {
+    setOpen((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  return (
+    <div className="space-y-3">
+      <Accordion title="Users" isOpen={!!open.users} onToggle={() => toggle("users")}>
+        <ZidUsersSection tenantName={tenant.name} isOpen={!!open.users} />
+      </Accordion>
+      <Accordion title="Groups" isOpen={!!open.groups} onToggle={() => toggle("groups")}>
+        <ZidGroupsSection tenantName={tenant.name} isOpen={!!open.groups} />
+      </Accordion>
+      <Accordion title="API Clients" isOpen={!!open.apiClients} onToggle={() => toggle("apiClients")}>
+        <ZidApiClientsSection tenantName={tenant.name} isOpen={!!open.apiClients} />
+      </Accordion>
+    </div>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
+export default function TenantWorkspacePage() {
+  const { id } = useParams<{ id: string }>();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { setActiveTenantId } = useActiveTenant();
+
+  // Determine active tab from URL segment
+  const pathSegment = location.pathname.split("/").pop() as TabId | undefined;
+  const activeTab: TabId = (["zia", "zpa", "zdx", "zcc", "zid"].includes(pathSegment ?? "") ? pathSegment : "zia") as TabId;
+
+  const { data: tenant, isLoading, error } = useQuery({
+    queryKey: ["tenant", Number(id)],
+    queryFn: () => fetchTenant(Number(id)),
+    enabled: !!id,
+    retry: (failureCount, err: unknown) => {
+      if (err instanceof Error && "status" in err && (err as { status: number }).status === 404) return false;
+      return failureCount < 2;
+    },
+  });
+
+  // Sync active tenant to context
+  useEffect(() => {
+    if (id) {
+      setActiveTenantId(Number(id));
+    }
+  }, [id, setActiveTenantId]);
+
+  if (isLoading) return <LoadingSpinner />;
+
+  if (error) {
+    const is404 = error instanceof Error && "status" in error && (error as { status: number }).status === 404;
+    if (is404) {
+      return (
+        <div className="py-16 text-center space-y-3">
+          <p className="text-gray-500">Tenant not found.</p>
+          <Link to="/tenants" className="text-zs-500 hover:text-zs-600 text-sm">
+            Back to Tenants
+          </Link>
+        </div>
+      );
+    }
+    return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load tenant"} />;
+  }
+
+  if (!tenant) return null;
+
+  const hasZpa = !!tenant.zpa_customer_id;
+
+  const tabs: { id: TabId; label: string; show: boolean }[] = [
+    { id: "zia", label: "ZIA", show: true },
+    { id: "zpa", label: "ZPA", show: hasZpa },
+    { id: "zdx", label: "ZDX", show: true },
+    { id: "zcc", label: "ZCC", show: true },
+    { id: "zid", label: "ZID", show: true },
+  ];
+
+  // If trying to view ZPA tab but no ZPA, redirect to ZIA
+  if (activeTab === "zpa" && !hasZpa) {
+    navigate(`/tenant/${id}/zia`, { replace: true });
+    return null;
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <Link
+          to="/tenants"
+          className="flex items-center gap-1 text-gray-400 hover:text-gray-600 text-sm"
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Tenants
+        </Link>
+        <span className="text-gray-300">/</span>
+        <h1 className="text-xl font-semibold text-gray-900">{tenant.name}</h1>
+        <ValidationBadge tenant={tenant} />
+        {tenant.zia_cloud && (
+          <span className="font-mono text-xs text-gray-500">{tenant.zia_cloud}</span>
+        )}
+        {tenant.govcloud && (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+            GovCloud
+          </span>
+        )}
+      </div>
+
+      {/* Tab bar */}
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex gap-6">
+          {tabs.filter((t) => t.show).map((tab) => (
+            <Link
+              key={tab.id}
+              to={`/tenant/${id}/${tab.id}`}
+              className={`pb-2 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === tab.id
+                  ? "border-zs-500 text-zs-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {tab.label}
+            </Link>
+          ))}
+        </nav>
+      </div>
+
+      {/* Tab content */}
+      {activeTab === "zia" && <ZiaTab tenant={tenant} />}
+      {activeTab === "zpa" && hasZpa && <ZpaTab tenant={tenant} />}
+      {activeTab === "zdx" && <ZdxTab tenant={tenant} />}
+      {activeTab === "zcc" && <ZccTab tenant={tenant} />}
+      {activeTab === "zid" && <ZidTab tenant={tenant} />}
+    </div>
+  );
+}

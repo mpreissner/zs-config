@@ -4,6 +4,21 @@ from zscaler import ZscalerClient
 
 from .auth import ZscalerAuth
 
+# ── ZPA SDK ServiceEdge class-level patch ─────────────────────────────────────
+# The SDK's `service_edges` property creates a new ServiceEdgeControllerAPI
+# instance on every access. That class references `self._zpa` but the attribute
+# does not exist on the instance, causing AttributeError on every call.
+# Patching the class at import time (instance-level patching doesn't work because
+# the @property returns a fresh instance on each access).
+try:
+    from zscaler.zpa.service_edges import ServiceEdgeControllerAPI as _SECA
+    if not hasattr(_SECA, "_zpa") or not isinstance(
+        getattr(_SECA, "_zpa", None), property
+    ):
+        _SECA._zpa = property(lambda self: self._zpa_base_endpoint)
+except Exception:
+    pass  # SDK not installed or class moved — fail gracefully at call-time
+
 
 def _unwrap(result, resp, err):
     if err:
@@ -106,6 +121,11 @@ class ZPAClient:
     def create_application(self, **kwargs) -> Dict:
         result, resp, err = self._sdk.zpa.application_segment.add_segment(**kwargs)
         return _to_dict(_unwrap(result, resp, err))
+
+    def delete_application(self, app_id: str) -> bool:
+        result, resp, err = self._sdk.zpa.application_segment.delete_segment(app_id)
+        _unwrap(result, resp, err)
+        return True
 
     def enable_application(self, app_id: str) -> bool:
         config = self.get_application(app_id)

@@ -205,6 +205,45 @@ class ZIAClient:
     # User Management
     # ------------------------------------------------------------------
 
+    def get_user(self, user_id: str) -> Dict:
+        if self._govcloud:
+            return self.zia_get(f"/zia/api/v1/users/{user_id}")
+        result, resp, err = self._sdk.zia.user_management.get_user(int(user_id))
+        return _to_dict(_unwrap(result, resp, err))
+
+    def create_user(self, config: Dict) -> Dict:
+        if self._govcloud:
+            return self.zia_post("/zia/api/v1/users", config)
+        result, resp, err = self._sdk.zia.user_management.add_user(**config)
+        return _to_dict(_unwrap(result, resp, err))
+
+    def update_user(self, user_id: str, config: Dict) -> Dict:
+        if self._govcloud:
+            return self.zia_put(f"/zia/api/v1/users/{user_id}", config)
+        result, resp, err = self._sdk.zia.user_management.update_user(int(user_id), **config)
+        return _to_dict(_unwrap(result, resp, err))
+
+    def delete_user(self, user_id: str) -> None:
+        if self._govcloud:
+            self.zia_delete(f"/zia/api/v1/users/{user_id}")
+            return
+        result, resp, err = self._sdk.zia.user_management.delete_user(int(user_id))
+        _unwrap(result, resp, err)
+
+    def update_allowlist(self, urls: List[str]) -> Dict:
+        """Replace the entire allowlist with the provided URL list."""
+        if self._govcloud:
+            return self.zia_put("/zia/api/v1/security", {"whitelistedUrls": urls})
+        result, resp, err = self._sdk.zia.security_policy_settings.update_whitelist(whitelist_urls=urls)
+        return _to_dict(_unwrap(result, resp, err))
+
+    def update_denylist(self, urls: List[str]) -> Dict:
+        """Replace the entire denylist with the provided URL list."""
+        if self._govcloud:
+            return self.zia_put("/zia/api/v1/security/advanced", {"blacklistedUrls": urls})
+        result, resp, err = self._sdk.zia.security_policy_settings.update_blacklist(blacklist_urls=urls)
+        return _to_dict(_unwrap(result, resp, err))
+
     def list_users(self, name: Optional[str] = None, group: Optional[str] = None, dept: Optional[str] = None) -> List[Dict]:
         if self._govcloud:
             import requests

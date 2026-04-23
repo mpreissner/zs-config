@@ -91,3 +91,91 @@ export const fetchAllowlist = (tenant: string): Promise<AllowDenyList> =>
 
 export const fetchDenylist = (tenant: string): Promise<AllowDenyList> =>
   apiFetch<AllowDenyList>(`${base(tenant)}/denylist`);
+
+// ── Mutations ─────────────────────────────────────────────────────────────────
+
+export const createUrlCategory = (tenant: string, body: unknown): Promise<UrlCategory> =>
+  apiFetch<UrlCategory>(`${base(tenant)}/url-categories`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const updateUrlCategory = (
+  tenant: string,
+  categoryId: string,
+  body: unknown
+): Promise<UrlCategory> =>
+  apiFetch<UrlCategory>(`${base(tenant)}/url-categories/${encodeURIComponent(categoryId)}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+
+export const createUrlFilteringRule = (tenant: string, body: unknown): Promise<UrlFilteringRule> =>
+  apiFetch<UrlFilteringRule>(`${base(tenant)}/url-filtering-rules`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const updateUrlFilteringRule = (
+  tenant: string,
+  ruleId: number,
+  body: unknown
+): Promise<UrlFilteringRule> =>
+  apiFetch<UrlFilteringRule>(`${base(tenant)}/url-filtering-rules/${ruleId}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+
+export const deleteUrlFilteringRule = (
+  tenant: string,
+  ruleId: number
+): Promise<{ deleted: boolean }> =>
+  apiFetch<{ deleted: boolean }>(`${base(tenant)}/url-filtering-rules/${ruleId}`, {
+    method: "DELETE",
+  });
+
+export const patchUrlFilteringRuleState = (
+  tenant: string,
+  ruleId: number,
+  state: string
+): Promise<UrlFilteringRule> =>
+  apiFetch<UrlFilteringRule>(`${base(tenant)}/url-filtering-rules/${ruleId}/state`, {
+    method: "PATCH",
+    body: JSON.stringify({ state }),
+  });
+
+export const createZiaUser = (tenant: string, body: unknown): Promise<ZiaUser> =>
+  apiFetch<ZiaUser>(`${base(tenant)}/users`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+export const updateZiaUser = (
+  tenant: string,
+  userId: number,
+  body: unknown
+): Promise<ZiaUser> =>
+  apiFetch<ZiaUser>(`${base(tenant)}/users/${userId}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+
+export const deleteZiaUser = (
+  tenant: string,
+  userId: number
+): Promise<{ deleted: boolean }> =>
+  apiFetch<{ deleted: boolean }>(`${base(tenant)}/users/${userId}`, {
+    method: "DELETE",
+  });
+
+export const updateAllowlist = (tenant: string, urls: string[]): Promise<AllowDenyList> =>
+  apiFetch<AllowDenyList>(`${base(tenant)}/allowlist`, {
+    method: "PUT",
+    body: JSON.stringify({ whitelistUrls: urls }),
+  });
+
+export const updateDenylist = (tenant: string, urls: string[]): Promise<AllowDenyList> =>
+  apiFetch<AllowDenyList>(`${base(tenant)}/denylist`, {
+    method: "PUT",
+    body: JSON.stringify({ blacklistUrls: urls }),
+  });

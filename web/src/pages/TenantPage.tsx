@@ -118,6 +118,7 @@ function UrlCategoriesSection({ tenantName, isOpen }: { tenantName: string; isOp
     queryKey: ["zia-url-categories", tenantName],
     queryFn: () => fetchUrlCategories(tenantName),
     enabled: isOpen,
+    staleTime: 5 * 60 * 1000,
   });
 
   if (isLoading) return <LoadingSpinner />;

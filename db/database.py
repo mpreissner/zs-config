@@ -94,6 +94,19 @@ def _migrate(engine) -> None:
         "ALTER TABLE zpa_resources ADD COLUMN candidate_status VARCHAR(32)",
         "ALTER TABLE users ADD COLUMN last_login_at DATETIME",
         "ALTER TABLE tenant_configs ADD COLUMN last_validation_error TEXT",
+        # WebAuthn credentials — CREATE TABLE IF NOT EXISTS for existing DBs
+        # (fresh installs have this created by Base.metadata.create_all above)
+        """CREATE TABLE IF NOT EXISTS webauthn_credentials (
+            id INTEGER PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            credential_id TEXT NOT NULL UNIQUE,
+            public_key TEXT NOT NULL,
+            sign_count INTEGER NOT NULL DEFAULT 0,
+            aaguid VARCHAR(64),
+            label VARCHAR(255),
+            created_at DATETIME NOT NULL,
+            last_used_at DATETIME
+        )""",
     ]
     for stmt in migrations:
         with engine.connect() as conn:

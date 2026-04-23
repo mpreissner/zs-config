@@ -1,5 +1,12 @@
+import threading
+import time
+
 import requests
 from urllib.parse import urlparse
+
+# Module-level token cache: key=(client_id, zidentity_base_url) → (token, expires_at)
+_token_cache: dict = {}
+_token_lock = threading.Lock()
 
 
 class ZscalerAuth:
@@ -21,7 +28,18 @@ class ZscalerAuth:
         return urlparse(self.zidentity_base_url).hostname.split('.')[0]
 
     def get_token(self) -> str:
-        """Obtain a fresh OAuth2 access token. Raises on failure."""
+        """Return a valid OAuth2 access token, using a short-lived cache to avoid
+        a fresh network round-trip on every API call."""
+        cache_key = (self.client_id, self.zidentity_base_url)
+        now = time.monotonic()
+
+        with _token_lock:
+            entry = _token_cache.get(cache_key)
+            if entry:
+                token, expires_at = entry
+                if now < expires_at - 30:  # 30-second safety buffer
+                    return token
+
         resp = requests.post(
             f"{self.zidentity_base_url}/oauth2/v1/token",
             data={
@@ -33,4 +51,11 @@ class ZscalerAuth:
             timeout=15,
         )
         resp.raise_for_status()
-        return resp.json()["access_token"]
+        data = resp.json()
+        token = data["access_token"]
+        expires_in = int(data.get("expires_in", 3600))
+
+        with _token_lock:
+            _token_cache[cache_key] = (token, now + expires_in)
+
+        return token

@@ -1,7 +1,9 @@
 import { useState, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
+import { startAuthentication } from "@simplewebauthn/browser";
 import { useAuth } from "../context/AuthContext";
 import { login } from "../api/auth";
+import { beginAuthentication, completeAuthentication } from "../api/webauthn";
 import zLogo from "../assets/z-logo.jpg";
 
 export default function LoginPage() {
@@ -11,6 +13,12 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [keyLoading, setKeyLoading] = useState(false);
+
+  function postLogin(accessToken: string, forcePasswordChange: boolean) {
+    setToken(accessToken);
+    navigate(forcePasswordChange ? "/change-password" : "/");
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -18,16 +26,34 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const res = await login(username, password);
-      setToken(res.access_token);
-      if (res.force_password_change) {
-        navigate("/change-password");
-      } else {
-        navigate("/tenants");
-      }
+      postLogin(res.access_token, res.force_password_change);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleSecurityKey() {
+    if (!username.trim()) {
+      setError("Enter your username first, then click Sign in with Security Key.");
+      return;
+    }
+    setError(null);
+    setKeyLoading(true);
+    try {
+      const options = await beginAuthentication(username.trim());
+      const credential = await startAuthentication(options as Parameters<typeof startAuthentication>[0]);
+      const res = await completeAuthentication(username.trim(), credential);
+      postLogin(res.access_token, res.force_password_change);
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === "NotAllowedError") {
+        setError("Authentication cancelled.");
+      } else {
+        setError(err instanceof Error ? err.message : "Security key authentication failed.");
+      }
+    } finally {
+      setKeyLoading(false);
     }
   }
 
@@ -68,12 +94,30 @@ export default function LoginPage() {
             {error && <p className="text-red-600 text-xs">{error}</p>}
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || keyLoading}
               className="w-full bg-zs-500 hover:bg-zs-600 disabled:opacity-60 text-white font-medium py-2 rounded-md text-sm transition-colors"
             >
               {loading ? "Signing in..." : "Sign in"}
             </button>
           </form>
+
+          <div className="mt-3 flex items-center gap-2">
+            <div className="flex-1 h-px bg-gray-200" />
+            <span className="text-xs text-gray-400">or</span>
+            <div className="flex-1 h-px bg-gray-200" />
+          </div>
+
+          <button
+            type="button"
+            onClick={handleSecurityKey}
+            disabled={loading || keyLoading}
+            className="mt-3 w-full border border-gray-300 hover:border-gray-400 disabled:opacity-60 text-gray-700 font-medium py-2 rounded-md text-sm transition-colors flex items-center justify-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+            </svg>
+            {keyLoading ? "Touch your key…" : "Sign in with Security Key"}
+          </button>
         </div>
       </div>
     </div>

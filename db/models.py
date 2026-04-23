@@ -294,6 +294,32 @@ class User(Base):
         return f"<User username={self.username!r} role={self.role!r}>"
 
 
+class WebAuthnCredential(Base):
+    """FIDO2 / WebAuthn credential registered by a local user.
+
+    One user may have multiple credentials (multiple hardware keys).
+    Federated (SSO) users do not register credentials here — they do MFA
+    at the IdP.
+    """
+
+    __tablename__ = "webauthn_credentials"
+
+    id             = Column(Integer, primary_key=True)
+    user_id        = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    credential_id  = Column(Text, nullable=False, unique=True)  # base64url-encoded bytes
+    public_key     = Column(Text, nullable=False)               # COSE key, base64url-encoded
+    sign_count     = Column(Integer, nullable=False, default=0)
+    aaguid         = Column(String(64), nullable=True)          # authenticator model GUID
+    label          = Column(String(255), nullable=True)         # user-assigned name ("YubiKey 5")
+    created_at     = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_used_at   = Column(DateTime, nullable=True)
+
+    user = relationship("User", backref="webauthn_credentials")
+
+    def __repr__(self) -> str:
+        return f"<WebAuthnCredential user_id={self.user_id} label={self.label!r}>"
+
+
 class UserTenantEntitlement(Base):
     """Maps zs-config users to the tenants they are permitted to access.
 

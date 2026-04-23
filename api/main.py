@@ -32,6 +32,7 @@ from fastapi.staticfiles import StaticFiles
 
 from api.routers import system, zia, zpa
 from api.routers import auth as auth_router, tenants as tenants_router, admin as admin_router
+from api.routers import zcc as zcc_router, zdx as zdx_router, zid as zid_router
 from api.auth_utils import decode_token
 from api.dependencies import require_auth, AuthUser
 from cli.banner import VERSION
@@ -71,6 +72,8 @@ class ForcePasswordChangeMiddleware(BaseHTTPMiddleware):
     _EXEMPT = {
         "/api/v1/auth/change-password", "/api/v1/auth/login",
         "/api/v1/auth/logout", "/api/v1/auth/refresh",
+        "/api/v1/auth/webauthn/authenticate/begin",
+        "/api/v1/auth/webauthn/authenticate/complete",
         "/health", "/docs", "/openapi.json", "/redoc",
     }
 
@@ -111,6 +114,9 @@ app.add_middleware(
 
 app.include_router(zpa.router, prefix="/api/v1/zpa", tags=["ZPA"])
 app.include_router(zia.router, prefix="/api/v1/zia", tags=["ZIA"])
+app.include_router(zcc_router.router, prefix="/api/v1/zcc", tags=["ZCC"])
+app.include_router(zdx_router.router, prefix="/api/v1/zdx", tags=["ZDX"])
+app.include_router(zid_router.router, prefix="/api/v1/zid", tags=["ZID"])
 app.include_router(system.router)
 app.include_router(auth_router.router)
 app.include_router(tenants_router.router)

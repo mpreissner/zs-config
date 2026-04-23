@@ -122,6 +122,38 @@ class ZIAService:
         )
         return result
 
+    def update_url_filtering_rule(self, rule_id: str, config: Dict, auto_activate: bool = True) -> Dict:
+        self.client.update_url_filtering_rule(rule_id, config)
+        result = self.client.get_url_filtering_rule(rule_id)
+        audit_service.log(
+            product="ZIA",
+            operation="update_url_filtering_rule",
+            action="UPDATE",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="url_filtering_rule",
+            resource_id=rule_id,
+            resource_name=config.get("name"),
+        )
+        if auto_activate:
+            self.activate()
+        return result
+
+    def delete_url_filtering_rule(self, rule_id: str, rule_name: str, auto_activate: bool = True) -> None:
+        self.client.delete_url_filtering_rule(rule_id)
+        audit_service.log(
+            product="ZIA",
+            operation="delete_url_filtering_rule",
+            action="DELETE",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="url_filtering_rule",
+            resource_id=rule_id,
+            resource_name=rule_name,
+        )
+        if auto_activate:
+            self.activate()
+
     def create_url_filtering_rule(self, config: Dict, auto_activate: bool = True) -> Dict:
         result = self.client.create_url_filtering_rule(config)
         audit_service.log(
@@ -141,6 +173,61 @@ class ZIAService:
     # ------------------------------------------------------------------
     # User Management
     # ------------------------------------------------------------------
+
+    def get_user(self, user_id: str) -> Dict:
+        result = self.client.get_user(user_id)
+        audit_service.log(
+            product="ZIA", operation="get_user", action="READ", status="SUCCESS",
+            tenant_id=self.tenant_id, resource_type="user",
+            resource_id=user_id, resource_name=result.get("name"),
+        )
+        return result
+
+    def create_user(self, config: Dict, auto_activate: bool = True) -> Dict:
+        result = self.client.create_user(config)
+        audit_service.log(
+            product="ZIA",
+            operation="create_user",
+            action="CREATE",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="user",
+            resource_id=str(result.get("id", "")),
+            resource_name=result.get("name"),
+        )
+        if auto_activate:
+            self.activate()
+        return result
+
+    def update_user(self, user_id: str, config: Dict, auto_activate: bool = True) -> Dict:
+        result = self.client.update_user(user_id, config)
+        audit_service.log(
+            product="ZIA",
+            operation="update_user",
+            action="UPDATE",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="user",
+            resource_id=user_id,
+            resource_name=config.get("name"),
+        )
+        if auto_activate:
+            self.activate()
+        return result
+
+    def delete_user(self, user_id: str, auto_activate: bool = True) -> None:
+        self.client.delete_user(user_id)
+        audit_service.log(
+            product="ZIA",
+            operation="delete_user",
+            action="DELETE",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="user",
+            resource_id=user_id,
+        )
+        if auto_activate:
+            self.activate()
 
     def list_users(self, name: Optional[str] = None) -> List[Dict]:
         result = self.client.list_users(name=name)
@@ -208,5 +295,31 @@ class ZIAService:
         audit_service.log(
             product="ZIA", operation="get_denylist", action="READ", status="SUCCESS",
             tenant_id=self.tenant_id, resource_type="denylist",
+        )
+        return result
+
+    def update_allowlist(self, urls: List[str]) -> Dict:
+        result = self.client.update_allowlist(urls)
+        audit_service.log(
+            product="ZIA",
+            operation="update_allowlist",
+            action="UPDATE",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="allowlist",
+            details={"url_count": len(urls)},
+        )
+        return result
+
+    def update_denylist(self, urls: List[str]) -> Dict:
+        result = self.client.update_denylist(urls)
+        audit_service.log(
+            product="ZIA",
+            operation="update_denylist",
+            action="UPDATE",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="denylist",
+            details={"url_count": len(urls)},
         )
         return result
