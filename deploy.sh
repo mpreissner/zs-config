@@ -1,23 +1,22 @@
 #!/usr/bin/env bash
 # deploy.sh — Pull, build, and deploy zs-config on a Docker host.
 #
+# Works in two modes:
+#   1. Standalone (fresh machine) — run the script directly; it will clone
+#      the repo into ./zs-config next to the script, then deploy from there.
+#   2. Inside the repo — run from an existing clone; it will pull and redeploy.
+#
 # Usage:
 #   ./deploy.sh [branch]
 #
-# The branch defaults to "feature/web-frontend". Set JWT_SECRET in the
-# environment or in a .env file before running if this is a first-time deploy.
-#
-# First-time setup:
-#   export JWT_SECRET="$(openssl rand -hex 32)"   # save this somewhere safe
-#   ./deploy.sh
-#
-# Subsequent deploys (just pull and rebuild):
-#   ./deploy.sh
+# Single-command deploy on a fresh machine:
+#   curl -fsSL https://raw.githubusercontent.com/mpreissner/zs-config/feature/web-frontend/deploy.sh | bash
 
 set -euo pipefail
 
+REPO_URL="https://github.com/mpreissner/zs-config.git"
 BRANCH="${1:-feature/web-frontend}"
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ── Preflight ─────────────────────────────────────────────────────────────────
 
@@ -29,6 +28,30 @@ fi
 if ! docker compose version &>/dev/null; then
     echo "ERROR: docker compose (v2) is required." >&2
     exit 1
+fi
+
+# ── Clone if not already inside the repo ─────────────────────────────────────
+
+if [[ -f "$SCRIPT_DIR/.git/config" ]] || git -C "$SCRIPT_DIR" rev-parse --git-dir &>/dev/null; then
+    REPO_DIR="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
+    cd "$REPO_DIR"
+    echo "Fetching latest code..."
+    git fetch origin
+    git checkout "$BRANCH"
+    git pull origin "$BRANCH"
+else
+    REPO_DIR="$SCRIPT_DIR/zs-config"
+    if [[ -d "$REPO_DIR" ]]; then
+        echo "Found existing clone at $REPO_DIR, pulling latest..."
+        cd "$REPO_DIR"
+        git fetch origin
+        git checkout "$BRANCH"
+        git pull origin "$BRANCH"
+    else
+        echo "Cloning $REPO_URL into $REPO_DIR..."
+        git clone --branch "$BRANCH" "$REPO_URL" "$REPO_DIR"
+        cd "$REPO_DIR"
+    fi
 fi
 
 # ── Ensure JWT_SECRET is set ──────────────────────────────────────────────────
@@ -43,12 +66,12 @@ fi
 if [[ -z "${JWT_SECRET:-}" ]]; then
     if ! command -v openssl &>/dev/null; then
         echo "ERROR: JWT_SECRET is not set and openssl is not available to generate one." >&2
-        echo "Set JWT_SECRET in .env or in the environment before running this script." >&2
+        echo "Set JWT_SECRET in $REPO_DIR/.env before running this script." >&2
         exit 1
     fi
     JWT_SECRET="$(openssl rand -hex 32)"
     echo "JWT_SECRET=$JWT_SECRET" >> "$REPO_DIR/.env"
-    echo "Generated JWT_SECRET and saved to .env — keep this file safe."
+    echo "Generated JWT_SECRET and saved to $REPO_DIR/.env — keep this file safe."
 fi
 
 # ── Ensure persistent Docker volumes exist ────────────────────────────────────
@@ -59,17 +82,6 @@ for vol in zs-config_zs-db zs-config_zs-plugins; do
         docker volume create "$vol"
     fi
 done
-
-# ── Pull latest code ──────────────────────────────────────────────────────────
-
-cd "$REPO_DIR"
-
-echo "Fetching from origin..."
-git fetch origin
-
-echo "Checking out branch: $BRANCH"
-git checkout "$BRANCH"
-git pull origin "$BRANCH"
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 

@@ -15,16 +15,22 @@ zs-config v2.0.0 ships a browser-based management UI alongside the existing TUI.
 
 ### Deploy
 
-Requires Docker with Compose v2. Clone the repo, check out the branch, and run the deploy script — it handles everything including secret generation on first run.
+Requires Docker with Compose v2. Download and run the deploy script — it handles cloning, secret generation, volumes, build, and startup automatically.
 
 ```bash
-git clone https://github.com/mpreissner/zs-config.git
-cd zs-config
+curl -fsSL https://raw.githubusercontent.com/mpreissner/zs-config/feature/web-frontend/deploy.sh -o deploy.sh
+bash deploy.sh
+```
+
+Or if you already have the repo cloned:
+
+```bash
 git checkout feature/web-frontend
 ./deploy.sh
 ```
 
 The script will:
+- Clone the repo if not already present (into `./zs-config`)
 - Generate a `JWT_SECRET` and save it to `.env` if one does not already exist
 - Create the persistent Docker volumes for the database and plugins
 - Build the image and start the container
