@@ -28,7 +28,14 @@ export default function LoginPage() {
       const res = await login(username, password);
       postLogin(res.access_token, res.force_password_change);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      const msg = err instanceof Error ? err.message : "Login failed";
+      setError(
+        msg === "mfa_required"
+          ? "This account requires a security key. Use 'Sign in with Security Key' below."
+          : msg === "mfa_required_no_key"
+          ? "This account requires a security key or passkey. No key is enrolled — contact your administrator."
+          : msg,
+      );
     } finally {
       setLoading(false);
     }

@@ -219,6 +219,70 @@ function EditModal({ user, onClose }: { user: AdminUser; onClose: () => void }) 
   );
 }
 
+// ── MFA Toggle Modal ──────────────────────────────────────────────────────────
+
+function MfaToggleModal({ user, onClose }: { user: AdminUser; onClose: () => void }) {
+  const qc = useQueryClient();
+  const enabling = !user.mfa_required;
+  const [error, setError] = useState<string | null>(null);
+
+  const mut = useMutation({
+    mutationFn: () => updateAdminUser(user.id, { mfa_required: enabling }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-users"] });
+      onClose();
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+
+  return (
+    <Modal title={enabling ? "Require MFA for User" : "Remove MFA Requirement"} onClose={onClose}>
+      <div className="space-y-3">
+        {enabling ? (
+          <>
+            <p className="text-sm text-gray-700">
+              You are about to require FIDO2 / passkey authentication for <strong>{user.username}</strong>.
+            </p>
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-md text-sm text-amber-800 space-y-1.5">
+              <p className="font-semibold">Important: key loss = unrecoverable account</p>
+              <p>
+                If this user loses access to all enrolled security keys, their account cannot be
+                recovered without admin intervention (deleting and re-creating the account).
+              </p>
+              <p>
+                Recommend that the user enrolls a <strong>passkey</strong> stored in iOS, Android,
+                or a password manager (1Password, Bitwarden, etc.) rather than relying solely on
+                a hardware security key, as passkeys are backed up and transferable.
+              </p>
+            </div>
+            <p className="text-sm text-gray-600">
+              Once enabled, <strong>{user.username}</strong> must have a passkey/security key
+              enrolled to log in via password. If they have no key enrolled, login will be blocked
+              until a key is registered (you may need to temporarily disable this requirement).
+            </p>
+          </>
+        ) : (
+          <p className="text-sm text-gray-700">
+            Remove the MFA requirement from <strong>{user.username}</strong>? They will be able to
+            log in with just a password.
+          </p>
+        )}
+        {error && <p className="text-red-600 text-xs">{error}</p>}
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onClose} className="px-4 py-2 text-sm rounded-md border border-gray-300 hover:bg-gray-50">Cancel</button>
+          <button
+            onClick={() => mut.mutate()}
+            disabled={mut.isPending}
+            className={`px-4 py-2 text-sm rounded-md text-white disabled:opacity-60 ${enabling ? "bg-amber-600 hover:bg-amber-700" : "bg-gray-600 hover:bg-gray-700"}`}
+          >
+            {mut.isPending ? "Saving…" : enabling ? "Enable MFA Requirement" : "Remove MFA Requirement"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 // ── Delete Modal ──────────────────────────────────────────────────────────────
 
 function DeleteModal({ user, onClose }: { user: AdminUser; onClose: () => void }) {
@@ -260,7 +324,8 @@ type ModalState =
   | { type: "none" }
   | { type: "create" }
   | { type: "edit"; user: AdminUser }
-  | { type: "delete"; user: AdminUser };
+  | { type: "delete"; user: AdminUser }
+  | { type: "mfa"; user: AdminUser };
 
 export default function AdminUsersPage() {
   const { user: currentUser } = useAuth();
@@ -296,6 +361,7 @@ export default function AdminUsersPage() {
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Email</th>
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Role</th>
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Status</th>
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">MFA</th>
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Last Login</th>
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Actions</th>
               </tr>
@@ -303,7 +369,7 @@ export default function AdminUsersPage() {
             <tbody className="divide-y divide-gray-200 bg-white">
               {users.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-sm text-gray-500">No users found.</td>
+                  <td colSpan={7} className="py-8 text-center text-sm text-gray-500">No users found.</td>
                 </tr>
               )}
               {users.map((u) => (
@@ -330,6 +396,19 @@ export default function AdminUsersPage() {
                     ) : (
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Inactive</span>
                     )}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3 text-sm">
+                    <button
+                      onClick={() => setModal({ type: "mfa", user: u })}
+                      title={u.mfa_required ? "MFA required — click to remove requirement" : "MFA not required — click to require"}
+                      className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium cursor-pointer transition-colors ${
+                        u.mfa_required
+                          ? "bg-amber-100 text-amber-800 hover:bg-amber-200"
+                          : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                      }`}
+                    >
+                      {u.mfa_required ? "Required" : "Off"}
+                    </button>
                   </td>
                   <td className="whitespace-nowrap px-3 py-3 text-sm text-gray-500">
                     {formatDateTime(u.last_login_at)}
@@ -362,6 +441,7 @@ export default function AdminUsersPage() {
       {modal.type === "create" && <CreateModal onClose={closeModal} />}
       {modal.type === "edit" && <EditModal user={modal.user} onClose={closeModal} />}
       {modal.type === "delete" && <DeleteModal user={modal.user} onClose={closeModal} />}
+      {modal.type === "mfa" && <MfaToggleModal user={modal.user} onClose={closeModal} />}
     </div>
   );
 }

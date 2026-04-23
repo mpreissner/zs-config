@@ -41,6 +41,7 @@ class UserUpdate(BaseModel):
     role: Optional[str] = None
     is_active: Optional[bool] = None
     force_password_change: Optional[bool] = None
+    mfa_required: Optional[bool] = None
     password: Optional[str] = None
 
 
@@ -68,6 +69,7 @@ def _user_out(u: User) -> dict:
         "role": u.role,
         "is_active": u.is_active,
         "force_password_change": u.force_password_change,
+        "mfa_required": bool(u.mfa_required),
         "created_at": u.created_at.isoformat() if u.created_at else None,
         "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
     }
@@ -121,6 +123,8 @@ def update_user(user_id: int, body: UserUpdate, current: AuthUser = Depends(requ
             user.is_active = body.is_active
         if body.force_password_change is not None:
             user.force_password_change = body.force_password_change
+        if body.mfa_required is not None:
+            user.mfa_required = body.mfa_required
         if body.password:
             user.password_hash = hash_password(body.password)
         user.updated_at = datetime.utcnow()

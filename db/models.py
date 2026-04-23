@@ -286,6 +286,7 @@ class User(Base):
     sso_provider          = Column(String(64), nullable=True)
     sso_subject           = Column(String(512), nullable=True)
     is_active             = Column(Boolean, nullable=False, default=True)
+    mfa_required          = Column(Boolean, nullable=False, default=False)
     created_at            = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at            = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     last_login_at         = Column(DateTime, nullable=True)

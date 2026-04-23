@@ -13,6 +13,15 @@ export default {
           700: "#003A6B",
         },
       },
+      keyframes: {
+        indeterminate: {
+          "0%":   { transform: "translateX(-250%)" },
+          "100%": { transform: "translateX(400%)" },
+        },
+      },
+      animation: {
+        indeterminate: "indeterminate 1.5s ease-in-out infinite",
+      },
     },
   },
   plugins: [],

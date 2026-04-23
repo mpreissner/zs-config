@@ -14,6 +14,7 @@ import {
   TenantUpdate,
   ImportResult,
 } from "../api/tenants";
+import { useJobStream } from "../hooks/useJobStream";
 import LoadingSpinner from "../components/LoadingSpinner";
 import ErrorMessage from "../components/ErrorMessage";
 import { useAuth } from "../context/AuthContext";
@@ -326,36 +327,90 @@ function DeleteModal({ tenant, onClose }: { tenant: Tenant; onClose: () => void 
 
 // ── Import Modal ─────────────────────────────────────────────────────────────
 
+function ImportProductRow({
+  label,
+  description,
+  tenantId,
+  importFn,
+  onDone,
+}: {
+  label: string;
+  description: string;
+  tenantId: number;
+  importFn: (id: number) => Promise<{ job_id: string }>;
+  onDone: () => void;
+}) {
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [mutErr, setMutErr] = useState<string | null>(null);
+
+  const mut = useMutation({
+    mutationFn: () => importFn(tenantId),
+    onSuccess: (data) => setJobId(data.job_id),
+    onError: (e: Error) => setMutErr(e.message),
+  });
+
+  const { latestByPhase, jobStatus, result, streamError } = useJobStream<ImportResult>(jobId);
+  const importEv = latestByPhase["import"];
+  const isRunning = mut.isPending || jobStatus === "running";
+  const isDone = jobStatus === "done";
+
+  useEffect(() => { if (isDone) onDone(); }, [isDone, onDone]);
+
+  const err = mutErr ?? streamError;
+
+  return (
+    <div className="p-3 border border-gray-200 rounded-lg space-y-1.5">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium text-gray-900">{label}</p>
+          <p className="text-xs text-gray-500">{description}</p>
+        </div>
+        <button
+          onClick={() => mut.mutate()}
+          disabled={isRunning || isDone}
+          className="px-3 py-1.5 text-xs rounded-md bg-zs-500 hover:bg-zs-600 text-white disabled:opacity-60"
+        >
+          {isRunning ? "Importing..." : isDone ? "Done" : `Import ${label.split(" ")[0]}`}
+        </button>
+      </div>
+
+      {isRunning && (
+        <>
+          {importEv?.total ? (
+            <div className="space-y-0.5">
+              <p className="text-xs text-gray-500">
+                {importEv.resource_type}… {importEv.done}/{importEv.total}
+              </p>
+              <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-zs-500 rounded-full transition-all duration-300"
+                  style={{ width: `${Math.min(100, Math.round((importEv.done / importEv.total) * 100))}%` }}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
+              <div className="h-full w-2/5 bg-zs-500 rounded-full animate-indeterminate" />
+            </div>
+          )}
+          <p className="text-xs text-gray-400 italic">This may take several minutes.</p>
+        </>
+      )}
+
+      {err && <p className="text-xs text-red-600">{err}</p>}
+      {isDone && result && (
+        <p className={`text-xs ${result.status === "SUCCESS" || result.status === "PARTIAL" ? "text-green-700" : "text-red-600"}`}>
+          {result.status} — {result.resources_synced} synced, {result.resources_updated} updated
+          {result.error_message && ` (${result.error_message})`}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ImportModal({ tenant, onClose }: { tenant: Tenant; onClose: () => void }) {
   const qc = useQueryClient();
-  const [ziaResult, setZiaResult] = useState<ImportResult | null>(null);
-  const [zpaResult, setZpaResult] = useState<ImportResult | null>(null);
-  const [ziaError, setZiaError] = useState<string | null>(null);
-  const [zpaError, setZpaError] = useState<string | null>(null);
-
-  const ziaMut = useMutation({
-    mutationFn: () => importZIA(tenant.id),
-    onSuccess: (data) => { setZiaResult(data); qc.invalidateQueries({ queryKey: ["tenants"] }); },
-    onError: (e: Error) => setZiaError(e.message),
-  });
-
-  const zpaMut = useMutation({
-    mutationFn: () => importZPA(tenant.id),
-    onSuccess: (data) => { setZpaResult(data); qc.invalidateQueries({ queryKey: ["tenants"] }); },
-    onError: (e: Error) => setZpaError(e.message),
-  });
-
-  function ResultBadge({ result, error }: { result: ImportResult | null; error: string | null }) {
-    if (error) return <p className="text-xs text-red-600 mt-1">{error}</p>;
-    if (!result) return null;
-    const ok = result.status === "SUCCESS" || result.status === "PARTIAL";
-    return (
-      <p className={`text-xs mt-1 ${ok ? "text-green-700" : "text-red-600"}`}>
-        {result.status} — {result.resources_synced} synced, {result.resources_updated} updated
-        {result.error_message && ` (${result.error_message})`}
-      </p>
-    );
-  }
+  function invalidate() { qc.invalidateQueries({ queryKey: ["tenants"] }); }
 
   return (
     <Modal title={`Import: ${tenant.name}`} onClose={onClose}>
@@ -363,40 +418,21 @@ function ImportModal({ tenant, onClose }: { tenant: Tenant; onClose: () => void 
         Run initial data import for this tenant. This pulls configuration from Zscaler into the local database.
       </p>
       <div className="space-y-4">
-        <div className="p-3 border border-gray-200 rounded-lg">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-900">ZIA Import</p>
-              <p className="text-xs text-gray-500">Pulls URL categories, firewall rules, and other ZIA config</p>
-            </div>
-            <button
-              onClick={() => ziaMut.mutate()}
-              disabled={ziaMut.isPending || !!ziaResult}
-              className="px-3 py-1.5 text-xs rounded-md bg-zs-500 hover:bg-zs-600 text-white disabled:opacity-60"
-            >
-              {ziaMut.isPending ? "Importing..." : ziaResult ? "Done" : "Import ZIA"}
-            </button>
-          </div>
-          <ResultBadge result={ziaResult} error={ziaError} />
-        </div>
-
+        <ImportProductRow
+          label="ZIA Import"
+          description="Pulls URL categories, firewall rules, and other ZIA config"
+          tenantId={tenant.id}
+          importFn={importZIA}
+          onDone={invalidate}
+        />
         {tenant.zpa_customer_id && !tenant.govcloud && (
-          <div className="p-3 border border-gray-200 rounded-lg">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-900">ZPA Import</p>
-                <p className="text-xs text-gray-500">Pulls applications, segment groups, and other ZPA config</p>
-              </div>
-              <button
-                onClick={() => zpaMut.mutate()}
-                disabled={zpaMut.isPending || !!zpaResult}
-                className="px-3 py-1.5 text-xs rounded-md bg-zs-500 hover:bg-zs-600 text-white disabled:opacity-60"
-              >
-                {zpaMut.isPending ? "Importing..." : zpaResult ? "Done" : "Import ZPA"}
-              </button>
-            </div>
-            <ResultBadge result={zpaResult} error={zpaError} />
-          </div>
+          <ImportProductRow
+            label="ZPA Import"
+            description="Pulls applications, segment groups, and other ZPA config"
+            tenantId={tenant.id}
+            importFn={importZPA}
+            onDone={invalidate}
+          />
         )}
       </div>
       <div className="flex justify-end mt-4">

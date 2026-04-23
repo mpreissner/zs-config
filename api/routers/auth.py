@@ -99,6 +99,8 @@ def login(body: LoginRequest, response: Response):
             raise HTTPException(status_code=401, detail="Invalid credentials")
         if not verify_password(body.password, user.password_hash):
             raise HTTPException(status_code=401, detail="Invalid credentials")
+        if user.mfa_required:
+            raise HTTPException(status_code=401, detail="mfa_required")
         user.last_login_at = datetime.utcnow()
         session.flush()
         session.refresh(user)

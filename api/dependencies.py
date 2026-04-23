@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import Optional
-from fastapi import Depends, HTTPException, Header
+from fastapi import Depends, HTTPException, Header, Query
 from api.auth_utils import decode_token
 from jose import JWTError
 
@@ -18,6 +18,31 @@ def require_auth(authorization: Optional[str] = Header(default=None)) -> AuthUse
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
         payload = decode_token(authorization.removeprefix("Bearer "))
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return AuthUser(
+        user_id=int(payload["sub"]),
+        username=payload["username"],
+        role=payload["role"],
+        force_password_change=payload.get("fpc", False),
+    )
+
+
+def require_auth_sse(
+    authorization: Optional[str] = Header(default=None),
+    token: Optional[str] = Query(default=None),
+) -> AuthUser:
+    """Auth dependency for SSE endpoints — accepts token via query param or Authorization header.
+
+    EventSource cannot send custom headers, so the JWT is passed as ?token=<jwt>.
+    """
+    raw = token
+    if raw is None and authorization and authorization.startswith("Bearer "):
+        raw = authorization.removeprefix("Bearer ")
+    if not raw:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        payload = decode_token(raw)
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     return AuthUser(

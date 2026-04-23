@@ -2,7 +2,19 @@ import { useState, useEffect, ReactNode } from "react";
 import { formatDateTime, formatDate } from "../utils/time";
 import { Link, useParams, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchTenant, Tenant } from "../api/tenants";
+import {
+  fetchTenant,
+  fetchTenants,
+  importZIA,
+  importZPA,
+  previewApplySnapshot,
+  applySnapshot,
+  Tenant,
+  ImportResult,
+  SnapshotPreview,
+  ApplySnapshotResult,
+} from "../api/tenants";
+import { useJobStream } from "../hooks/useJobStream";
 import {
   fetchActivationStatus,
   activateTenant,
@@ -1981,6 +1993,483 @@ function ZidApiClientsSection({ tenantName, isOpen }: { tenantName: string; isOp
   );
 }
 
+// ── Progress bar ──────────────────────────────────────────────────────────────
+
+function ImportProgressBar({ active, message }: { active: boolean; message?: string }) {
+  if (!active) return null;
+  return (
+    <div className="mt-2 space-y-1.5">
+      <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
+        <div className="h-full w-2/5 bg-zs-500 rounded-full animate-indeterminate" />
+      </div>
+      <p className="text-xs text-gray-400 italic">
+        {message ?? "This may take several minutes depending on the number of resources in the tenant."}
+      </p>
+    </div>
+  );
+}
+
+// ── Import product modal ───────────────────────────────────────────────────────
+
+function ImportProductModal({
+  tenant,
+  product,
+  onClose,
+}: {
+  tenant: Tenant;
+  product: "ZIA" | "ZPA";
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [mutErr, setMutErr] = useState<string | null>(null);
+
+  const mut = useMutation({
+    mutationFn: () => (product === "ZIA" ? importZIA(tenant.id) : importZPA(tenant.id)),
+    onSuccess: (data) => setJobId(data.job_id),
+    onError: (e: Error) => setMutErr(e.message),
+  });
+
+  const { latestByPhase, jobStatus, result, streamError } = useJobStream<ImportResult>(jobId);
+  const importProgress = latestByPhase["import"];
+  const isRunning = mut.isPending || jobStatus === "running";
+  const isDone = jobStatus === "done";
+
+  useEffect(() => {
+    if (isDone) qc.invalidateQueries({ queryKey: ["tenant", tenant.id] });
+  }, [isDone, qc, tenant.id]);
+
+  const err = mutErr ?? streamError;
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <h3 className="font-semibold text-gray-900">Import {product} — {tenant.name}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+        </div>
+        <div className="px-6 py-4 space-y-4">
+          {!isDone && !isRunning && !err && (
+            <p className="text-sm text-gray-600">
+              Pull the latest {product} configuration from Zscaler into the local database.
+            </p>
+          )}
+          {isRunning && (
+            <div className="space-y-2">
+              <p className="text-sm text-gray-600">
+                {importProgress
+                  ? `Importing ${importProgress.resource_type}… ${importProgress.done}${importProgress.total ? `/${importProgress.total}` : ""}`
+                  : `Importing ${product} configuration…`}
+              </p>
+              {importProgress?.total ? (
+                <div className="space-y-1">
+                  <div className="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-zs-500 rounded-full transition-all duration-300"
+                      style={{ width: `${Math.min(100, Math.round((importProgress.done / importProgress.total) * 100))}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-400 text-right">{importProgress.done} / {importProgress.total}</p>
+                </div>
+              ) : (
+                <ImportProgressBar active />
+              )}
+              <p className="text-xs text-gray-400 italic">This may take several minutes depending on the number of resources in the tenant.</p>
+            </div>
+          )}
+          {err && <p className="text-xs text-red-600">{err}</p>}
+          {isDone && result && (
+            <div className={`p-3 rounded-md text-sm ${result.status === "SUCCESS" || result.status === "PARTIAL" ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
+              <p className="font-medium">{result.status}</p>
+              <p className="text-xs mt-1">{result.resources_synced} synced, {result.resources_updated} updated</p>
+              {result.error_message && <p className="text-xs mt-1">{result.error_message}</p>}
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            {!isDone && (
+              <button
+                onClick={() => mut.mutate()}
+                disabled={isRunning}
+                className="px-4 py-2 text-sm rounded-md bg-zs-500 hover:bg-zs-600 text-white disabled:opacity-60"
+              >
+                {isRunning ? "Importing…" : `Import ${product}`}
+              </button>
+            )}
+            <button onClick={onClose} className="px-4 py-2 text-sm rounded-md border border-gray-300 hover:bg-gray-50">
+              {isDone ? "Done" : "Cancel"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Apply Snapshot panel ───────────────────────────────────────────────────────
+
+function ApplySnapshotPanel({ tenant }: { tenant: Tenant }) {
+  const [sourceTenantId, setSourceTenantId] = useState<number | "">("");
+  const [snapshotId, setSnapshotId] = useState<number | "">("");
+  const [mutErr, setMutErr] = useState<string | null>(null);
+
+  // SSE job IDs
+  const [previewJobId, setPreviewJobId] = useState<string | null>(null);
+  const [applyJobId, setApplyJobId] = useState<string | null>(null);
+
+  const { data: allTenants } = useQuery({
+    queryKey: ["tenants"],
+    queryFn: fetchTenants,
+    staleTime: 60_000,
+  });
+
+  const { data: snapshots } = useQuery({
+    queryKey: ["zia-snapshots-for-apply", sourceTenantId],
+    queryFn: () => {
+      const src = allTenants?.find((t) => t.id === sourceTenantId);
+      return src ? fetchSnapshots(src.name, "ZIA") : Promise.resolve([]);
+    },
+    enabled: !!sourceTenantId && !!allTenants,
+  });
+
+  const previewMut = useMutation({
+    mutationFn: () =>
+      previewApplySnapshot(tenant.id, sourceTenantId as number, snapshotId as number),
+    onSuccess: (data) => { setPreviewJobId(data.job_id); setMutErr(null); },
+    onError: (e: Error) => setMutErr(e.message),
+  });
+
+  const applyMut = useMutation({
+    mutationFn: (wipeMode: boolean) =>
+      applySnapshot(tenant.id, sourceTenantId as number, snapshotId as number, wipeMode),
+    onSuccess: (data) => { setApplyJobId(data.job_id); setMutErr(null); },
+    onError: (e: Error) => setMutErr(e.message),
+  });
+
+  const {
+    latestByPhase: previewProgress,
+    jobStatus: previewJobStatus,
+    result: previewResult,
+    streamError: previewStreamError,
+  } = useJobStream<SnapshotPreview>(previewJobId);
+
+  const {
+    latestByPhase: applyProgress,
+    jobStatus: applyJobStatus,
+    result: applyResult,
+    streamError: applyStreamError,
+  } = useJobStream<ApplySnapshotResult>(applyJobId);
+
+  const preview = previewJobStatus === "done" ? previewResult : null;
+  const isPreviewRunning = previewMut.isPending || previewJobStatus === "running";
+  const isApplyRunning = applyMut.isPending || applyJobStatus === "running";
+  const applyDone = applyJobStatus === "done";
+
+  function reset() {
+    setPreviewJobId(null);
+    setApplyJobId(null);
+    setMutErr(null);
+    setSnapshotId("");
+  }
+
+  const sortedTenants = allTenants
+    ? [...allTenants].sort((a, b) => a.name.localeCompare(b.name))
+    : [];
+
+  const err = mutErr ?? previewStreamError ?? applyStreamError ?? null;
+
+  // ── Apply result view ──────────────────────────────────────────────────────
+  if (applyDone && applyResult) {
+    const ok = applyResult.status === "SUCCESS" || applyResult.status === "PARTIAL";
+    return (
+      <div className="space-y-3 p-1">
+        <div className={`p-3 rounded-md text-sm ${ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
+          <p className="font-medium">
+            {applyResult.status} — Snapshot &ldquo;{applyResult.snapshot_name}&rdquo; applied
+            <span className="ml-2 font-normal text-xs opacity-70">({applyResult.mode === "wipe" ? "Wipe & Push" : "Delta Push"})</span>
+          </p>
+          <p className="text-xs mt-1">
+            {applyResult.mode === "wipe" && applyResult.wiped > 0 && `${applyResult.wiped} wiped · `}
+            {applyResult.created} created · {applyResult.updated} updated
+            {applyResult.failed > 0 && ` · ${applyResult.failed} failed`}
+          </p>
+        </div>
+
+        {/* Failed items */}
+        {applyResult.failed_items?.length > 0 && (
+          <div>
+            <p className="text-xs font-medium text-red-700 mb-1">Failed resources ({applyResult.failed_items.length}):</p>
+            <div className="max-h-40 overflow-y-auto border border-red-200 rounded-md">
+              <table className="min-w-full text-xs divide-y divide-red-100">
+                <thead className="bg-red-50 sticky top-0">
+                  <tr>
+                    <th className="px-3 py-1.5 text-left font-medium text-red-600 uppercase">Type</th>
+                    <th className="px-3 py-1.5 text-left font-medium text-red-600 uppercase">Name</th>
+                    <th className="px-3 py-1.5 text-left font-medium text-red-600 uppercase">Reason</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-red-100 bg-white">
+                  {applyResult.failed_items.map((item, i) => (
+                    <tr key={i}>
+                      <td className="px-3 py-1 font-mono text-gray-500">{item.resource_type}</td>
+                      <td className="px-3 py-1 text-gray-800">{item.name}</td>
+                      <td className="px-3 py-1 text-red-700 font-mono text-xs break-all">{item.reason}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Warnings */}
+        {applyResult.warnings?.length > 0 && (
+          <div>
+            <p className="text-xs font-medium text-amber-700 mb-1">Push warnings ({applyResult.warnings.length} resources):</p>
+            <div className="max-h-48 overflow-y-auto border border-amber-200 rounded-md divide-y divide-amber-100">
+              {applyResult.warnings.map((w, i) => (
+                <div key={i} className="px-3 py-2 bg-amber-50">
+                  <p className="text-xs font-medium text-gray-700 font-mono">{w.resource_type}: {w.name}</p>
+                  <ul className="mt-0.5 space-y-0.5">
+                    {w.warnings.map((msg, j) => (
+                      <li key={j} className="text-xs text-amber-800">{msg}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={() => { reset(); }}
+          className="text-xs text-zs-600 hover:underline"
+        >
+          Apply another snapshot
+        </button>
+      </div>
+    );
+  }
+
+  // ── Preview summary helpers ────────────────────────────────────────────────
+  const actionCounts: Record<string, { create: number; update: number; delete: number }> = {};
+  if (preview) {
+    for (const item of preview.items) {
+      if (!actionCounts[item.resource_type]) {
+        actionCounts[item.resource_type] = { create: 0, update: 0, delete: 0 };
+      }
+      actionCounts[item.resource_type][item.action as "create" | "update" | "delete"]++;
+    }
+  }
+
+  // Phase label for apply progress
+  function applyPhaseLabel() {
+    const wipeEv = applyProgress["wipe"];
+    const pushEv = applyProgress["push"];
+    const importEv = applyProgress["import"];
+    if (pushEv) return `Pushing ${pushEv.resource_type}: ${pushEv.name ?? ""}`;
+    if (wipeEv) return `Wiping ${wipeEv.resource_type}: ${wipeEv.name ?? ""}`;
+    if (importEv) return `Importing ${importEv.resource_type}… ${importEv.done}${importEv.total ? `/${importEv.total}` : ""}`;
+    return "Applying changes…";
+  }
+
+  return (
+    <div className="space-y-4 p-1">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Source Tenant</label>
+          <select
+            value={sourceTenantId}
+            onChange={(e) => {
+              setSourceTenantId(e.target.value ? Number(e.target.value) : "");
+              setSnapshotId("");
+              reset();
+            }}
+            className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+          >
+            <option value="">Select tenant…</option>
+            {sortedTenants.map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">ZIA Snapshot</label>
+          <select
+            value={snapshotId}
+            onChange={(e) => {
+              setSnapshotId(e.target.value ? Number(e.target.value) : "");
+              setPreviewJobId(null);
+              setMutErr(null);
+            }}
+            disabled={!sourceTenantId || !snapshots}
+            className="w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500 disabled:bg-gray-100"
+          >
+            <option value="">Select snapshot…</option>
+            {(snapshots ?? []).map((s) => (
+              <option key={s.id} value={s.id}>
+                {formatDateTime(s.created_at)}{s.label ? ` — ${s.label}` : ""}
+              </option>
+            ))}
+            {snapshots?.length === 0 && <option disabled>No snapshots found</option>}
+          </select>
+        </div>
+      </div>
+
+      {err && <p className="text-xs text-red-600">{err}</p>}
+
+      {/* Preview progress */}
+      {isPreviewRunning && (
+        <div className="space-y-1.5">
+          <p className="text-xs text-gray-500">
+            {previewProgress["import"]
+              ? `Importing ${previewProgress["import"].resource_type}… ${previewProgress["import"].done}${previewProgress["import"].total ? `/${previewProgress["import"].total}` : ""}`
+              : "Importing target tenant and classifying changes…"}
+          </p>
+          {previewProgress["import"]?.total ? (
+            <div className="space-y-0.5">
+              <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-zs-500 rounded-full transition-all duration-300"
+                  style={{ width: `${Math.min(100, Math.round((previewProgress["import"].done / previewProgress["import"].total!) * 100))}%` }}
+                />
+              </div>
+              <p className="text-xs text-gray-400 text-right">{previewProgress["import"].done} / {previewProgress["import"].total}</p>
+            </div>
+          ) : (
+            <ImportProgressBar active />
+          )}
+        </div>
+      )}
+
+      {!preview && !isPreviewRunning && (
+        <button
+          onClick={() => previewMut.mutate()}
+          disabled={!sourceTenantId || !snapshotId || isPreviewRunning}
+          className="px-4 py-1.5 text-sm rounded-md bg-zs-500 hover:bg-zs-600 text-white disabled:opacity-50"
+        >
+          Preview Changes
+        </button>
+      )}
+
+      {preview && (
+        <div className="space-y-3">
+          <div className="text-xs text-gray-500">
+            Snapshot: <span className="font-medium text-gray-700">{preview.snapshot_name}</span>
+            {preview.snapshot_comment && ` — ${preview.snapshot_comment}`}
+          </div>
+
+          <div className="flex gap-4 text-sm flex-wrap items-baseline">
+            <span className="text-green-700 font-medium">{preview.creates} create{preview.creates !== 1 ? "s" : ""}</span>
+            <span className="text-blue-700 font-medium">{preview.updates} update{preview.updates !== 1 ? "s" : ""}</span>
+            <span className="text-red-700 font-medium">{preview.deletes} delete{preview.deletes !== 1 ? "s" : ""}</span>
+            <span className="text-gray-500">{preview.skips} skipped</span>
+            {preview.deletes > 0 && (
+              <span className="text-xs text-amber-600 italic">deletes only applied by Wipe &amp; Push</span>
+            )}
+          </div>
+
+          {/* Summary by resource type */}
+          {Object.keys(actionCounts).length > 0 && (
+            <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-md">
+              <table className="min-w-full text-xs divide-y divide-gray-100">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr>
+                    <th className="px-3 py-1.5 text-left font-medium text-gray-500 uppercase">Resource Type</th>
+                    <th className="px-3 py-1.5 text-center font-medium text-green-600 uppercase">Create</th>
+                    <th className="px-3 py-1.5 text-center font-medium text-blue-600 uppercase">Update</th>
+                    <th className="px-3 py-1.5 text-center font-medium text-red-600 uppercase">Delete</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {Object.entries(actionCounts).map(([rt, counts]) => (
+                    <tr key={rt}>
+                      <td className="px-3 py-1.5 font-mono text-gray-700">{rt}</td>
+                      <td className="px-3 py-1.5 text-center text-green-700">{counts.create || "-"}</td>
+                      <td className="px-3 py-1.5 text-center text-blue-700">{counts.update || "-"}</td>
+                      <td className="px-3 py-1.5 text-center text-red-700">{counts.delete || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Full individual change list */}
+          {preview.items.length > 0 && (
+            <div className="max-h-56 overflow-y-auto border border-gray-200 rounded-md">
+              <table className="min-w-full text-xs divide-y divide-gray-100">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr>
+                    <th className="px-3 py-1.5 text-left font-medium text-gray-500 uppercase w-20">Action</th>
+                    <th className="px-3 py-1.5 text-left font-medium text-gray-500 uppercase">Type</th>
+                    <th className="px-3 py-1.5 text-left font-medium text-gray-500 uppercase">Name</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {preview.items.map((item, i) => (
+                    <tr key={i}>
+                      <td className={`px-3 py-1 font-medium ${
+                        item.action === "create" ? "text-green-700" :
+                        item.action === "update" ? "text-blue-700" : "text-red-700"
+                      }`}>
+                        {item.action}
+                      </td>
+                      <td className="px-3 py-1 font-mono text-gray-500">{item.resource_type}</td>
+                      <td className="px-3 py-1 text-gray-800 truncate max-w-xs">{item.name}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {preview.creates === 0 && preview.updates === 0 && preview.deletes === 0 && (
+            <p className="text-sm text-green-700 font-medium">
+              Target already matches this snapshot — nothing to apply.
+            </p>
+          )}
+
+          {/* Apply progress */}
+          {isApplyRunning && (
+            <div className="space-y-1.5">
+              <p className="text-xs text-gray-500">{applyPhaseLabel()}</p>
+              <ImportProgressBar active message="Applying changes — this may take several minutes depending on the number of resources in the tenant." />
+            </div>
+          )}
+
+          {!isApplyRunning && (preview.creates > 0 || preview.updates > 0 || preview.deletes > 0) && (
+            <div className="space-y-2">
+              <p className="text-xs text-gray-500">Choose how to apply:</p>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={() => applyMut.mutate(false)}
+                  className="px-4 py-1.5 text-sm rounded-md bg-zs-500 hover:bg-zs-600 text-white"
+                  title="Non-destructive: applies creates and updates only. Existing resources not in the snapshot are left untouched."
+                >
+                  Delta Push
+                </button>
+                <button
+                  onClick={() => applyMut.mutate(true)}
+                  className="px-4 py-1.5 text-sm rounded-md bg-red-600 hover:bg-red-700 text-white"
+                  title="Delete all existing resources first, then push the full snapshot. More thorough but destructive."
+                >
+                  Wipe &amp; Push
+                </button>
+                <button
+                  onClick={reset}
+                  className="px-4 py-1.5 text-sm rounded-md border border-gray-300 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── SectionGroup — top-level grouped accordion ────────────────────────────────
 
 function SectionGroup({
@@ -2015,13 +2504,6 @@ function SectionGroup({
   );
 }
 
-function CliOnlyNote({ feature }: { feature: string }) {
-  return (
-    <p className="text-sm text-gray-500 py-2 px-1">
-      {feature} management is available via the CLI (<span className="font-mono text-xs">zs-config</span>).
-    </p>
-  );
-}
 
 // ── Tab panels ────────────────────────────────────────────────────────────────
 
@@ -2114,7 +2596,7 @@ function ZiaTab({ tenant }: { tenant: Tenant }) {
 
       {/* Apply Snapshot */}
       <SectionGroup title="Apply Snapshot from Other Tenant" isOpen={!!groups.applySnapshot} onToggle={() => toggleGroup("applySnapshot")}>
-        <CliOnlyNote feature="Snapshot application" />
+        <ApplySnapshotPanel tenant={tenant} />
       </SectionGroup>
     </div>
   );
@@ -2283,6 +2765,7 @@ export default function TenantWorkspacePage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { setActiveTenantId } = useActiveTenant();
+  const [importModal, setImportModal] = useState<"ZIA" | "ZPA" | null>(null);
 
   // Determine active tab from URL segment
   const pathSegment = location.pathname.split("/").pop() as TabId | undefined;
@@ -2324,45 +2807,61 @@ export default function TenantWorkspacePage() {
 
   if (!tenant) return null;
 
-  const hasZpa = !!tenant.zpa_customer_id;
+  const hasZpa = !!tenant.zpa_customer_id && !tenant.govcloud;
 
   const tabs: { id: TabId; label: string; show: boolean }[] = [
     { id: "zia", label: "ZIA", show: true },
-    { id: "zpa", label: "ZPA", show: hasZpa },
+    { id: "zpa", label: "ZPA", show: !!tenant.zpa_customer_id },
     { id: "zdx", label: "ZDX", show: true },
     { id: "zcc", label: "ZCC", show: true },
     { id: "zid", label: "ZID", show: true },
   ];
 
   // If trying to view ZPA tab but no ZPA, redirect to ZIA
-  if (activeTab === "zpa" && !hasZpa) {
+  if (activeTab === "zpa" && !tenant.zpa_customer_id) {
     navigate(`/tenant/${id}/zia`, { replace: true });
     return null;
   }
 
+  const importButtonLabel = activeTab === "zpa" ? "Import ZPA" : "Import ZIA";
+  const importProduct = activeTab === "zpa" ? "ZPA" : "ZIA";
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <Link
-          to="/tenants"
-          className="flex items-center gap-1 text-gray-400 hover:text-gray-600 text-sm"
-        >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          Tenants
-        </Link>
-        <span className="text-gray-300">/</span>
-        <h1 className="text-xl font-semibold text-gray-900">{tenant.name}</h1>
-        <ValidationBadge tenant={tenant} />
-        {tenant.zia_cloud && (
-          <span className="font-mono text-xs text-gray-500">{tenant.zia_cloud}</span>
-        )}
-        {tenant.govcloud && (
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
-            GovCloud
-          </span>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap">
+          <Link
+            to="/tenants"
+            className="flex items-center gap-1 text-gray-400 hover:text-gray-600 text-sm"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Tenants
+          </Link>
+          <span className="text-gray-300">/</span>
+          <h1 className="text-xl font-semibold text-gray-900">{tenant.name}</h1>
+          <ValidationBadge tenant={tenant} />
+          {tenant.zia_cloud && (
+            <span className="font-mono text-xs text-gray-500">{tenant.zia_cloud}</span>
+          )}
+          {tenant.govcloud && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+              GovCloud
+            </span>
+          )}
+        </div>
+        {(activeTab === "zia" || (activeTab === "zpa" && hasZpa)) && (
+          <button
+            onClick={() => setImportModal(importProduct)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md bg-zs-500 hover:bg-zs-600 text-white transition-colors"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            {importButtonLabel}
+          </button>
         )}
       </div>
 
@@ -2387,10 +2886,18 @@ export default function TenantWorkspacePage() {
 
       {/* Tab content */}
       {activeTab === "zia" && <ZiaTab tenant={tenant} />}
-      {activeTab === "zpa" && hasZpa && <ZpaTab tenant={tenant} />}
+      {activeTab === "zpa" && tenant.zpa_customer_id && <ZpaTab tenant={tenant} />}
       {activeTab === "zdx" && <ZdxTab tenant={tenant} />}
       {activeTab === "zcc" && <ZccTab tenant={tenant} />}
       {activeTab === "zid" && <ZidTab tenant={tenant} />}
+
+      {importModal && (
+        <ImportProductModal
+          tenant={tenant}
+          product={importModal}
+          onClose={() => setImportModal(null)}
+        />
+      )}
     </div>
   );
 }

@@ -7,6 +7,7 @@ export interface AdminUser {
   role: string;
   is_active: boolean;
   force_password_change: boolean;
+  mfa_required: boolean;
   created_at: string;
   last_login_at: string | null;
 }
@@ -24,6 +25,7 @@ export interface UserUpdate {
   role?: "admin" | "user";
   is_active?: boolean;
   force_password_change?: boolean;
+  mfa_required?: boolean;
   password?: string;
 }
 
