@@ -18,7 +18,7 @@ dependencies = [
     "pyfiglet>=1.0.2",
     "sqlalchemy>=2.0.0",
     "cryptography>=46.0.6",
-    "py-webauthn>=2.0.0",
+    "webauthn>=2.0.0",
 ]
 
 [project.optional-dependencies]
