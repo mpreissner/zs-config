@@ -2,7 +2,6 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import Layout from "./components/Layout";
 import { PrivateRoute } from "./components/PrivateRoute";
-import LoadingSpinner from "./components/LoadingSpinner";
 import TenantsPage from "./pages/TenantsPage";
 import TenantWorkspacePage from "./pages/TenantWorkspacePage";
 import AuditPage from "./pages/AuditPage";
@@ -31,27 +30,6 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
 }
 
 function RootRedirect() {
-  const { data: tenants, isLoading } = useQuery({
-    queryKey: ["tenants"],
-    queryFn: fetchTenants,
-  });
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <LoadingSpinner />
-      </div>
-    );
-  }
-
-  const storedId = localStorage.getItem("zs-config:active-tenant-id");
-
-  if (storedId && tenants?.some((t) => String(t.id) === storedId)) {
-    return <Navigate to={`/tenant/${storedId}/zia`} replace />;
-  }
-  if (tenants && tenants.length > 0) {
-    return <Navigate to={`/tenant/${tenants[0].id}/zia`} replace />;
-  }
   return <Navigate to="/tenants" replace />;
 }
 

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { formatDateTime } from "../utils/time";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   fetchAdminUsers,
@@ -331,7 +332,7 @@ export default function AdminUsersPage() {
                     )}
                   </td>
                   <td className="whitespace-nowrap px-3 py-3 text-sm text-gray-500">
-                    {u.last_login_at ? new Date(u.last_login_at).toLocaleDateString() : "Never"}
+                    {formatDateTime(u.last_login_at)}
                   </td>
                   <td className="whitespace-nowrap px-3 py-3 text-sm">
                     <div className="flex items-center gap-3">

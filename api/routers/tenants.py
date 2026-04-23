@@ -269,9 +269,10 @@ def _get_import_client(tenant_id: int):
 
 
 @router.post("/{tenant_id}/import/zia", status_code=202)
-def import_zia(tenant_id: int, user: AuthUser = Depends(require_admin)):
+def import_zia(tenant_id: int, user: AuthUser = Depends(require_auth)):
     from services.zia_import_service import ZIAImportService
 
+    check_tenant_access(tenant_id, user)
     client, tenant_name = _get_import_client(tenant_id)
     try:
         sync_log = ZIAImportService(client, tenant_id=tenant_id).run()
@@ -312,7 +313,7 @@ def import_zia(tenant_id: int, user: AuthUser = Depends(require_admin)):
 
 
 @router.post("/{tenant_id}/import/zpa", status_code=202)
-def import_zpa(tenant_id: int, user: AuthUser = Depends(require_admin)):
+def import_zpa(tenant_id: int, user: AuthUser = Depends(require_auth)):
     from db.database import get_session
     from db.models import TenantConfig
     from lib.auth import ZscalerAuth
@@ -320,6 +321,7 @@ def import_zpa(tenant_id: int, user: AuthUser = Depends(require_admin)):
     from services.config_service import decrypt_secret
     from services.zpa_import_service import ZPAImportService
 
+    check_tenant_access(tenant_id, user)
     with get_session() as session:
         t = session.query(TenantConfig).filter_by(id=tenant_id, is_active=True).first()
         if not t:

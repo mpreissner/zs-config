@@ -100,6 +100,7 @@ export default function Layout({ children }: LayoutProps) {
 
   function handleTenantClick(tenant: Tenant) {
     setActiveTenantId(tenant.id);
+    navigate(`/tenant/${tenant.id}/zia`);
   }
 
   const username = user?.username ?? "";

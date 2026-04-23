@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, ReactNode } from "react";
+import { formatDateTime, formatDate } from "../utils/time";
 import { Link, useParams, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchTenant, Tenant } from "../api/tenants";
@@ -8,18 +9,41 @@ import {
   fetchUrlCategories,
   lookupUrls,
   fetchUrlFilteringRules,
+  patchUrlFilteringRuleState,
   fetchUsers,
   fetchLocations,
   fetchDepartments,
   fetchGroups,
   fetchAllowlist,
   fetchDenylist,
+  updateAllowlist,
+  updateDenylist,
+  fetchFirewallRules,
+  patchFirewallRuleState,
+  fetchSslInspectionRules,
+  patchSslRuleState,
+  fetchForwardingRules,
+  fetchDlpEngines,
+  fetchDlpDictionaries,
+  fetchDlpWebRules,
+  fetchCloudAppSettings,
+  fetchSnapshots,
+  createSnapshot,
+  deleteSnapshot,
   UrlCategory,
   UrlFilteringRule,
   ZiaUser,
   ZiaLocation,
   ZiaDepartment,
   ZiaGroup,
+  FirewallRule,
+  SslInspectionRule,
+  ForwardingRule,
+  DlpEngine,
+  DlpDictionary,
+  DlpWebRule,
+  CloudAppSetting,
+  ConfigSnapshot,
 } from "../api/zia";
 import {
   fetchCertificates,
@@ -261,11 +285,49 @@ function UrlLookupSection({ tenantName }: { tenantName: string }) {
   );
 }
 
+function StateToggle({
+  ruleId,
+  state,
+  onToggle,
+  pending,
+}: {
+  ruleId: number | string;
+  state: string;
+  onToggle: (id: number | string, next: string) => void;
+  pending: boolean;
+}) {
+  const enabled = state === "ENABLED";
+  return (
+    <button
+      onClick={() => onToggle(ruleId, enabled ? "DISABLED" : "ENABLED")}
+      disabled={pending}
+      title={enabled ? "Disable" : "Enable"}
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+        enabled ? "bg-green-500" : "bg-gray-300"
+      } disabled:opacity-60`}
+    >
+      <span
+        className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${
+          enabled ? "translate-x-4" : "translate-x-1"
+        }`}
+      />
+    </button>
+  );
+}
+
 function UrlFilteringRulesSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const { isAdmin } = useAuth();
+  const qc = useQueryClient();
   const { data, isLoading, error } = useQuery({
     queryKey: ["zia-url-filtering-rules", tenantName],
     queryFn: () => fetchUrlFilteringRules(tenantName),
     enabled: isOpen,
+  });
+
+  const toggleMut = useMutation({
+    mutationFn: ({ id, state }: { id: number; state: string }) =>
+      patchUrlFilteringRuleState(tenantName, id, state),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["zia-url-filtering-rules", tenantName] }),
   });
 
   if (isLoading) return <LoadingSpinner />;
@@ -280,7 +342,7 @@ function UrlFilteringRulesSection({ tenantName, isOpen }: { tenantName: string; 
             <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Order</th>
             <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
             <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
-            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">State</th>
+            {isAdmin && <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">State</th>}
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100 bg-white">
@@ -289,7 +351,16 @@ function UrlFilteringRulesSection({ tenantName, isOpen }: { tenantName: string; 
               <td className="px-3 py-2 text-gray-500">{r.order}</td>
               <td className="px-3 py-2 text-gray-900">{r.name}</td>
               <td className="px-3 py-2 text-gray-600">{r.action}</td>
-              <td className="px-3 py-2 text-gray-600">{r.state}</td>
+              {isAdmin && (
+                <td className="px-3 py-2">
+                  <StateToggle
+                    ruleId={r.id}
+                    state={r.state}
+                    onToggle={(id, next) => toggleMut.mutate({ id: id as number, state: next })}
+                    pending={toggleMut.isPending}
+                  />
+                </td>
+              )}
             </tr>
           ))}
           {data.length === 0 && (
@@ -470,7 +541,82 @@ function GroupsSection({ tenantName, isOpen }: { tenantName: string; isOpen: boo
   );
 }
 
+function EditableUrlList({
+  title,
+  urls,
+  onSave,
+  saving,
+}: {
+  title: string;
+  urls: string[];
+  onSave: (urls: string[]) => void;
+  saving: boolean;
+}) {
+  const { isAdmin } = useAuth();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  function startEdit() {
+    setDraft(urls.join("\n"));
+    setEditing(true);
+  }
+  function handleSave() {
+    const parsed = draft.split("\n").map((u) => u.trim()).filter(Boolean);
+    onSave(parsed);
+    setEditing(false);
+  }
+
+  return (
+    <div className="flex-1">
+      <div className="flex items-center justify-between mb-2">
+        <h4 className="text-sm font-semibold text-gray-700">{title} ({urls.length})</h4>
+        {isAdmin && !editing && (
+          <button onClick={startEdit} className="text-xs text-zs-500 hover:underline">Edit</button>
+        )}
+      </div>
+      {editing ? (
+        <div className="space-y-2">
+          <textarea
+            rows={8}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-zs-500"
+            placeholder="One URL per line"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="px-3 py-1.5 text-xs rounded-md bg-zs-500 hover:bg-zs-600 text-white disabled:opacity-60"
+            >
+              {saving ? "Saving..." : "Save"}
+            </button>
+            <button
+              onClick={() => setEditing(false)}
+              className="px-3 py-1.5 text-xs rounded-md border border-gray-300 text-gray-600"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-md p-2">
+          {urls.length === 0 ? (
+            <p className="text-xs text-gray-400 p-1">No entries</p>
+          ) : (
+            urls.map((url, i) => (
+              <p key={i} className="text-xs font-mono text-gray-700 py-0.5">{url}</p>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AllowDenySection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const qc = useQueryClient();
+
   const allowQuery = useQuery({
     queryKey: ["zia-allowlist", tenantName],
     queryFn: () => fetchAllowlist(tenantName),
@@ -482,42 +628,470 @@ function AllowDenySection({ tenantName, isOpen }: { tenantName: string; isOpen: 
     enabled: isOpen,
   });
 
+  const allowMut = useMutation({
+    mutationFn: (urls: string[]) => updateAllowlist(tenantName, urls),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["zia-allowlist", tenantName] }),
+  });
+  const denyMut = useMutation({
+    mutationFn: (urls: string[]) => updateDenylist(tenantName, urls),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["zia-denylist", tenantName] }),
+  });
+
   if (allowQuery.isLoading || denyQuery.isLoading) return <LoadingSpinner />;
 
   return (
     <div className="flex flex-col sm:flex-row gap-6">
-      <div className="flex-1">
-        <h4 className="text-sm font-semibold text-gray-700 mb-2">Allowlist</h4>
-        {allowQuery.error ? (
-          <ErrorMessage message={allowQuery.error instanceof Error ? allowQuery.error.message : "Failed to load"} />
-        ) : (
-          <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-md p-2">
-            {(allowQuery.data?.whitelistUrls ?? []).length === 0 ? (
-              <p className="text-xs text-gray-400 p-1">No entries</p>
-            ) : (
-              (allowQuery.data?.whitelistUrls ?? []).map((url, i) => (
-                <p key={i} className="text-xs font-mono text-gray-700 py-0.5">{url}</p>
-              ))
+      {allowQuery.error ? (
+        <ErrorMessage message={allowQuery.error instanceof Error ? allowQuery.error.message : "Failed to load"} />
+      ) : (
+        <EditableUrlList
+          title="Allowlist"
+          urls={allowQuery.data?.whitelistUrls ?? []}
+          onSave={(urls) => allowMut.mutate(urls)}
+          saving={allowMut.isPending}
+        />
+      )}
+      {denyQuery.error ? (
+        <ErrorMessage message={denyQuery.error instanceof Error ? denyQuery.error.message : "Failed to load"} />
+      ) : (
+        <EditableUrlList
+          title="Denylist"
+          urls={denyQuery.data?.blacklistUrls ?? []}
+          onSave={(urls) => denyMut.mutate(urls)}
+          saving={denyMut.isPending}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Firewall / SSL / Forwarding / DLP / Cloud App / Snapshots ────────────────
+
+function FirewallRulesSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const { isAdmin } = useAuth();
+  const qc = useQueryClient();
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zia-firewall-rules", tenantName],
+    queryFn: () => fetchFirewallRules(tenantName),
+    enabled: isOpen,
+  });
+
+  const toggleMut = useMutation({
+    mutationFn: ({ id, state }: { id: number; state: string }) =>
+      patchFirewallRuleState(tenantName, id, state),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["zia-firewall-rules", tenantName] }),
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Order</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+            {isAdmin && <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">State</th>}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100 bg-white">
+          {data.map((r: FirewallRule) => (
+            <tr key={r.id}>
+              <td className="px-3 py-2 text-gray-500">{r.order}</td>
+              <td className="px-3 py-2 text-gray-900">{r.name}</td>
+              <td className="px-3 py-2 text-gray-600">{r.action}</td>
+              {isAdmin && (
+                <td className="px-3 py-2">
+                  <StateToggle
+                    ruleId={r.id}
+                    state={r.state}
+                    onToggle={(id, next) => toggleMut.mutate({ id: id as number, state: next })}
+                    pending={toggleMut.isPending}
+                  />
+                </td>
+              )}
+            </tr>
+          ))}
+          {data.length === 0 && (
+            <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400">No firewall rules</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SslInspectionSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const { isAdmin } = useAuth();
+  const qc = useQueryClient();
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zia-ssl-rules", tenantName],
+    queryFn: () => fetchSslInspectionRules(tenantName),
+    enabled: isOpen,
+  });
+
+  const toggleMut = useMutation({
+    mutationFn: ({ id, state }: { id: number; state: string }) =>
+      patchSslRuleState(tenantName, id, state),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["zia-ssl-rules", tenantName] }),
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Order</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+            {isAdmin && <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">State</th>}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100 bg-white">
+          {data.map((r: SslInspectionRule) => (
+            <tr key={r.id}>
+              <td className="px-3 py-2 text-gray-500">{r.order}</td>
+              <td className="px-3 py-2 text-gray-900">{r.name}</td>
+              <td className="px-3 py-2 text-gray-600">{r.action}</td>
+              {isAdmin && (
+                <td className="px-3 py-2">
+                  <StateToggle
+                    ruleId={r.id}
+                    state={r.state}
+                    onToggle={(id, next) => toggleMut.mutate({ id: id as number, state: next })}
+                    pending={toggleMut.isPending}
+                  />
+                </td>
+              )}
+            </tr>
+          ))}
+          {data.length === 0 && (
+            <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400">No SSL inspection rules</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ForwardingRulesSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zia-forwarding-rules", tenantName],
+    queryFn: () => fetchForwardingRules(tenantName),
+    enabled: isOpen,
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Order</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">State</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100 bg-white">
+          {data.map((r: ForwardingRule) => (
+            <tr key={r.id}>
+              <td className="px-3 py-2 text-gray-500">{r.order}</td>
+              <td className="px-3 py-2 text-gray-900">{r.name}</td>
+              <td className="px-3 py-2 text-gray-500">{r.type ?? "-"}</td>
+              <td className="px-3 py-2">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${r.state === "ENABLED" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-500"}`}>
+                  {r.state}
+                </span>
+              </td>
+            </tr>
+          ))}
+          {data.length === 0 && (
+            <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400">No forwarding rules</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function DlpEnginesSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zia-dlp-engines", tenantName],
+    queryFn: () => fetchDlpEngines(tenantName),
+    enabled: isOpen,
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100 bg-white">
+          {data.map((e: DlpEngine) => (
+            <tr key={e.id}>
+              <td className="px-3 py-2 font-mono text-xs text-gray-500">{e.id}</td>
+              <td className="px-3 py-2 text-gray-900">{e.name}</td>
+              <td className="px-3 py-2 text-gray-500">{e.predefinedEngine ? "Built-in" : "Custom"}</td>
+            </tr>
+          ))}
+          {data.length === 0 && (
+            <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">No DLP engines</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function DlpDictionariesSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const [filter, setFilter] = useState("");
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zia-dlp-dicts", tenantName],
+    queryFn: () => fetchDlpDictionaries(tenantName),
+    enabled: isOpen,
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  const filtered = data.filter((d: DlpDictionary) =>
+    d.name.toLowerCase().includes(filter.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-3">
+      <input
+        type="text"
+        placeholder="Filter by name..."
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+        className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+      />
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 bg-white">
+            {filtered.map((d: DlpDictionary) => (
+              <tr key={d.id}>
+                <td className="px-3 py-2 font-mono text-xs text-gray-500">{d.id}</td>
+                <td className="px-3 py-2 text-gray-900">{d.name}</td>
+                <td className="px-3 py-2 text-gray-500">{d.type ?? "-"}</td>
+              </tr>
+            ))}
+            {filtered.length === 0 && (
+              <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">No results</td></tr>
             )}
-          </div>
-        )}
+          </tbody>
+        </table>
       </div>
-      <div className="flex-1">
-        <h4 className="text-sm font-semibold text-gray-700 mb-2">Denylist</h4>
-        {denyQuery.error ? (
-          <ErrorMessage message={denyQuery.error instanceof Error ? denyQuery.error.message : "Failed to load"} />
-        ) : (
-          <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-md p-2">
-            {(denyQuery.data?.blacklistUrls ?? []).length === 0 ? (
-              <p className="text-xs text-gray-400 p-1">No entries</p>
-            ) : (
-              (denyQuery.data?.blacklistUrls ?? []).map((url, i) => (
-                <p key={i} className="text-xs font-mono text-gray-700 py-0.5">{url}</p>
-              ))
-            )}
-          </div>
-        )}
+    </div>
+  );
+}
+
+function DlpWebRulesSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zia-dlp-web-rules", tenantName],
+    queryFn: () => fetchDlpWebRules(tenantName),
+    enabled: isOpen,
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Order</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">State</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100 bg-white">
+          {data.map((r: DlpWebRule) => (
+            <tr key={r.id}>
+              <td className="px-3 py-2 text-gray-500">{r.order}</td>
+              <td className="px-3 py-2 text-gray-900">{r.name}</td>
+              <td className="px-3 py-2 text-gray-600">{r.action}</td>
+              <td className="px-3 py-2">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${r.state === "ENABLED" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-500"}`}>
+                  {r.state}
+                </span>
+              </td>
+            </tr>
+          ))}
+          {data.length === 0 && (
+            <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400">No DLP web rules</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function CloudAppSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zia-cloud-app-settings", tenantName],
+    queryFn: () => fetchCloudAppSettings(tenantName),
+    enabled: isOpen,
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">State</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100 bg-white">
+          {data.map((s: CloudAppSetting, i: number) => (
+            <tr key={s.id ?? i}>
+              <td className="px-3 py-2 text-gray-900">{s.name ?? "-"}</td>
+              <td className="px-3 py-2 text-gray-600">{s.action ?? "-"}</td>
+              <td className="px-3 py-2">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${s.state === "ENABLED" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-500"}`}>
+                  {s.state ?? "-"}
+                </span>
+              </td>
+            </tr>
+          ))}
+          {data.length === 0 && (
+            <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">No cloud app settings</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SnapshotsSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const qc = useQueryClient();
+  const [labelInput, setLabelInput] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zia-snapshots", tenantName],
+    queryFn: () => fetchSnapshots(tenantName, "ZIA"),
+    enabled: isOpen,
+  });
+
+  const createMut = useMutation({
+    mutationFn: () => createSnapshot(tenantName, labelInput.trim() || undefined, "ZIA"),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["zia-snapshots", tenantName] });
+      setLabelInput("");
+    },
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => deleteSnapshot(tenantName, id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["zia-snapshots", tenantName] });
+      setDeleteTarget(null);
+    },
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+
+  const snaps = data ?? [];
+
+  return (
+    <div className="space-y-4">
+      {deleteTarget !== null && (
+        <ConfirmDialog
+          title="Delete Snapshot"
+          message="Delete this snapshot? This cannot be undone."
+          onConfirm={() => deleteMut.mutate(deleteTarget)}
+          onCancel={() => setDeleteTarget(null)}
+          destructive
+        />
+      )}
+
+      {/* Save new snapshot */}
+      <div className="flex gap-2 items-end">
+        <div className="flex-1">
+          <label className="block text-xs font-medium text-gray-600 mb-1">Label (optional)</label>
+          <input
+            type="text"
+            value={labelInput}
+            onChange={(e) => setLabelInput(e.target.value)}
+            placeholder="e.g. pre-change baseline"
+            className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+          />
+        </div>
+        <button
+          onClick={() => createMut.mutate()}
+          disabled={createMut.isPending}
+          className="px-3 py-1.5 text-xs rounded-md bg-zs-500 hover:bg-zs-600 text-white disabled:opacity-60"
+        >
+          {createMut.isPending ? "Saving..." : "Save Snapshot"}
+        </button>
       </div>
+      {createMut.isError && (
+        <ErrorMessage message={createMut.error instanceof Error ? createMut.error.message : "Failed to save"} />
+      )}
+
+      {/* List */}
+      {snaps.length === 0 ? (
+        <p className="text-sm text-gray-400">No snapshots saved yet.</p>
+      ) : (
+        <div className="divide-y divide-gray-100 border border-gray-200 rounded-lg overflow-hidden">
+          {snaps.map((s: ConfigSnapshot) => (
+            <div key={s.id} className="flex items-center justify-between px-4 py-3 bg-white">
+              <div>
+                <p className="text-sm font-medium text-gray-900">{s.label || <span className="italic text-gray-400">Unlabeled</span>}</p>
+                <p className="text-xs text-gray-400">
+                  {formatDateTime(s.created_at)} · {s.resource_count} resources
+                </p>
+              </div>
+              <button
+                onClick={() => setDeleteTarget(s.id)}
+                className="text-xs text-red-500 hover:text-red-700"
+              >
+                Delete
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -558,7 +1132,7 @@ function CertificatesSection({ tenantName, isOpen }: { tenantName: string; isOpe
                   <td className="px-3 py-2 text-gray-900">{c.name}</td>
                   <td className="px-3 py-2 text-gray-600">{c.issuedTo ?? "-"}</td>
                   <td className="px-3 py-2 text-gray-500 text-xs">
-                    {expEpoch ? new Date(expEpoch * 1000).toLocaleDateString() : "-"}
+                    {expEpoch ? formatDate(new Date(expEpoch * 1000).toISOString()) : "-"}
                   </td>
                   <td className="px-3 py-2">
                     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${expired ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}`}>
@@ -1387,8 +1961,8 @@ function ZidApiClientsSection({ tenantName, isOpen }: { tenantName: string; isOp
                       {secretsQuery.data.map((s: ZidApiClientSecret, si: number) => (
                         <tr key={s.secret_id ?? si}>
                           <td className="px-3 py-2 font-mono text-xs text-gray-500">{s.secret_id ?? "-"}</td>
-                          <td className="px-3 py-2 text-gray-500 text-xs">{s.created_at ?? "-"}</td>
-                          <td className="px-3 py-2 text-gray-500 text-xs">{s.expires_at ?? "Never"}</td>
+                          <td className="px-3 py-2 text-gray-500 text-xs">{formatDateTime(s.created_at)}</td>
+                          <td className="px-3 py-2 text-gray-500 text-xs">{s.expires_at ? formatDateTime(s.expires_at) : "Never"}</td>
                         </tr>
                       ))}
                       {secretsQuery.data.length === 0 && (
@@ -1407,161 +1981,297 @@ function ZidApiClientsSection({ tenantName, isOpen }: { tenantName: string; isOp
   );
 }
 
+// ── SectionGroup — top-level grouped accordion ────────────────────────────────
+
+function SectionGroup({
+  title,
+  isOpen,
+  onToggle,
+  children,
+}: {
+  title: string;
+  isOpen: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="border border-gray-300 rounded-lg overflow-hidden">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-4 py-3 bg-gray-100 hover:bg-gray-200 text-left transition-colors"
+      >
+        <span className="font-semibold text-gray-800 text-sm">{title}</span>
+        <svg
+          className={`h-4 w-4 text-gray-500 transition-transform ${isOpen ? "rotate-180" : ""}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {isOpen && <div className="px-3 py-3 space-y-2 bg-gray-50">{children}</div>}
+    </div>
+  );
+}
+
+function CliOnlyNote({ feature }: { feature: string }) {
+  return (
+    <p className="text-sm text-gray-500 py-2 px-1">
+      {feature} management is available via the CLI (<span className="font-mono text-xs">zs-config</span>).
+    </p>
+  );
+}
+
 // ── Tab panels ────────────────────────────────────────────────────────────────
 
 type TabId = "zia" | "zpa" | "zdx" | "zcc" | "zid";
 
 function ZiaTab({ tenant }: { tenant: Tenant }) {
-  const [open, setOpen] = useState<Record<string, boolean>>({ activation: true });
-  function toggle(key: string) {
-    setOpen((prev) => ({ ...prev, [key]: !prev[key] }));
-  }
+  const [groups, setGroups] = useState<Record<string, boolean>>({ activation: true });
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  function toggleGroup(key: string) { setGroups((prev) => ({ ...prev, [key]: !prev[key] })); }
+  function toggle(key: string) { setOpen((prev) => ({ ...prev, [key]: !prev[key] })); }
 
   return (
     <div className="space-y-3">
-      <Accordion title="Activation" isOpen={!!open.activation} onToggle={() => toggle("activation")}>
-        <ActivationSection tenantName={tenant.name} isOpen={!!open.activation} />
+      {/* Activation — standalone */}
+      <Accordion title="Activation" isOpen={!!groups.activation} onToggle={() => toggleGroup("activation")}>
+        <ActivationSection tenantName={tenant.name} isOpen={!!groups.activation} />
       </Accordion>
-      <Accordion title="URL Filtering Rules" isOpen={!!open.urlFilteringRules} onToggle={() => toggle("urlFilteringRules")}>
-        <UrlFilteringRulesSection tenantName={tenant.name} isOpen={!!open.urlFilteringRules} />
-      </Accordion>
-      <Accordion title="URL Categories" isOpen={!!open.urlCategories} onToggle={() => toggle("urlCategories")}>
-        <UrlCategoriesSection tenantName={tenant.name} isOpen={!!open.urlCategories} />
-      </Accordion>
-      <Accordion title="URL Lookup" isOpen={!!open.urlLookup} onToggle={() => toggle("urlLookup")}>
-        <UrlLookupSection tenantName={tenant.name} />
-      </Accordion>
-      <Accordion title="Security Policy (Allow / Deny Lists)" isOpen={!!open.allowdeny} onToggle={() => toggle("allowdeny")}>
-        <AllowDenySection tenantName={tenant.name} isOpen={!!open.allowdeny} />
-      </Accordion>
-      <Accordion title="Users" isOpen={!!open.users} onToggle={() => toggle("users")}>
-        <UsersSection tenantName={tenant.name} isOpen={!!open.users} />
-      </Accordion>
-      <Accordion title="Locations" isOpen={!!open.locations} onToggle={() => toggle("locations")}>
-        <LocationsSection tenantName={tenant.name} isOpen={!!open.locations} />
-      </Accordion>
-      <Accordion title="Departments" isOpen={!!open.departments} onToggle={() => toggle("departments")}>
-        <DepartmentsSection tenantName={tenant.name} isOpen={!!open.departments} />
-      </Accordion>
-      <Accordion title="Groups" isOpen={!!open.groups} onToggle={() => toggle("groups")}>
-        <GroupsSection tenantName={tenant.name} isOpen={!!open.groups} />
-      </Accordion>
+
+      {/* Web & URL Filtering */}
+      <SectionGroup title="Web & URL Filtering" isOpen={!!groups.webFilter} onToggle={() => toggleGroup("webFilter")}>
+        <Accordion title="URL Filtering Rules" isOpen={!!open.urlFilteringRules} onToggle={() => toggle("urlFilteringRules")}>
+          <UrlFilteringRulesSection tenantName={tenant.name} isOpen={!!open.urlFilteringRules} />
+        </Accordion>
+        <Accordion title="URL Categories" isOpen={!!open.urlCategories} onToggle={() => toggle("urlCategories")}>
+          <UrlCategoriesSection tenantName={tenant.name} isOpen={!!open.urlCategories} />
+        </Accordion>
+        <Accordion title="URL Lookup" isOpen={!!open.urlLookup} onToggle={() => toggle("urlLookup")}>
+          <UrlLookupSection tenantName={tenant.name} />
+        </Accordion>
+      </SectionGroup>
+
+      {/* Cloud App Controls */}
+      <SectionGroup title="Cloud App Controls" isOpen={!!groups.cloudApps} onToggle={() => toggleGroup("cloudApps")}>
+        <Accordion title="Cloud App Settings" isOpen={!!open.cloudApps} onToggle={() => toggle("cloudApps")}>
+          <CloudAppSection tenantName={tenant.name} isOpen={!!open.cloudApps} />
+        </Accordion>
+      </SectionGroup>
+
+      {/* Network Security */}
+      <SectionGroup title="Network Security" isOpen={!!groups.networkSec} onToggle={() => toggleGroup("networkSec")}>
+        <Accordion title="Allow / Deny Lists" isOpen={!!open.allowdeny} onToggle={() => toggle("allowdeny")}>
+          <AllowDenySection tenantName={tenant.name} isOpen={!!open.allowdeny} />
+        </Accordion>
+        <Accordion title="Firewall Policy" isOpen={!!open.firewall} onToggle={() => toggle("firewall")}>
+          <FirewallRulesSection tenantName={tenant.name} isOpen={!!open.firewall} />
+        </Accordion>
+        <Accordion title="SSL Inspection" isOpen={!!open.ssl} onToggle={() => toggle("ssl")}>
+          <SslInspectionSection tenantName={tenant.name} isOpen={!!open.ssl} />
+        </Accordion>
+        <Accordion title="Traffic Forwarding" isOpen={!!open.forwarding} onToggle={() => toggle("forwarding")}>
+          <ForwardingRulesSection tenantName={tenant.name} isOpen={!!open.forwarding} />
+        </Accordion>
+      </SectionGroup>
+
+      {/* Identity & Access */}
+      <SectionGroup title="Identity & Access" isOpen={!!groups.identity} onToggle={() => toggleGroup("identity")}>
+        <Accordion title="Users" isOpen={!!open.users} onToggle={() => toggle("users")}>
+          <UsersSection tenantName={tenant.name} isOpen={!!open.users} />
+        </Accordion>
+        <Accordion title="Locations" isOpen={!!open.locations} onToggle={() => toggle("locations")}>
+          <LocationsSection tenantName={tenant.name} isOpen={!!open.locations} />
+        </Accordion>
+        <Accordion title="Departments" isOpen={!!open.departments} onToggle={() => toggle("departments")}>
+          <DepartmentsSection tenantName={tenant.name} isOpen={!!open.departments} />
+        </Accordion>
+        <Accordion title="Groups" isOpen={!!open.groups} onToggle={() => toggle("groups")}>
+          <GroupsSection tenantName={tenant.name} isOpen={!!open.groups} />
+        </Accordion>
+      </SectionGroup>
+
+      {/* DLP */}
+      <SectionGroup title="DLP" isOpen={!!groups.dlp} onToggle={() => toggleGroup("dlp")}>
+        <Accordion title="DLP Engines" isOpen={!!open.dlpEngines} onToggle={() => toggle("dlpEngines")}>
+          <DlpEnginesSection tenantName={tenant.name} isOpen={!!open.dlpEngines} />
+        </Accordion>
+        <Accordion title="DLP Dictionaries" isOpen={!!open.dlpDicts} onToggle={() => toggle("dlpDicts")}>
+          <DlpDictionariesSection tenantName={tenant.name} isOpen={!!open.dlpDicts} />
+        </Accordion>
+        <Accordion title="DLP Web Rules" isOpen={!!open.dlpWebRules} onToggle={() => toggle("dlpWebRules")}>
+          <DlpWebRulesSection tenantName={tenant.name} isOpen={!!open.dlpWebRules} />
+        </Accordion>
+      </SectionGroup>
+
+      {/* Config Snapshots */}
+      <SectionGroup title="Config Snapshots" isOpen={!!groups.snapshots} onToggle={() => toggleGroup("snapshots")}>
+        <Accordion title="Snapshots" isOpen={!!open.snapshots} onToggle={() => toggle("snapshots")}>
+          <SnapshotsSection tenantName={tenant.name} isOpen={!!open.snapshots} />
+        </Accordion>
+      </SectionGroup>
+
+      {/* Apply Snapshot */}
+      <SectionGroup title="Apply Snapshot from Other Tenant" isOpen={!!groups.applySnapshot} onToggle={() => toggleGroup("applySnapshot")}>
+        <CliOnlyNote feature="Snapshot application" />
+      </SectionGroup>
     </div>
   );
 }
 
 function ZpaTab({ tenant }: { tenant: Tenant }) {
+  const [groups, setGroups] = useState<Record<string, boolean>>({});
   const [open, setOpen] = useState<Record<string, boolean>>({});
-  function toggle(key: string) {
-    setOpen((prev) => ({ ...prev, [key]: !prev[key] }));
-  }
+  function toggleGroup(key: string) { setGroups((prev) => ({ ...prev, [key]: !prev[key] })); }
+  function toggle(key: string) { setOpen((prev) => ({ ...prev, [key]: !prev[key] })); }
 
   return (
     <div className="space-y-3">
-      <Accordion title="App Connectors" isOpen={!!open.appConnectors} onToggle={() => toggle("appConnectors")}>
-        <AppConnectorsSection tenantName={tenant.name} isOpen={!!open.appConnectors} />
-      </Accordion>
-      <Accordion title="Service Edges" isOpen={!!open.serviceEdges} onToggle={() => toggle("serviceEdges")}>
-        <ServiceEdgesSection tenantName={tenant.name} isOpen={!!open.serviceEdges} />
-      </Accordion>
-      <Accordion title="Application Segments" isOpen={!!open.applications} onToggle={() => toggle("applications")}>
-        <ApplicationsSection tenantName={tenant.name} isOpen={!!open.applications} />
-      </Accordion>
-      <Accordion title="Segment Groups" isOpen={!!open.segmentGroups} onToggle={() => toggle("segmentGroups")}>
-        <SegmentGroupsSection tenantName={tenant.name} isOpen={!!open.segmentGroups} />
-      </Accordion>
-      <Accordion title="Certificates" isOpen={!!open.certificates} onToggle={() => toggle("certificates")}>
-        <CertificatesSection tenantName={tenant.name} isOpen={!!open.certificates} />
-      </Accordion>
-      <Accordion title="PRA Portals" isOpen={!!open.praPortals} onToggle={() => toggle("praPortals")}>
-        <PraPortalsSection tenantName={tenant.name} isOpen={!!open.praPortals} />
-      </Accordion>
+      {/* Infrastructure */}
+      <SectionGroup title="Infrastructure" isOpen={!!groups.infra} onToggle={() => toggleGroup("infra")}>
+        <Accordion title="App Connectors" isOpen={!!open.appConnectors} onToggle={() => toggle("appConnectors")}>
+          <AppConnectorsSection tenantName={tenant.name} isOpen={!!open.appConnectors} />
+        </Accordion>
+        <Accordion title="Service Edges" isOpen={!!open.serviceEdges} onToggle={() => toggle("serviceEdges")}>
+          <ServiceEdgesSection tenantName={tenant.name} isOpen={!!open.serviceEdges} />
+        </Accordion>
+      </SectionGroup>
+
+      {/* Applications */}
+      <SectionGroup title="Applications" isOpen={!!groups.apps} onToggle={() => toggleGroup("apps")}>
+        <Accordion title="Application Segments" isOpen={!!open.applications} onToggle={() => toggle("applications")}>
+          <ApplicationsSection tenantName={tenant.name} isOpen={!!open.applications} />
+        </Accordion>
+        <Accordion title="Segment Groups" isOpen={!!open.segmentGroups} onToggle={() => toggle("segmentGroups")}>
+          <SegmentGroupsSection tenantName={tenant.name} isOpen={!!open.segmentGroups} />
+        </Accordion>
+      </SectionGroup>
+
+      {/* Certificates */}
+      <SectionGroup title="Certificates" isOpen={!!groups.certs} onToggle={() => toggleGroup("certs")}>
+        <Accordion title="Browser Access Certificates" isOpen={!!open.certificates} onToggle={() => toggle("certificates")}>
+          <CertificatesSection tenantName={tenant.name} isOpen={!!open.certificates} />
+        </Accordion>
+      </SectionGroup>
+
+      {/* PRA */}
+      <SectionGroup title="Privileged Remote Access (PRA)" isOpen={!!groups.pra} onToggle={() => toggleGroup("pra")}>
+        <Accordion title="PRA Portals" isOpen={!!open.praPortals} onToggle={() => toggle("praPortals")}>
+          <PraPortalsSection tenantName={tenant.name} isOpen={!!open.praPortals} />
+        </Accordion>
+      </SectionGroup>
     </div>
   );
 }
 
 function ZdxTab({ tenant }: { tenant: Tenant }) {
+  const [groups, setGroups] = useState<Record<string, boolean>>({});
   const [open, setOpen] = useState<Record<string, boolean>>({});
-  function toggle(key: string) {
-    setOpen((prev) => ({ ...prev, [key]: !prev[key] }));
-  }
+  function toggleGroup(key: string) { setGroups((prev) => ({ ...prev, [key]: !prev[key] })); }
+  function toggle(key: string) { setOpen((prev) => ({ ...prev, [key]: !prev[key] })); }
 
   return (
     <div className="space-y-3">
-      <Accordion title="Device Search" isOpen={!!open.deviceSearch} onToggle={() => toggle("deviceSearch")}>
-        <ZdxDeviceSearchSection tenantName={tenant.name} isOpen={!!open.deviceSearch} />
-      </Accordion>
-      <Accordion title="User Lookup" isOpen={!!open.userLookup} onToggle={() => toggle("userLookup")}>
-        <ZdxUserLookupSection tenantName={tenant.name} isOpen={!!open.userLookup} />
-      </Accordion>
+      {/* Devices */}
+      <SectionGroup title="Devices" isOpen={!!groups.devices} onToggle={() => toggleGroup("devices")}>
+        <Accordion title="Device Search" isOpen={!!open.deviceSearch} onToggle={() => toggle("deviceSearch")}>
+          <ZdxDeviceSearchSection tenantName={tenant.name} isOpen={!!open.deviceSearch} />
+        </Accordion>
+      </SectionGroup>
+
+      {/* Users */}
+      <SectionGroup title="Users" isOpen={!!groups.users} onToggle={() => toggleGroup("users")}>
+        <Accordion title="User Lookup" isOpen={!!open.userLookup} onToggle={() => toggle("userLookup")}>
+          <ZdxUserLookupSection tenantName={tenant.name} isOpen={!!open.userLookup} />
+        </Accordion>
+      </SectionGroup>
     </div>
   );
 }
 
 function ZccTab({ tenant }: { tenant: Tenant }) {
+  const [groups, setGroups] = useState<Record<string, boolean>>({});
   const [open, setOpen] = useState<Record<string, boolean>>({});
-  function toggle(key: string) {
-    setOpen((prev) => ({ ...prev, [key]: !prev[key] }));
-  }
+  function toggleGroup(key: string) { setGroups((prev) => ({ ...prev, [key]: !prev[key] })); }
+  function toggle(key: string) { setOpen((prev) => ({ ...prev, [key]: !prev[key] })); }
 
   return (
     <div className="space-y-3">
-      <Accordion title="Devices" isOpen={!!open.devices} onToggle={() => toggle("devices")}>
-        <ZccDevicesSection tenantName={tenant.name} isOpen={!!open.devices} />
-      </Accordion>
-      <Accordion title="Trusted Networks" isOpen={!!open.trustedNetworks} onToggle={() => toggle("trustedNetworks")}>
-        <ZccReadOnlySection<ZccTrustedNetwork>
-          queryKey={["zcc-trusted-networks", tenant.name]}
-          queryFn={() => listTrustedNetworks(tenant.name)}
-          isOpen={!!open.trustedNetworks}
-          emptyMessage="No trusted networks"
-        />
-      </Accordion>
-      <Accordion title="Forwarding Profiles" isOpen={!!open.forwardingProfiles} onToggle={() => toggle("forwardingProfiles")}>
-        <ZccReadOnlySection<ZccForwardingProfile>
-          queryKey={["zcc-forwarding-profiles", tenant.name]}
-          queryFn={() => listForwardingProfiles(tenant.name)}
-          isOpen={!!open.forwardingProfiles}
-          emptyMessage="No forwarding profiles"
-        />
-      </Accordion>
-      <Accordion title="App Profiles (Web Policies)" isOpen={!!open.webPolicies} onToggle={() => toggle("webPolicies")}>
-        <ZccReadOnlySection<ZccWebPolicy>
-          queryKey={["zcc-web-policies", tenant.name]}
-          queryFn={() => listWebPolicies(tenant.name)}
-          isOpen={!!open.webPolicies}
-          emptyMessage="No app profiles"
-        />
-      </Accordion>
-      <Accordion title="Bypass App Services" isOpen={!!open.webAppServices} onToggle={() => toggle("webAppServices")}>
-        <ZccReadOnlySection<ZccWebAppService>
-          queryKey={["zcc-web-app-services", tenant.name]}
-          queryFn={() => listWebAppServices(tenant.name)}
-          isOpen={!!open.webAppServices}
-          emptyMessage="No bypass app services"
-        />
-      </Accordion>
+      {/* Devices */}
+      <SectionGroup title="Devices" isOpen={!!groups.devices} onToggle={() => toggleGroup("devices")}>
+        <Accordion title="All Devices" isOpen={!!open.devices} onToggle={() => toggle("devices")}>
+          <ZccDevicesSection tenantName={tenant.name} isOpen={!!open.devices} />
+        </Accordion>
+      </SectionGroup>
+
+      {/* Network */}
+      <SectionGroup title="Network" isOpen={!!groups.network} onToggle={() => toggleGroup("network")}>
+        <Accordion title="Trusted Networks" isOpen={!!open.trustedNetworks} onToggle={() => toggle("trustedNetworks")}>
+          <ZccReadOnlySection<ZccTrustedNetwork>
+            queryKey={["zcc-trusted-networks", tenant.name]}
+            queryFn={() => listTrustedNetworks(tenant.name)}
+            isOpen={!!open.trustedNetworks}
+            emptyMessage="No trusted networks"
+          />
+        </Accordion>
+        <Accordion title="Forwarding Profiles" isOpen={!!open.forwardingProfiles} onToggle={() => toggle("forwardingProfiles")}>
+          <ZccReadOnlySection<ZccForwardingProfile>
+            queryKey={["zcc-forwarding-profiles", tenant.name]}
+            queryFn={() => listForwardingProfiles(tenant.name)}
+            isOpen={!!open.forwardingProfiles}
+            emptyMessage="No forwarding profiles"
+          />
+        </Accordion>
+      </SectionGroup>
+
+      {/* Policy */}
+      <SectionGroup title="Policy" isOpen={!!groups.policy} onToggle={() => toggleGroup("policy")}>
+        <Accordion title="App Profiles (Web Policies)" isOpen={!!open.webPolicies} onToggle={() => toggle("webPolicies")}>
+          <ZccReadOnlySection<ZccWebPolicy>
+            queryKey={["zcc-web-policies", tenant.name]}
+            queryFn={() => listWebPolicies(tenant.name)}
+            isOpen={!!open.webPolicies}
+            emptyMessage="No app profiles"
+          />
+        </Accordion>
+        <Accordion title="Bypass App Services" isOpen={!!open.webAppServices} onToggle={() => toggle("webAppServices")}>
+          <ZccReadOnlySection<ZccWebAppService>
+            queryKey={["zcc-web-app-services", tenant.name]}
+            queryFn={() => listWebAppServices(tenant.name)}
+            isOpen={!!open.webAppServices}
+            emptyMessage="No bypass app services"
+          />
+        </Accordion>
+      </SectionGroup>
     </div>
   );
 }
 
 function ZidTab({ tenant }: { tenant: Tenant }) {
+  const [groups, setGroups] = useState<Record<string, boolean>>({});
   const [open, setOpen] = useState<Record<string, boolean>>({});
-  function toggle(key: string) {
-    setOpen((prev) => ({ ...prev, [key]: !prev[key] }));
-  }
+  function toggleGroup(key: string) { setGroups((prev) => ({ ...prev, [key]: !prev[key] })); }
+  function toggle(key: string) { setOpen((prev) => ({ ...prev, [key]: !prev[key] })); }
 
   return (
     <div className="space-y-3">
-      <Accordion title="Users" isOpen={!!open.users} onToggle={() => toggle("users")}>
-        <ZidUsersSection tenantName={tenant.name} isOpen={!!open.users} />
-      </Accordion>
-      <Accordion title="Groups" isOpen={!!open.groups} onToggle={() => toggle("groups")}>
-        <ZidGroupsSection tenantName={tenant.name} isOpen={!!open.groups} />
-      </Accordion>
-      <Accordion title="API Clients" isOpen={!!open.apiClients} onToggle={() => toggle("apiClients")}>
-        <ZidApiClientsSection tenantName={tenant.name} isOpen={!!open.apiClients} />
-      </Accordion>
+      {/* Directory */}
+      <SectionGroup title="Directory" isOpen={!!groups.directory} onToggle={() => toggleGroup("directory")}>
+        <Accordion title="Users" isOpen={!!open.users} onToggle={() => toggle("users")}>
+          <ZidUsersSection tenantName={tenant.name} isOpen={!!open.users} />
+        </Accordion>
+        <Accordion title="Groups" isOpen={!!open.groups} onToggle={() => toggle("groups")}>
+          <ZidGroupsSection tenantName={tenant.name} isOpen={!!open.groups} />
+        </Accordion>
+      </SectionGroup>
+
+      {/* API Access */}
+      <SectionGroup title="API Access" isOpen={!!groups.apiAccess} onToggle={() => toggleGroup("apiAccess")}>
+        <Accordion title="API Clients" isOpen={!!open.apiClients} onToggle={() => toggle("apiClients")}>
+          <ZidApiClientsSection tenantName={tenant.name} isOpen={!!open.apiClients} />
+        </Accordion>
+      </SectionGroup>
     </div>
   );
 }

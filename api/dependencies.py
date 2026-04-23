@@ -40,8 +40,6 @@ def check_tenant_access(tenant_id: int, user: AuthUser) -> None:
     Uses 404 (not 403) to avoid leaking tenant existence to unauthorized users.
     Must never be called from inside an existing with get_session() block.
     """
-    if user.role == "admin":
-        return
     from db.database import get_session
     from db.models import UserTenantEntitlement
     with get_session() as session:

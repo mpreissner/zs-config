@@ -218,8 +218,7 @@ def webauthn_register_complete(
     """Complete FIDO2 registration ceremony. Saves the credential."""
     try:
         import webauthn
-        from webauthn.helpers.structs import RegistrationCredential
-        from webauthn.helpers.exceptions import InvalidCBORData, InvalidAuthenticatorDataStructure
+        from webauthn.helpers import parse_registration_credential_json
     except ImportError:
         raise HTTPException(status_code=501, detail="WebAuthn not available (py-webauthn not installed)")
 
@@ -233,7 +232,7 @@ def webauthn_register_complete(
     try:
         import json
         credential_json = json.dumps(body.credential)
-        registration_credential = RegistrationCredential.parse_raw(credential_json)
+        registration_credential = parse_registration_credential_json(credential_json)
         verified = webauthn.verify_registration_response(
             credential=registration_credential,
             expected_challenge=challenge,
@@ -335,7 +334,7 @@ def webauthn_authenticate_complete(body: WebAuthnAuthCompleteRequest, response: 
     """Complete FIDO2 authentication ceremony. Returns JWT tokens."""
     try:
         import webauthn
-        from webauthn.helpers.structs import AuthenticationCredential
+        from webauthn.helpers import parse_authentication_credential_json
     except ImportError:
         raise HTTPException(status_code=501, detail="WebAuthn not available (py-webauthn not installed)")
 
@@ -362,7 +361,7 @@ def webauthn_authenticate_complete(body: WebAuthnAuthCompleteRequest, response: 
             raise HTTPException(status_code=401, detail="Authentication failed")
 
         try:
-            authentication_credential = AuthenticationCredential.parse_raw(credential_json)
+            authentication_credential = parse_authentication_credential_json(credential_json)
             verified = webauthn.verify_authentication_response(
                 credential=authentication_credential,
                 expected_challenge=challenge,

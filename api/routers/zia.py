@@ -27,6 +27,7 @@ def _get_service(tenant_name: str, user: AuthUser):
         tenant.zidentity_base_url,
         tenant.client_id,
         decrypt_secret(tenant.client_secret_enc),
+        govcloud=bool(tenant.govcloud),
     )
     client = ZIAClient(auth, tenant.oneapi_base_url)
     return ZIAService(client, tenant_id=tenant.id)
@@ -269,5 +270,168 @@ def delete_zia_user(tenant: str, user_id: str, user: AuthUser = Depends(require_
     try:
         _get_service(tenant, user).delete_user(user_id)
         return {"deleted": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ------------------------------------------------------------------
+# Firewall Policy
+# ------------------------------------------------------------------
+
+@router.get("/{tenant}/firewall-rules")
+def list_firewall_rules(tenant: str, user: AuthUser = Depends(require_auth)):
+    return _get_service(tenant, user).list_firewall_rules()
+
+
+@router.patch("/{tenant}/firewall-rules/{rule_id}/state")
+def patch_firewall_rule_state(
+    tenant: str, rule_id: str, body: RuleStateRequest, user: AuthUser = Depends(require_admin)
+):
+    try:
+        return _get_service(tenant, user).toggle_firewall_rule(rule_id, body.state)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ------------------------------------------------------------------
+# SSL Inspection
+# ------------------------------------------------------------------
+
+@router.get("/{tenant}/ssl-inspection-rules")
+def list_ssl_inspection_rules(tenant: str, user: AuthUser = Depends(require_auth)):
+    return _get_service(tenant, user).list_ssl_inspection_rules()
+
+
+@router.patch("/{tenant}/ssl-inspection-rules/{rule_id}/state")
+def patch_ssl_inspection_rule_state(
+    tenant: str, rule_id: str, body: RuleStateRequest, user: AuthUser = Depends(require_admin)
+):
+    try:
+        return _get_service(tenant, user).toggle_ssl_inspection_rule(rule_id, body.state)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ------------------------------------------------------------------
+# Traffic Forwarding
+# ------------------------------------------------------------------
+
+@router.get("/{tenant}/forwarding-rules")
+def list_forwarding_rules(tenant: str, user: AuthUser = Depends(require_auth)):
+    return _get_service(tenant, user).list_forwarding_rules()
+
+
+# ------------------------------------------------------------------
+# DLP
+# ------------------------------------------------------------------
+
+@router.get("/{tenant}/dlp-engines")
+def list_dlp_engines(tenant: str, user: AuthUser = Depends(require_auth)):
+    return _get_service(tenant, user).list_dlp_engines()
+
+
+@router.get("/{tenant}/dlp-dictionaries")
+def list_dlp_dictionaries(tenant: str, user: AuthUser = Depends(require_auth)):
+    return _get_service(tenant, user).list_dlp_dictionaries()
+
+
+@router.get("/{tenant}/dlp-web-rules")
+def list_dlp_web_rules(tenant: str, user: AuthUser = Depends(require_auth)):
+    return _get_service(tenant, user).list_dlp_web_rules()
+
+
+# ------------------------------------------------------------------
+# Cloud App Controls
+# ------------------------------------------------------------------
+
+@router.get("/{tenant}/cloud-app-settings")
+def list_cloud_app_settings(tenant: str, user: AuthUser = Depends(require_auth)):
+    return _get_service(tenant, user).list_cloud_app_settings()
+
+
+# ------------------------------------------------------------------
+# Config Snapshots
+# ------------------------------------------------------------------
+
+@router.get("/{tenant}/snapshots")
+def list_snapshots(tenant: str, product: str = "ZIA", user: AuthUser = Depends(require_auth)):
+    from services.config_service import get_tenant
+    from services.snapshot_service import list_snapshots as _list
+    from db.database import get_session
+    from api.dependencies import check_tenant_access
+
+    t = get_tenant(tenant)
+    if not t:
+        raise HTTPException(status_code=404, detail=f"Tenant '{tenant}' not found")
+    check_tenant_access(t.id, user)
+
+    with get_session() as session:
+        snaps = _list(t.id, product.upper(), session)
+        return [
+            {
+                "id": s.id,
+                "label": s.comment,
+                "product": s.product,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+                "resource_count": s.resource_count,
+            }
+            for s in snaps
+        ]
+
+
+class SnapshotCreateRequest(BaseModel):
+    label: Optional[str] = None
+    product: str = "ZIA"
+
+
+@router.post("/{tenant}/snapshots", status_code=201)
+def create_snapshot(
+    tenant: str, body: SnapshotCreateRequest, user: AuthUser = Depends(require_auth)
+):
+    from services.config_service import get_tenant
+    from services.snapshot_service import create_snapshot as _create
+    from db.database import get_session
+    from api.dependencies import check_tenant_access
+    from datetime import datetime
+
+    t = get_tenant(tenant)
+    if not t:
+        raise HTTPException(status_code=404, detail=f"Tenant '{tenant}' not found")
+    check_tenant_access(t.id, user)
+
+    product = body.product.upper()
+    name = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    try:
+        with get_session() as session:
+            snap = _create(t.id, product, name=name, comment=body.label, session=session)
+            return {
+                "id": snap.id,
+                "label": snap.comment,
+                "product": snap.product,
+                "created_at": snap.created_at.isoformat() if snap.created_at else None,
+                "resource_count": snap.resource_count,
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{tenant}/snapshots/{snapshot_id}", status_code=204)
+def delete_snapshot(
+    tenant: str, snapshot_id: int, user: AuthUser = Depends(require_auth)
+):
+    from services.config_service import get_tenant
+    from services.snapshot_service import delete_snapshot as _delete
+    from db.database import get_session
+    from api.dependencies import check_tenant_access
+
+    t = get_tenant(tenant)
+    if not t:
+        raise HTTPException(status_code=404, detail=f"Tenant '{tenant}' not found")
+    check_tenant_access(t.id, user)
+
+    try:
+        with get_session() as session:
+            _delete(snapshot_id, session)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

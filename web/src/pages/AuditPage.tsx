@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchAuditLog } from "../api/audit";
 import LoadingSpinner from "../components/LoadingSpinner";
 import ErrorMessage from "../components/ErrorMessage";
+import { formatDateTime } from "../utils/time";
 
 const PAGE_SIZE = 25;
 
@@ -61,7 +62,7 @@ export default function AuditPage() {
                 {pageEntries.map((e) => (
                   <tr key={e.id} className="hover:bg-gray-50">
                     <td className="whitespace-nowrap px-3 py-2 text-gray-500">
-                      {new Date(e.timestamp).toLocaleString()}
+                      {formatDateTime(e.timestamp)}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-gray-700">
                       {e.product}

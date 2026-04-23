@@ -179,3 +179,125 @@ export const updateDenylist = (tenant: string, urls: string[]): Promise<AllowDen
     method: "PUT",
     body: JSON.stringify({ blacklistUrls: urls }),
   });
+
+// ── Firewall ──────────────────────────────────────────────────────────────────
+
+export interface FirewallRule {
+  id: number;
+  name: string;
+  order: number;
+  action: string;
+  state: string;
+  description?: string;
+}
+
+export const fetchFirewallRules = (tenant: string): Promise<FirewallRule[]> =>
+  apiFetch<FirewallRule[]>(`${base(tenant)}/firewall-rules`);
+
+export const patchFirewallRuleState = (tenant: string, ruleId: number, state: string): Promise<FirewallRule> =>
+  apiFetch<FirewallRule>(`${base(tenant)}/firewall-rules/${ruleId}/state`, {
+    method: "PATCH",
+    body: JSON.stringify({ state }),
+  });
+
+// ── SSL Inspection ────────────────────────────────────────────────────────────
+
+export interface SslInspectionRule {
+  id: number;
+  name: string;
+  order: number;
+  action: string;
+  state: string;
+  description?: string;
+}
+
+export const fetchSslInspectionRules = (tenant: string): Promise<SslInspectionRule[]> =>
+  apiFetch<SslInspectionRule[]>(`${base(tenant)}/ssl-inspection-rules`);
+
+export const patchSslRuleState = (tenant: string, ruleId: number, state: string): Promise<SslInspectionRule> =>
+  apiFetch<SslInspectionRule>(`${base(tenant)}/ssl-inspection-rules/${ruleId}/state`, {
+    method: "PATCH",
+    body: JSON.stringify({ state }),
+  });
+
+// ── Traffic Forwarding ────────────────────────────────────────────────────────
+
+export interface ForwardingRule {
+  id: number;
+  name: string;
+  order: number;
+  type: string;
+  state: string;
+  description?: string;
+}
+
+export const fetchForwardingRules = (tenant: string): Promise<ForwardingRule[]> =>
+  apiFetch<ForwardingRule[]>(`${base(tenant)}/forwarding-rules`);
+
+// ── DLP ───────────────────────────────────────────────────────────────────────
+
+export interface DlpEngine {
+  id: number;
+  name: string;
+  description?: string;
+  predefinedEngine?: boolean;
+}
+
+export interface DlpDictionary {
+  id: number;
+  name: string;
+  type?: string;
+  description?: string;
+}
+
+export interface DlpWebRule {
+  id: number;
+  name: string;
+  order: number;
+  action: string;
+  state: string;
+}
+
+export const fetchDlpEngines = (tenant: string): Promise<DlpEngine[]> =>
+  apiFetch<DlpEngine[]>(`${base(tenant)}/dlp-engines`);
+
+export const fetchDlpDictionaries = (tenant: string): Promise<DlpDictionary[]> =>
+  apiFetch<DlpDictionary[]>(`${base(tenant)}/dlp-dictionaries`);
+
+export const fetchDlpWebRules = (tenant: string): Promise<DlpWebRule[]> =>
+  apiFetch<DlpWebRule[]>(`${base(tenant)}/dlp-web-rules`);
+
+// ── Cloud App Controls ────────────────────────────────────────────────────────
+
+export interface CloudAppSetting {
+  id?: number;
+  name?: string;
+  state?: string;
+  action?: string;
+  [key: string]: unknown;
+}
+
+export const fetchCloudAppSettings = (tenant: string): Promise<CloudAppSetting[]> =>
+  apiFetch<CloudAppSetting[]>(`${base(tenant)}/cloud-app-settings`);
+
+// ── Snapshots ─────────────────────────────────────────────────────────────────
+
+export interface ConfigSnapshot {
+  id: number;
+  label: string | null;
+  product: string;
+  created_at: string | null;
+  resource_count: number;
+}
+
+export const fetchSnapshots = (tenant: string, product = "ZIA"): Promise<ConfigSnapshot[]> =>
+  apiFetch<ConfigSnapshot[]>(`${base(tenant)}/snapshots?product=${product}`);
+
+export const createSnapshot = (tenant: string, label?: string, product = "ZIA"): Promise<ConfigSnapshot> =>
+  apiFetch<ConfigSnapshot>(`${base(tenant)}/snapshots`, {
+    method: "POST",
+    body: JSON.stringify({ label: label || null, product }),
+  });
+
+export const deleteSnapshot = (tenant: string, snapshotId: number): Promise<void> =>
+  apiFetch<void>(`${base(tenant)}/snapshots/${snapshotId}`, { method: "DELETE" });

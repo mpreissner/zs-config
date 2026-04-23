@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { formatDate } from "../utils/time";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { startRegistration } from "@simplewebauthn/browser";
@@ -64,8 +65,6 @@ export default function ProfilePage() {
     }
   }
 
-  const formatDate = (iso: string | null) =>
-    iso ? new Date(iso).toLocaleDateString(undefined, { dateStyle: "medium" }) : "Never";
 
   return (
     <div className="max-w-2xl mx-auto py-8 px-4 space-y-8">

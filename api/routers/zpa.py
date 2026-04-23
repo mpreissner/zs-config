@@ -33,6 +33,7 @@ def _get_service(tenant_name: str, user: AuthUser):
         tenant.zidentity_base_url,
         tenant.client_id,
         decrypt_secret(tenant.client_secret_enc),
+        govcloud=bool(tenant.govcloud),
     )
     client = ZPAClient(auth, tenant.zpa_customer_id, tenant.oneapi_base_url)
     return ZPAService(client, tenant_id=tenant.id)

@@ -323,3 +323,108 @@ class ZIAService:
             details={"url_count": len(urls)},
         )
         return result
+
+    # ------------------------------------------------------------------
+    # Firewall Policy
+    # ------------------------------------------------------------------
+
+    def list_firewall_rules(self) -> List[Dict]:
+        result = self.client.list_firewall_rules()
+        audit_service.log(
+            product="ZIA", operation="list_firewall_rules", action="READ", status="SUCCESS",
+            tenant_id=self.tenant_id, resource_type="firewall_rule",
+            details={"count": len(result)},
+        )
+        return result
+
+    def toggle_firewall_rule(self, rule_id: str, state: str) -> Dict:
+        rule = self.client.get_firewall_rule(rule_id)
+        rule["state"] = state
+        self.client.update_firewall_rule(rule_id, rule)
+        audit_service.log(
+            product="ZIA", operation="toggle_firewall_rule", action="UPDATE", status="SUCCESS",
+            tenant_id=self.tenant_id, resource_type="firewall_rule",
+            resource_id=rule_id, details={"state": state},
+        )
+        return rule
+
+    # ------------------------------------------------------------------
+    # SSL Inspection
+    # ------------------------------------------------------------------
+
+    def list_ssl_inspection_rules(self) -> List[Dict]:
+        result = self.client.list_ssl_inspection_rules()
+        audit_service.log(
+            product="ZIA", operation="list_ssl_inspection_rules", action="READ", status="SUCCESS",
+            tenant_id=self.tenant_id, resource_type="ssl_inspection_rule",
+            details={"count": len(result)},
+        )
+        return result
+
+    def toggle_ssl_inspection_rule(self, rule_id: str, state: str) -> Dict:
+        rule = self.client.get_ssl_inspection_rule(rule_id)
+        rule["state"] = state
+        self.client.update_ssl_inspection_rule(rule_id, rule)
+        audit_service.log(
+            product="ZIA", operation="toggle_ssl_inspection_rule", action="UPDATE", status="SUCCESS",
+            tenant_id=self.tenant_id, resource_type="ssl_inspection_rule",
+            resource_id=rule_id, details={"state": state},
+        )
+        return rule
+
+    # ------------------------------------------------------------------
+    # Traffic Forwarding
+    # ------------------------------------------------------------------
+
+    def list_forwarding_rules(self) -> List[Dict]:
+        result = self.client.list_forwarding_rules()
+        audit_service.log(
+            product="ZIA", operation="list_forwarding_rules", action="READ", status="SUCCESS",
+            tenant_id=self.tenant_id, resource_type="forwarding_rule",
+            details={"count": len(result)},
+        )
+        return result
+
+    # ------------------------------------------------------------------
+    # DLP
+    # ------------------------------------------------------------------
+
+    def list_dlp_engines(self) -> List[Dict]:
+        result = self.client.list_dlp_engines()
+        audit_service.log(
+            product="ZIA", operation="list_dlp_engines", action="READ", status="SUCCESS",
+            tenant_id=self.tenant_id, resource_type="dlp_engine",
+            details={"count": len(result)},
+        )
+        return result
+
+    def list_dlp_dictionaries(self) -> List[Dict]:
+        result = self.client.list_dlp_dictionaries()
+        audit_service.log(
+            product="ZIA", operation="list_dlp_dictionaries", action="READ", status="SUCCESS",
+            tenant_id=self.tenant_id, resource_type="dlp_dictionary",
+            details={"count": len(result)},
+        )
+        return result
+
+    def list_dlp_web_rules(self) -> List[Dict]:
+        result = self.client.list_dlp_web_rules()
+        audit_service.log(
+            product="ZIA", operation="list_dlp_web_rules", action="READ", status="SUCCESS",
+            tenant_id=self.tenant_id, resource_type="dlp_web_rule",
+            details={"count": len(result)},
+        )
+        return result
+
+    # ------------------------------------------------------------------
+    # Cloud App Controls
+    # ------------------------------------------------------------------
+
+    def list_cloud_app_settings(self) -> List[Dict]:
+        result = self.client.list_url_filter_cloud_app_settings()
+        audit_service.log(
+            product="ZIA", operation="list_cloud_app_settings", action="READ", status="SUCCESS",
+            tenant_id=self.tenant_id, resource_type="cloud_app_setting",
+            details={"count": len(result)},
+        )
+        return result

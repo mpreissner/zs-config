@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { formatDate } from "../utils/time";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, Link } from "react-router-dom";
 import {
@@ -444,8 +445,10 @@ type ModalState =
 function KebabMenu({
   tenant,
   onAction,
+  isAdmin,
 }: {
   tenant: Tenant;
+  isAdmin: boolean;
   onAction: (action: "import" | "edit" | "delete", t: Tenant) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -478,18 +481,22 @@ function KebabMenu({
           >
             Import
           </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); setOpen(false); onAction("edit", tenant); }}
-            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-          >
-            Edit
-          </button>
-          <button
-            onClick={(e) => { e.stopPropagation(); setOpen(false); onAction("delete", tenant); }}
-            className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
-          >
-            Delete
-          </button>
+          {isAdmin && (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); setOpen(false); onAction("edit", tenant); }}
+                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Edit
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setOpen(false); onAction("delete", tenant); }}
+                className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+              >
+                Delete
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -511,14 +518,12 @@ function TenantCard({
 
   return (
     <div
-      onClick={() => navigate(`/tenants/${tenant.id}`)}
+      onClick={() => navigate(`/tenant/${tenant.id}/zia`)}
       className="relative bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md hover:border-zs-500 transition-all cursor-pointer"
     >
-      {isAdmin && (
-        <div className="absolute top-3 right-3" onClick={(e) => e.stopPropagation()}>
-          <KebabMenu tenant={tenant} onAction={onAction} />
-        </div>
-      )}
+      <div className="absolute top-3 right-3" onClick={(e) => e.stopPropagation()}>
+        <KebabMenu tenant={tenant} isAdmin={isAdmin} onAction={onAction} />
+      </div>
       <div className="pr-6 space-y-2">
         <p className="font-semibold text-gray-900 text-sm">{tenant.name}</p>
         <div className="flex items-center gap-2 flex-wrap">
@@ -664,15 +669,13 @@ export default function TenantsPage() {
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Status</th>
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Gov Cloud</th>
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Created</th>
-                {isAdmin && (
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Actions</th>
-                )}
+                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 bg-white">
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={isAdmin ? 6 : 5} className="py-8 text-center text-sm text-gray-500">
+                  <td colSpan={6} className="py-8 text-center text-sm text-gray-500">
                     No tenants found.
                   </td>
                 </tr>
@@ -681,7 +684,7 @@ export default function TenantsPage() {
                 <tr key={t.id} className="hover:bg-gray-50">
                   <td className="whitespace-nowrap py-3 pl-4 pr-3 text-sm font-medium text-gray-900">
                     <Link
-                      to={`/tenants/${t.id}`}
+                      to={`/tenant/${t.id}/zia`}
                       className="text-zs-600 hover:text-zs-700 hover:underline"
                       onClick={(e) => e.stopPropagation()}
                     >
@@ -699,13 +702,11 @@ export default function TenantsPage() {
                   </td>
                   <td className="whitespace-nowrap px-3 py-3 text-sm text-gray-500">{t.govcloud ? "Yes" : "No"}</td>
                   <td className="whitespace-nowrap px-3 py-3 text-sm text-gray-500">
-                    {t.created_at ? new Date(t.created_at).toLocaleDateString() : "-"}
+                    {formatDate(t.created_at)}
                   </td>
-                  {isAdmin && (
-                    <td className="whitespace-nowrap px-3 py-3 text-sm">
-                      <KebabMenu tenant={t} onAction={handleAction} />
-                    </td>
-                  )}
+                  <td className="whitespace-nowrap px-3 py-3 text-sm">
+                    <KebabMenu tenant={t} isAdmin={isAdmin} onAction={handleAction} />
+                  </td>
                 </tr>
               ))}
             </tbody>
