@@ -41,14 +41,14 @@ if [[ -f "$REPO_DIR/.env" ]]; then
 fi
 
 if [[ -z "${JWT_SECRET:-}" ]]; then
-    echo "ERROR: JWT_SECRET is not set."
-    echo ""
-    echo "Generate one and add it to .env:"
-    echo "  echo \"JWT_SECRET=\$(openssl rand -hex 32)\" >> .env"
-    echo ""
-    echo "Or export it before running this script:"
-    echo "  export JWT_SECRET=\"\$(openssl rand -hex 32)\""
-    exit 1
+    if ! command -v openssl &>/dev/null; then
+        echo "ERROR: JWT_SECRET is not set and openssl is not available to generate one." >&2
+        echo "Set JWT_SECRET in .env or in the environment before running this script." >&2
+        exit 1
+    fi
+    JWT_SECRET="$(openssl rand -hex 32)"
+    echo "JWT_SECRET=$JWT_SECRET" >> "$REPO_DIR/.env"
+    echo "Generated JWT_SECRET and saved to .env — keep this file safe."
 fi
 
 # ── Ensure persistent Docker volumes exist ────────────────────────────────────

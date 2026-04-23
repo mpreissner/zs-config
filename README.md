@@ -7,6 +7,55 @@ Interactive TUI for Zscaler OneAPI — manage ZPA, ZIA, ZCC, ZDX, and ZIdentity 
 
 ---
 
+## Web UI — v2.0.0 Alpha
+
+> **This is a pre-release.** The web UI is under active development on the `feature/web-frontend` branch. Run it locally or on a home lab server — not in production.
+
+zs-config v2.0.0 ships a browser-based management UI alongside the existing TUI. It runs as a self-contained Docker container with a FastAPI backend and a React + Tailwind frontend.
+
+### Deploy
+
+Requires Docker with Compose v2. Clone the repo, check out the branch, and run the deploy script — it handles everything including secret generation on first run.
+
+```bash
+git clone https://github.com/mpreissner/zs-config.git
+cd zs-config
+git checkout feature/web-frontend
+./deploy.sh
+```
+
+The script will:
+- Generate a `JWT_SECRET` and save it to `.env` if one does not already exist
+- Create the persistent Docker volumes for the database and plugins
+- Build the image and start the container
+- Run a health check and print the URL when ready
+
+On first boot the container seeds an `admin` account with a random temporary password and prints it to the container log:
+
+```
+docker compose logs | grep "Initial password"
+```
+
+You will be prompted to set a permanent password on first login.
+
+**Subsequent deploys** (pull latest and rebuild):
+
+```bash
+./deploy.sh
+```
+
+### Migrating from TUI v1.1.0
+
+If you have an existing TUI install, you can import your database and encryption key via **Admin → Settings → Import Database** in the web UI. Use the export script to package both files from your local install:
+
+```bash
+./scripts/export_tui_db.sh ~/zs-config-export
+```
+
+Then upload `zscaler.db` and `secret.key` from that directory. All schema migrations are applied automatically on import.
+
+---
+
 ## What's New — v1.1.0
 
 - **ZIA — Apply Snapshot from Another Tenant** — push any saved ZIA snapshot from another configured tenant directly to the active tenant, using the same wipe-or-delta workflow as a standard restore. No file export or import required; snapshots are read directly from the local database.
