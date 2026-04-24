@@ -534,11 +534,39 @@ export interface TenancyRestrictionProfile {
   id?: number;
   name?: string;
   description?: string;
+  app_type?: string;
+  item_type_primary?: string;
+  item_data_primary?: string;
+  item_type_secondary?: string;
+  item_data_secondary?: string;
+  item_value?: string;
+  restrict_personal_o365_domains?: boolean;
+  allow_google_consumers?: boolean;
+  ms_login_services_trv2?: boolean;
+  allow_google_visitors?: boolean;
+  allow_gcp_cloud_storage_read?: boolean;
+  [key: string]: unknown;
+}
+
+export interface CloudAppInstance {
+  instance_id?: number;
+  instance_name?: string;
+  instance_type?: string;
+  modified_at?: string;
+  instance_identifiers?: Array<{
+    instance_id?: number;
+    instance_identifier?: string;
+    instance_identifier_name?: string;
+    identifier_type?: string;
+  }>;
   [key: string]: unknown;
 }
 
 export const fetchCloudAppPolicies = (tenant: string): Promise<CloudAppPolicy[]> =>
   apiFetch<CloudAppPolicy[]>(`${base(tenant)}/cloud-app-policies`);
+
+export const fetchCloudAppInstances = (tenant: string): Promise<CloudAppInstance[]> =>
+  apiFetch<CloudAppInstance[]>(`${base(tenant)}/cloud-app-instances`);
 
 export const fetchCloudAppControlRules = (tenant: string): Promise<CloudAppControlRule[]> =>
   apiFetch<CloudAppControlRule[]>(`${base(tenant)}/cloud-app-control-rules`);

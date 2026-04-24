@@ -689,6 +689,10 @@ def list_cloud_app_control_rules(tenant: str, user: AuthUser = Depends(require_a
 def list_tenancy_restriction_profiles(tenant: str, user: AuthUser = Depends(require_auth)):
     return _get_service(tenant, user).list_tenancy_restriction_profiles()
 
+@router.get("/{tenant}/cloud-app-instances")
+def list_cloud_app_instances(tenant: str, user: AuthUser = Depends(require_auth)):
+    return _get_service(tenant, user).list_cloud_app_instances()
+
 @router.patch("/{tenant}/cloud-app-control-rules/{rule_type}/{rule_id}/state")
 def patch_cloud_app_rule_state(
     tenant: str,

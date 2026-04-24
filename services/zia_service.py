@@ -1278,3 +1278,16 @@ class ZIAService:
             details={"count": len(result), "source": "api"},
         )
         return result
+
+    def list_cloud_app_instances(self) -> List[Dict]:
+        rows = self._list_from_db("cloud_app_instance")
+        if rows:
+            rows.sort(key=lambda r: (r.get("instance_type") or "", r.get("instance_name") or ""))
+            return rows
+        result = self.client.list_cloud_app_instances()
+        audit_service.log(
+            product="ZIA", operation="list_cloud_app_instances", action="READ", status="SUCCESS",
+            tenant_id=self.tenant_id, resource_type="cloud_app_instance",
+            details={"count": len(result), "source": "api"},
+        )
+        return result

@@ -49,7 +49,7 @@ import {
   fetchDlpWebRules,
   patchDlpWebRuleState,
   fetchCloudAppSettings,
-  fetchCloudAppPolicies,
+  fetchCloudAppInstances,
   fetchCloudAppControlRules,
   patchCloudAppRuleState,
   fetchTenancyRestrictionProfiles,
@@ -69,7 +69,7 @@ import {
   DlpEngine,
   DlpDictionary,
   DlpWebRule,
-  CloudAppPolicy,
+  CloudAppInstance,
   CloudAppControlRule,
   TenancyRestrictionProfile,
   ConfigSnapshot,
@@ -1623,10 +1623,13 @@ function DlpWebRulesSection({ tenantName, isOpen }: { tenantName: string; isOpen
   );
 }
 
+const CLOUD_APP_INSTANCE_SKIP = new Set(["instance_id", "instance_name", "instance_type"]);
+
 function CloudAppInstancesSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const [expandedId, setExpandedId] = useState<number | null>(null);
   const { data, isLoading, error } = useQuery({
-    queryKey: ["zia-cloud-app-policies", tenantName],
-    queryFn: () => fetchCloudAppPolicies(tenantName),
+    queryKey: ["zia-cloud-app-instances", tenantName],
+    queryFn: () => fetchCloudAppInstances(tenantName),
     enabled: isOpen,
   });
   if (isLoading) return <LoadingSpinner />;
@@ -1636,25 +1639,92 @@ function CloudAppInstancesSection({ tenantName, isOpen }: { tenantName: string; 
       <table className="min-w-full divide-y divide-gray-200 text-sm">
         <thead className="bg-gray-50">
           <tr>
-            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">App</th>
-            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Class</th>
-            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Policy</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100 bg-white">
-          {(data ?? []).map((p: CloudAppPolicy, i: number) => (
-            <tr key={p.app ?? i}>
-              <td className="px-3 py-2 text-gray-900">{p.app_name ?? p.app ?? "-"}</td>
-              <td className="px-3 py-2 text-gray-500 text-xs">{p.app_class ?? "-"}</td>
-              <td className="px-3 py-2 text-gray-600">{p.policy ?? "-"}</td>
-            </tr>
-          ))}
+          {(data ?? []).map((inst: CloudAppInstance, i: number) => {
+            const key = inst.instance_id ?? i;
+            const expanded = expandedId === key;
+            return (
+              <>
+                <tr key={key} className="cursor-pointer hover:bg-gray-50" onClick={() => setExpandedId(expanded ? null : (key as number))}>
+                  <td className="px-3 py-2 text-gray-900 flex items-center gap-1.5">
+                    <span className={`transition-transform ${expanded ? "rotate-90" : ""}`}>{CHEVRON}</span>
+                    {inst.instance_name ?? "-"}
+                  </td>
+                  <td className="px-3 py-2 text-gray-500 text-xs">{inst.instance_type ?? "-"}</td>
+                </tr>
+                {expanded && (
+                  <tr key={`${key}-detail`}>
+                    <td colSpan={2} className="bg-gray-50 px-4 py-3">
+                      <RuleDetailGrid
+                        rule={inst as unknown as Record<string, unknown>}
+                        skipKeys={CLOUD_APP_INSTANCE_SKIP}
+                      />
+                    </td>
+                  </tr>
+                )}
+              </>
+            );
+          })}
           {(data ?? []).length === 0 && (
-            <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">No cloud app instances</td></tr>
+            <tr><td colSpan={2} className="px-3 py-4 text-center text-gray-400">No cloud app instances</td></tr>
           )}
         </tbody>
       </table>
     </div>
+  );
+}
+
+const TENANCY_APP_TYPE_LABELS: Record<string, string> = {
+  YOUTUBE:                 "YouTube",
+  GOOGLE:                  "Google",
+  MSLOGINSERVICES:         "Microsoft Login Services",
+  SLACK:                   "Slack",
+  BOX:                     "Box",
+  FACEBOOK:                "Facebook",
+  AWS:                     "AWS",
+  DROPBOX:                 "Dropbox",
+  WEBEX_LOGIN_SERVICES:    "Webex Login Services",
+  AMAZON_S3:               "Amazon S3",
+  ZOHO_LOGIN_SERVICES:     "Zoho Login Services",
+  GOOGLE_CLOUD_PLATFORM:   "Google Cloud Platform",
+  ZOOM:                    "Zoom",
+  IBMSMARTCLOUD:           "IBM Smart Cloud",
+  GITHUB:                  "GitHub",
+  CHATGPT_AI:              "ChatGPT / AI",
+};
+
+const TENANCY_SKIP = new Set(["id", "name", "app_type", "description"]);
+
+function TenancyRestrictionRow({ profile }: { profile: TenancyRestrictionProfile }) {
+  const [expanded, setExpanded] = useState(false);
+  const appLabel = profile.app_type
+    ? (TENANCY_APP_TYPE_LABELS[profile.app_type] ?? profile.app_type)
+    : "-";
+  return (
+    <>
+      <tr className="cursor-pointer hover:bg-gray-50" onClick={() => setExpanded((x) => !x)}>
+        <td className="px-3 py-2 text-gray-900 flex items-center gap-1.5">
+          <span className={`transition-transform ${expanded ? "rotate-90" : ""}`}>{CHEVRON}</span>
+          {profile.name ?? "-"}
+        </td>
+        <td className="px-3 py-2 text-gray-600">{appLabel}</td>
+        <td className="px-3 py-2 text-gray-500 text-xs">{profile.description ?? "-"}</td>
+      </tr>
+      {expanded && (
+        <tr>
+          <td colSpan={3} className="bg-gray-50 px-4 py-3">
+            <RuleDetailGrid
+              rule={profile as unknown as Record<string, unknown>}
+              skipKeys={TENANCY_SKIP}
+            />
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 
@@ -1672,18 +1742,16 @@ function TenancyRestrictionsSection({ tenantName, isOpen }: { tenantName: string
         <thead className="bg-gray-50">
           <tr>
             <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Cloud Application</th>
             <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100 bg-white">
           {(data ?? []).map((p: TenancyRestrictionProfile, i: number) => (
-            <tr key={p.id ?? i}>
-              <td className="px-3 py-2 text-gray-900">{p.name ?? "-"}</td>
-              <td className="px-3 py-2 text-gray-500 text-xs">{p.description ?? "-"}</td>
-            </tr>
+            <TenancyRestrictionRow key={p.id ?? i} profile={p} />
           ))}
           {(data ?? []).length === 0 && (
-            <tr><td colSpan={2} className="px-3 py-4 text-center text-gray-400">No tenancy restriction profiles</td></tr>
+            <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">No tenancy restriction profiles</td></tr>
           )}
         </tbody>
       </table>

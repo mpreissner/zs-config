@@ -742,6 +742,13 @@ class ZIAClient:
         result, resp, err = self._sdk.zia.cloud_applications.list_cloud_app_ssl_policy(query_params=params)
         return _to_dicts(_unwrap(result, resp, err))
 
+    def list_cloud_app_instances(self) -> List[Dict]:
+        if self._govcloud:
+            data = self.zia_get("/zia/api/v1/cloudApplicationInstances")
+            return data if isinstance(data, list) else []
+        result, resp, err = self._sdk.zia.cloud_app_instances.list_cloud_app_instances()
+        return _to_dicts(_unwrap(result, resp, err))
+
     # ------------------------------------------------------------------
     # Cloud App Control
     # ------------------------------------------------------------------

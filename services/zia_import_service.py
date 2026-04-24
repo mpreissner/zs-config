@@ -81,6 +81,8 @@ RESOURCE_DEFINITIONS: List[ResourceDef] = [
                 id_field="id", name_field="name"),
     ResourceDef("tenancy_restriction_profile",   "list_tenancy_restriction_profiles"),
     ResourceDef("sandbox_rule",                  "list_sandbox_rules"),
+    ResourceDef("cloud_app_instance",            "list_cloud_app_instances",
+                id_field="instance_id", name_field="instance_name"),
 ]
 
 
