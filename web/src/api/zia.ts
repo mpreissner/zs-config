@@ -522,7 +522,7 @@ export interface CloudAppPolicy {
 export interface CloudAppControlRule {
   id?: number;
   name?: string;
-  rule_type?: string;
+  type?: string;
   order?: number;
   state?: string;
   action?: string;
@@ -545,6 +545,17 @@ export const fetchCloudAppControlRules = (tenant: string): Promise<CloudAppContr
 
 export const fetchTenancyRestrictionProfiles = (tenant: string): Promise<TenancyRestrictionProfile[]> =>
   apiFetch<TenancyRestrictionProfile[]>(`${base(tenant)}/tenancy-restriction-profiles`);
+
+export const patchCloudAppRuleState = (
+  tenant: string,
+  ruleType: string,
+  ruleId: number,
+  state: string,
+): Promise<CloudAppControlRule> =>
+  apiFetch<CloudAppControlRule>(
+    `${base(tenant)}/cloud-app-control-rules/${encodeURIComponent(ruleType)}/${ruleId}/state`,
+    { method: "PATCH", body: JSON.stringify({ state }) },
+  );
 
 // ── Snapshots ─────────────────────────────────────────────────────────────────
 

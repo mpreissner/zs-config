@@ -1255,6 +1255,18 @@ class ZIAService:
         )
         return result
 
+    def toggle_cloud_app_rule(self, rule_type: str, rule_id: str, state: str) -> Dict:
+        rule = self.client.get_cloud_app_rule(rule_type, rule_id)
+        rule["state"] = state
+        self.client.update_cloud_app_rule(rule_type, rule_id, _prepare_rule_for_update(rule))
+        audit_service.log(
+            product="ZIA", operation="toggle_cloud_app_rule", action="UPDATE", status="SUCCESS",
+            tenant_id=self.tenant_id, resource_type="cloud_app_control_rule",
+            resource_id=rule_id, details={"state": state, "rule_type": rule_type},
+        )
+        self._upsert_one("cloud_app_control_rule", rule_id, rule)
+        return rule
+
     def list_tenancy_restriction_profiles(self) -> List[Dict]:
         rows = self._list_from_db("tenancy_restriction_profile")
         if rows:

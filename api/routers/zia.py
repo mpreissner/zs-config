@@ -689,6 +689,19 @@ def list_cloud_app_control_rules(tenant: str, user: AuthUser = Depends(require_a
 def list_tenancy_restriction_profiles(tenant: str, user: AuthUser = Depends(require_auth)):
     return _get_service(tenant, user).list_tenancy_restriction_profiles()
 
+@router.patch("/{tenant}/cloud-app-control-rules/{rule_type}/{rule_id}/state")
+def patch_cloud_app_rule_state(
+    tenant: str,
+    rule_type: str,
+    rule_id: str,
+    body: RuleStateRequest,
+    user: AuthUser = Depends(require_auth),
+):
+    try:
+        return _get_service(tenant, user).toggle_cloud_app_rule(rule_type, rule_id, body.state)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 
 # ------------------------------------------------------------------
 # Config Snapshots

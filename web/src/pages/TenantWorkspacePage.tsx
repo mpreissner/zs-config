@@ -51,6 +51,7 @@ import {
   fetchCloudAppSettings,
   fetchCloudAppPolicies,
   fetchCloudAppControlRules,
+  patchCloudAppRuleState,
   fetchTenancyRestrictionProfiles,
   fetchSnapshots,
   createSnapshot,
@@ -1690,45 +1691,119 @@ function TenancyRestrictionsSection({ tenantName, isOpen }: { tenantName: string
   );
 }
 
+const CLOUD_APP_RULE_TYPE_LABELS: Record<string, string> = {
+  AI_ML:                    "AI & ML Applications",
+  DNS_OVER_HTTPS:           "DNS over HTTPS Services",
+  ENTERPRISE_COLLABORATION: "Collaboration & Online Meetings",
+  BUSINESS_PRODUCTIVITY:    "Productivity & CRM Tools",
+  FILE_SHARE:               "File Sharing",
+  HOSTING_PROVIDER:         "Hosting Providers",
+  INSTANT_MESSAGING:        "Instant Messaging",
+  IT_SERVICES:              "IT Services",
+  SOCIAL_NETWORKING:        "Social Networking",
+  STREAMING_MEDIA:          "Streaming Media",
+  WEBMAIL:                  "Webmail",
+  CONSUMER:                 "Consumer",
+  FINANCE:                  "Finance",
+  HEALTH_CARE:              "Health Care",
+  HUMAN_RESOURCES:          "Human Resources",
+  LEGAL:                    "Legal",
+  SALES_AND_MARKETING:      "Sales & Marketing",
+  SYSTEM_AND_DEVELOPMENT:   "System & Development",
+};
+
 function CloudAppRulesSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const qc = useQueryClient();
+  const [toggleErr, setToggleErr] = useState<string | null>(null);
+
   const { data, isLoading, error } = useQuery({
     queryKey: ["zia-cloud-app-control-rules", tenantName],
     queryFn: () => fetchCloudAppControlRules(tenantName),
     enabled: isOpen,
   });
+
+  const toggleMut = useMutation({
+    mutationFn: ({ ruleType, id, state }: { ruleType: string; id: number; state: string }) =>
+      patchCloudAppRuleState(tenantName, ruleType, id, state),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["zia-cloud-app-control-rules", tenantName] });
+    },
+    onError: (e: Error) => setToggleErr(e.message),
+  });
+
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+
+  const rules = data ?? [];
+
+  // Group by type, preserving the canonical order from CLOUD_APP_RULE_TYPE_LABELS
+  const grouped = new Map<string, CloudAppControlRule[]>();
+  for (const r of rules) {
+    const t = (r.type as string) ?? "UNKNOWN";
+    if (!grouped.has(t)) grouped.set(t, []);
+    grouped.get(t)!.push(r);
+  }
+  // Sort each group by order
+  for (const group of grouped.values()) {
+    group.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  }
+  // Render in canonical label order, then any unknowns
+  const canonicalTypes = Object.keys(CLOUD_APP_RULE_TYPE_LABELS);
+  const orderedTypes = [
+    ...canonicalTypes.filter((t) => grouped.has(t)),
+    ...[...grouped.keys()].filter((t) => !canonicalTypes.includes(t)),
+  ];
+
+  if (rules.length === 0) {
+    return <p className="text-sm text-gray-400 px-3 py-4 text-center">No cloud app control rules</p>;
+  }
+
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200 text-sm">
-        <thead className="bg-gray-50">
-          <tr>
-            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">#</th>
-            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
-            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">State</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100 bg-white">
-          {(data ?? []).map((r: CloudAppControlRule, i: number) => (
-            <tr key={r.id ?? i}>
-              <td className="px-3 py-2 text-gray-400 text-xs">{r.order ?? "-"}</td>
-              <td className="px-3 py-2 text-gray-900">{r.name ?? "-"}</td>
-              <td className="px-3 py-2 text-gray-500 text-xs">{r.rule_type ?? "-"}</td>
-              <td className="px-3 py-2 text-gray-600">{r.action ?? "-"}</td>
-              <td className="px-3 py-2">
-                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${r.state === "ENABLED" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-500"}`}>
-                  {r.state ?? "-"}
-                </span>
-              </td>
-            </tr>
-          ))}
-          {(data ?? []).length === 0 && (
-            <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400">No cloud app control rules</td></tr>
-          )}
-        </tbody>
-      </table>
+    <div className="space-y-2">
+      {toggleErr && (
+        <div className="px-3 py-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded">
+          Toggle failed: {toggleErr}
+          <button className="ml-2 underline" onClick={() => setToggleErr(null)}>Dismiss</button>
+        </div>
+      )}
+      {orderedTypes.map((ruleType) => {
+        const typeRules = grouped.get(ruleType)!;
+        const label = CLOUD_APP_RULE_TYPE_LABELS[ruleType] ?? ruleType.replace(/_/g, " ");
+        return (
+          <div key={ruleType}>
+            <div className="px-3 py-1.5 bg-gray-100 border-y border-gray-200 text-xs font-semibold text-gray-600 uppercase tracking-wide">
+              {label}
+            </div>
+            <table className="min-w-full divide-y divide-gray-100 text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">#</th>
+                  <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                  <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                  <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">State</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50 bg-white">
+                {typeRules.map((r) => (
+                  <tr key={r.id}>
+                    <td className="px-3 py-1.5 text-gray-400 text-xs">{r.order ?? "-"}</td>
+                    <td className="px-3 py-1.5 text-gray-900">{r.name ?? "-"}</td>
+                    <td className="px-3 py-1.5 text-gray-600 text-xs">{r.action ?? "-"}</td>
+                    <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
+                      <StateToggle
+                        ruleId={r.id!}
+                        state={r.state ?? "DISABLED"}
+                        pending={toggleMut.isPending}
+                        onToggle={(_id, next) => toggleMut.mutate({ ruleType, id: r.id!, state: next })}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
     </div>
   );
 }
