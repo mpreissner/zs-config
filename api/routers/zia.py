@@ -397,6 +397,9 @@ def sync_firewall_rules_csv(
         classification = classify_sync(t.id, rows)
         result = sync_rules(client, t.id, classification)
 
+        from services.zia_service import ZIAService
+        ZIAService(client, tenant_id=t.id)._reimport(["firewall_rule"])
+
         return {
             "created": result.created,
             "updated": result.updated,

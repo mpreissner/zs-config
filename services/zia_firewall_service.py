@@ -424,6 +424,17 @@ def classify_sync(tenant_id: int, rows: List[Dict]) -> SyncClassification:
 
     for zia_id, rec in existing_by_id.items():
         if zia_id not in seen_ids:
+            cfg = rec["raw_config"]
+            # Skip rules that were never exported: predefined/default rules and
+            # rules with non-positive order (the same filter applied on export).
+            if cfg.get("predefined") or cfg.get("default_rule") or cfg.get("defaultRule"):
+                continue
+            order_val = cfg.get("order") or cfg.get("rank") or 0
+            try:
+                if int(str(order_val)) <= 0:
+                    continue
+            except (ValueError, TypeError):
+                continue
             classification.to_delete.append({"zia_id": zia_id, "name": rec["name"]})
 
     existing_id_order = [r["zia_id"] for r in existing_ordered]
