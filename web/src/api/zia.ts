@@ -265,6 +265,12 @@ export interface ForwardingRule {
 export const fetchForwardingRules = (tenant: string): Promise<ForwardingRule[]> =>
   apiFetch<ForwardingRule[]>(`${base(tenant)}/forwarding-rules`);
 
+export const patchForwardingRuleState = (tenant: string, ruleId: number, state: string): Promise<ForwardingRule> =>
+  apiFetch<ForwardingRule>(`${base(tenant)}/forwarding-rules/${ruleId}/state`, {
+    method: "PATCH",
+    body: JSON.stringify({ state }),
+  });
+
 // ── DLP ───────────────────────────────────────────────────────────────────────
 
 export interface DlpEngine {
@@ -272,6 +278,8 @@ export interface DlpEngine {
   name: string;
   description?: string;
   predefinedEngine?: boolean;
+  engine_expression?: string;
+  custom_dlp_engine?: boolean;
 }
 
 export interface DlpDictionary {
@@ -279,6 +287,11 @@ export interface DlpDictionary {
   name: string;
   type?: string;
   description?: string;
+  confidence_threshold?: string;
+  confidenceThreshold?: string;
+  threshold_allowed?: boolean;
+  thresholdAllowed?: boolean;
+  predefined_phrases?: string[];
 }
 
 export interface DlpWebRule {
@@ -297,6 +310,22 @@ export const fetchDlpDictionaries = (tenant: string): Promise<DlpDictionary[]> =
 
 export const fetchDlpWebRules = (tenant: string): Promise<DlpWebRule[]> =>
   apiFetch<DlpWebRule[]>(`${base(tenant)}/dlp-web-rules`);
+
+export const patchDlpDictionaryConfidence = (
+  tenant: string,
+  dictId: number,
+  confidenceThreshold: string
+): Promise<DlpDictionary> =>
+  apiFetch<DlpDictionary>(`${base(tenant)}/dlp-dictionaries/${dictId}/confidence`, {
+    method: "PATCH",
+    body: JSON.stringify({ confidenceThreshold }),
+  });
+
+export const patchDlpWebRuleState = (tenant: string, ruleId: number, state: string): Promise<DlpWebRule> =>
+  apiFetch<DlpWebRule>(`${base(tenant)}/dlp-web-rules/${ruleId}/state`, {
+    method: "PATCH",
+    body: JSON.stringify({ state }),
+  });
 
 // ── Cloud App Controls ────────────────────────────────────────────────────────
 

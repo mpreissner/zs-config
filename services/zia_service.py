@@ -17,6 +17,116 @@ from lib.zia_client import ZIAClient
 from services import audit_service
 
 
+def _rule_order_key(n):
+    """Positive integers ascending first, then negative integers descending.
+    e.g. 1, 2, 3, ..., -1, -2, -3, ...
+    """
+    return (0, n) if n >= 0 else (1, -n)
+
+
+def _normalize_ssl_rules(rules: List[Dict]) -> None:
+    """Flatten the action field in-place: {type: "INSPECT"} → "INSPECT"."""
+    for r in rules:
+        action = r.get("action")
+        if isinstance(action, dict):
+            r["action"] = action.get("type") or action.get("name") or str(action)
+
+
+_CAMEL_RO_FIELDS = frozenset({
+    "lastModifiedTime", "lastModifiedBy", "createdBy", "creationTime",
+    "accessControl", "predefined", "defaultRule", "defaultDnsRuleNameUsed",
+})
+
+_SNAKE_RO_FIELDS = frozenset({
+    "last_modified_time", "last_modified_by", "created_by", "creation_time",
+    "access_control", "predefined", "default_rule",
+})
+
+
+def _prepare_rule_for_update(config: Dict) -> Dict:
+    """Strip read-only and empty-collection fields before a PUT to the ZIA API.
+
+    Zscaler rejects: (a) server-set read-only fields (both camelCase from direct
+    API and snake_case from the SDK), (b) empty arrays.
+    """
+    return {
+        k: v for k, v in config.items()
+        if k not in _CAMEL_RO_FIELDS
+        and k not in _SNAKE_RO_FIELDS
+        and v is not None
+        and not (isinstance(v, list) and len(v) == 0)
+    }
+
+
+# Forwarding rule list-ref fields that take [{id, name}] stubs (no extensions).
+_FORWARDING_REF_FIELDS = frozenset({
+    "locations", "location_groups", "groups", "departments", "users",
+    "devices", "device_groups", "nw_services", "nw_service_groups",
+    "nw_applications", "nw_application_groups", "src_ip_groups", "src_ipv6_groups",
+    "dest_ip_groups", "dest_ipv6_groups", "ec_groups", "time_windows", "labels",
+})
+
+
+def _prepare_forwarding_rule_for_update(config: Dict) -> Dict:
+    """Normalise a forwarding rule payload for PUT.
+
+    Verified empirically against the ZIA API:
+    - Strip snake_case read-only fields and empty arrays.
+    - zpa_app_segments: keep {id, name, external_id}, drop extensions.
+    - zpa_gateway: keep {id, name}, drop extensions/external_id.
+    - Other ref-list fields: reduce to [{id, name}] stubs.
+    """
+    out = {
+        k: v for k, v in config.items()
+        if k not in _SNAKE_RO_FIELDS
+        and k not in _CAMEL_RO_FIELDS
+        and v is not None
+        and not (isinstance(v, list) and len(v) == 0)
+    }
+
+    # zpa_app_segments: {id, name, external_id} — extensions causes rejection
+    if "zpa_app_segments" in out and isinstance(out["zpa_app_segments"], list):
+        out["zpa_app_segments"] = [
+            {k2: v2 for k2, v2 in seg.items() if k2 in ("id", "name", "external_id")}
+            for seg in out["zpa_app_segments"]
+            if isinstance(seg, dict) and "id" in seg
+        ]
+
+    # zpa_application_segments / zpa_application_segment_groups: same shape
+    for field in ("zpa_application_segments", "zpa_application_segment_groups"):
+        if field in out and isinstance(out[field], list):
+            out[field] = [
+                {k2: v2 for k2, v2 in seg.items() if k2 in ("id", "name", "external_id")}
+                for seg in out[field]
+                if isinstance(seg, dict) and "id" in seg
+            ]
+            if not out[field]:
+                del out[field]
+
+    # zpa_gateway: {id, name} only
+    if out.get("zpa_gateway") and isinstance(out["zpa_gateway"], dict):
+        gw = out["zpa_gateway"]
+        if gw.get("id"):
+            out["zpa_gateway"] = {k2: v2 for k2, v2 in gw.items() if k2 in ("id", "name")}
+        else:
+            del out["zpa_gateway"]
+
+    # Standard ref-list fields: [{id, name}]
+    for field in _FORWARDING_REF_FIELDS:
+        if field in out and isinstance(out[field], list):
+            reduced = [
+                {k2: v2 for k2, v2 in item.items() if k2 in ("id", "name")}
+                for item in out[field]
+                if isinstance(item, dict) and "id" in item
+            ]
+            if reduced:
+                out[field] = reduced
+            else:
+                del out[field]
+
+    return out
+
+
 class ZIAService:
     def __init__(self, client: ZIAClient, tenant_id: Optional[int] = None):
         self.client = client
@@ -529,7 +639,7 @@ class ZIAService:
     def list_firewall_rules(self) -> List[Dict]:
         rows = self._list_from_db("firewall_rule")
         if rows:
-            rows.sort(key=lambda r: r.get("order") or 0)
+            rows.sort(key=lambda r: _rule_order_key(r.get("order") or 0))
             audit_service.log(
                 product="ZIA", operation="list_firewall_rules", action="READ", status="SUCCESS",
                 tenant_id=self.tenant_id, resource_type="firewall_rule",
@@ -547,7 +657,7 @@ class ZIAService:
     def toggle_firewall_rule(self, rule_id: str, state: str) -> Dict:
         rule = self.client.get_firewall_rule(rule_id)
         rule["state"] = state
-        self.client.update_firewall_rule(rule_id, rule)
+        self.client.update_firewall_rule(rule_id, _prepare_rule_for_update(rule))
         audit_service.log(
             product="ZIA", operation="toggle_firewall_rule", action="UPDATE", status="SUCCESS",
             tenant_id=self.tenant_id, resource_type="firewall_rule",
@@ -563,7 +673,8 @@ class ZIAService:
     def list_ssl_inspection_rules(self) -> List[Dict]:
         rows = self._list_from_db("ssl_inspection_rule")
         if rows:
-            rows.sort(key=lambda r: r.get("order") or 0)
+            rows.sort(key=lambda r: _rule_order_key(r.get("order") or 0))
+            _normalize_ssl_rules(rows)
             audit_service.log(
                 product="ZIA", operation="list_ssl_inspection_rules", action="READ", status="SUCCESS",
                 tenant_id=self.tenant_id, resource_type="ssl_inspection_rule",
@@ -571,6 +682,8 @@ class ZIAService:
             )
             return rows
         result = self.client.list_ssl_inspection_rules()
+        result.sort(key=lambda r: _rule_order_key(r.get("order") or 0))
+        _normalize_ssl_rules(result)
         audit_service.log(
             product="ZIA", operation="list_ssl_inspection_rules", action="READ", status="SUCCESS",
             tenant_id=self.tenant_id, resource_type="ssl_inspection_rule",
@@ -581,7 +694,7 @@ class ZIAService:
     def toggle_ssl_inspection_rule(self, rule_id: str, state: str) -> Dict:
         rule = self.client.get_ssl_inspection_rule(rule_id)
         rule["state"] = state
-        self.client.update_ssl_inspection_rule(rule_id, rule)
+        self.client.update_ssl_inspection_rule(rule_id, _prepare_rule_for_update(rule))
         audit_service.log(
             product="ZIA", operation="toggle_ssl_inspection_rule", action="UPDATE", status="SUCCESS",
             tenant_id=self.tenant_id, resource_type="ssl_inspection_rule",
@@ -597,6 +710,7 @@ class ZIAService:
     def list_forwarding_rules(self) -> List[Dict]:
         rows = self._list_from_db("forwarding_rule")
         if rows:
+            rows.sort(key=lambda r: _rule_order_key(r.get("order") or 0))
             audit_service.log(
                 product="ZIA", operation="list_forwarding_rules", action="READ", status="SUCCESS",
                 tenant_id=self.tenant_id, resource_type="forwarding_rule",
@@ -604,12 +718,25 @@ class ZIAService:
             )
             return rows
         result = self.client.list_forwarding_rules()
+        result.sort(key=lambda r: _rule_order_key(r.get("order") or 0))
         audit_service.log(
             product="ZIA", operation="list_forwarding_rules", action="READ", status="SUCCESS",
             tenant_id=self.tenant_id, resource_type="forwarding_rule",
             details={"count": len(result), "source": "api"},
         )
         return result
+
+    def toggle_forwarding_rule(self, rule_id: str, state: str) -> Dict:
+        rule = self.client.get_forwarding_rule(rule_id)
+        rule["state"] = state
+        self.client.update_forwarding_rule(rule_id, _prepare_forwarding_rule_for_update(rule))
+        audit_service.log(
+            product="ZIA", operation="toggle_forwarding_rule", action="UPDATE", status="SUCCESS",
+            tenant_id=self.tenant_id, resource_type="forwarding_rule",
+            resource_id=rule_id, details={"state": state},
+        )
+        self._upsert_one("forwarding_rule", rule_id, rule)
+        return rule
 
     # ------------------------------------------------------------------
     # DLP
@@ -618,6 +745,7 @@ class ZIAService:
     def list_dlp_engines(self) -> List[Dict]:
         rows = self._list_from_db("dlp_engine")
         if rows:
+            rows.sort(key=lambda r: r.get("id") or 0)
             audit_service.log(
                 product="ZIA", operation="list_dlp_engines", action="READ", status="SUCCESS",
                 tenant_id=self.tenant_id, resource_type="dlp_engine",
@@ -625,6 +753,7 @@ class ZIAService:
             )
             return rows
         result = self.client.list_dlp_engines()
+        result.sort(key=lambda r: r.get("id") or 0)
         audit_service.log(
             product="ZIA", operation="list_dlp_engines", action="READ", status="SUCCESS",
             tenant_id=self.tenant_id, resource_type="dlp_engine",
@@ -635,6 +764,7 @@ class ZIAService:
     def list_dlp_dictionaries(self) -> List[Dict]:
         rows = self._list_from_db("dlp_dictionary")
         if rows:
+            rows.sort(key=lambda r: r.get("id") or 0)
             audit_service.log(
                 product="ZIA", operation="list_dlp_dictionaries", action="READ", status="SUCCESS",
                 tenant_id=self.tenant_id, resource_type="dlp_dictionary",
@@ -642,6 +772,7 @@ class ZIAService:
             )
             return rows
         result = self.client.list_dlp_dictionaries()
+        result.sort(key=lambda r: r.get("id") or 0)
         audit_service.log(
             product="ZIA", operation="list_dlp_dictionaries", action="READ", status="SUCCESS",
             tenant_id=self.tenant_id, resource_type="dlp_dictionary",
@@ -649,9 +780,32 @@ class ZIAService:
         )
         return result
 
+    def update_dlp_dictionary_confidence(self, dict_id: str, confidence_threshold: str) -> Dict:
+        result = self.client.update_dlp_dictionary_confidence(dict_id, confidence_threshold)
+        audit_service.log(
+            product="ZIA", operation="update_dlp_dictionary_confidence", action="UPDATE", status="SUCCESS",
+            tenant_id=self.tenant_id, resource_type="dlp_dictionary",
+            resource_id=dict_id, details={"confidence_threshold": confidence_threshold},
+        )
+        self._upsert_one("dlp_dictionary", dict_id, result)
+        return result
+
+    def toggle_dlp_web_rule(self, rule_id: str, state: str) -> Dict:
+        rule = self.client.get_dlp_web_rule(rule_id)
+        rule["state"] = state
+        self.client.update_dlp_web_rule(rule_id, _prepare_rule_for_update(rule))
+        audit_service.log(
+            product="ZIA", operation="toggle_dlp_web_rule", action="UPDATE", status="SUCCESS",
+            tenant_id=self.tenant_id, resource_type="dlp_web_rule",
+            resource_id=rule_id, details={"state": state},
+        )
+        self._upsert_one("dlp_web_rule", rule_id, rule)
+        return rule
+
     def list_dlp_web_rules(self) -> List[Dict]:
         rows = self._list_from_db("dlp_web_rule")
         if rows:
+            rows.sort(key=lambda r: _rule_order_key(r.get("order") or 0))
             audit_service.log(
                 product="ZIA", operation="list_dlp_web_rules", action="READ", status="SUCCESS",
                 tenant_id=self.tenant_id, resource_type="dlp_web_rule",
@@ -659,6 +813,7 @@ class ZIAService:
             )
             return rows
         result = self.client.list_dlp_web_rules()
+        result.sort(key=lambda r: _rule_order_key(r.get("order") or 0))
         audit_service.log(
             product="ZIA", operation="list_dlp_web_rules", action="READ", status="SUCCESS",
             tenant_id=self.tenant_id, resource_type="dlp_web_rule",

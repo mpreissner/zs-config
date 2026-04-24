@@ -39,9 +39,12 @@ import {
   fetchSslInspectionRules,
   patchSslRuleState,
   fetchForwardingRules,
+  patchForwardingRuleState,
   fetchDlpEngines,
   fetchDlpDictionaries,
+  patchDlpDictionaryConfidence,
   fetchDlpWebRules,
+  patchDlpWebRuleState,
   fetchCloudAppSettings,
   fetchSnapshots,
   createSnapshot,
@@ -143,13 +146,14 @@ function ValidationBadge({ tenant }: { tenant: Tenant }) {
 
 // ── ZIA sections ──────────────────────────────────────────────────────────────
 
-function ActivationSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+function ActivationSection({ tenantName }: { tenantName: string; isOpen: boolean }) {
   const qc = useQueryClient();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["zia-activation", tenantName],
     queryFn: () => fetchActivationStatus(tenantName),
-    enabled: isOpen,
+    staleTime: 60_000,
+    refetchInterval: 60_000,
   });
 
   const activateMut = useMutation({
@@ -556,7 +560,10 @@ function UrlFilteringRulesSection({ tenantName, isOpen }: { tenantName: string; 
   const toggleMut = useMutation({
     mutationFn: ({ id, state }: { id: number; state: string }) =>
       patchUrlFilteringRuleState(tenantName, id, state),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["zia-url-filtering-rules", tenantName] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["zia-url-filtering-rules", tenantName] });
+      qc.invalidateQueries({ queryKey: ["zia-activation", tenantName] });
+    },
   });
 
   if (isLoading) return <LoadingSpinner />;
@@ -887,8 +894,225 @@ function AllowDenySection({ tenantName, isOpen }: { tenantName: string; isOpen: 
 
 // ── Firewall / SSL / Forwarding / DLP / Cloud App / Snapshots ────────────────
 
+// Shared helper: render a detail grid from a rule's extra fields
+const CHEVRON = (
+  <svg className="w-3 h-3 text-gray-400 flex-shrink-0 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+  </svg>
+);
+
+function RuleDetailGrid({ rule, skipKeys }: { rule: Record<string, unknown>; skipKeys: Set<string> }) {
+  const fields = Object.entries(rule).filter(([k, v]) => {
+    if (skipKeys.has(k)) return false;
+    if (v === null || v === undefined) return false;
+    if (Array.isArray(v) && v.length === 0) return false;
+    return true;
+  });
+  if (fields.length === 0) return <p className="text-xs text-gray-400">No additional details.</p>;
+  return (
+    <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+      <div className="font-medium text-gray-500 uppercase tracking-wide col-span-2 mb-1">Rule Details</div>
+      {fields.map(([key, value]) => (
+        <div key={key} className="contents">
+          <div className="text-gray-500 capitalize">{key.replace(/([A-Z])/g, " $1").replace(/_/g, " ").trim()}</div>
+          <div className="text-gray-800 break-all">
+            {Array.isArray(value)
+              ? (value as unknown[]).map((v, i) => (
+                  <span key={i} className="inline-block bg-gray-100 rounded px-1 py-0.5 mr-1 mb-0.5 font-mono">
+                    {typeof v === "object" ? (String((v as Record<string, unknown>).name ?? "") || JSON.stringify(v)) : String(v)}
+                  </span>
+                ))
+              : typeof value === "object"
+              ? JSON.stringify(value)
+              : String(value)}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const DLP_ENGINE_SKIP = new Set(["id", "name", "predefinedEngine"]);
+const DLP_WEB_RULE_SKIP = new Set(["id", "name", "order", "action", "state"]);
+const FIREWALL_SKIP = new Set(["id", "name", "order", "action", "state"]);
+const SSL_SKIP = new Set(["id", "name", "order", "action", "state"]);
+const FORWARDING_SKIP = new Set(["id", "name", "order", "type", "state"]);
+
+function resolveEngineExpression(expr: string, dictMap: Map<number, string>): string {
+  return expr.replace(/D(\d+)/g, (_match, id) => {
+    const name = dictMap.get(parseInt(id));
+    return name ? `"${name}"` : `D${id}`;
+  });
+}
+
+function DlpEngineRow({ engine, dictMap }: { engine: DlpEngine; dictMap: Map<number, string> }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const resolvedEngine = { ...engine } as Record<string, unknown>;
+  if (engine.engine_expression && dictMap.size > 0) {
+    resolvedEngine.engine_expression = resolveEngineExpression(engine.engine_expression, dictMap);
+  }
+
+  return (
+    <>
+      <tr className="cursor-pointer hover:bg-gray-50" onClick={() => setExpanded((x) => !x)}>
+        <td className="px-3 py-2 font-mono text-xs text-gray-500">{engine.id}</td>
+        <td className="px-3 py-2 text-gray-900 flex items-center gap-1.5">
+          <span className={`transition-transform ${expanded ? "rotate-90" : ""}`}>{CHEVRON}</span>
+          {engine.name}
+        </td>
+        <td className="px-3 py-2 text-gray-500">{engine.predefinedEngine ?? engine.custom_dlp_engine !== undefined ? (engine.custom_dlp_engine ? "Custom" : "Built-in") : "-"}</td>
+      </tr>
+      {expanded && (
+        <tr>
+          <td colSpan={3} className="bg-gray-50 px-4 py-3">
+            <RuleDetailGrid rule={resolvedEngine} skipKeys={DLP_ENGINE_SKIP} />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function DlpWebRuleRow({
+  rule,
+  onToggle,
+  togglePending,
+}: {
+  rule: DlpWebRule;
+  onToggle: (id: number, next: string) => void;
+  togglePending: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <>
+      <tr className="cursor-pointer hover:bg-gray-50" onClick={() => setExpanded((x) => !x)}>
+        <td className="px-3 py-2 text-gray-500">{rule.order}</td>
+        <td className="px-3 py-2 text-gray-900 flex items-center gap-1.5">
+          <span className={`transition-transform ${expanded ? "rotate-90" : ""}`}>{CHEVRON}</span>
+          {rule.name}
+        </td>
+        <td className="px-3 py-2 text-gray-600">{rule.action}</td>
+        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+          <StateToggle ruleId={rule.id} state={rule.state} onToggle={(id, next) => onToggle(id as number, next)} pending={togglePending} />
+        </td>
+      </tr>
+      {expanded && (
+        <tr>
+          <td colSpan={4} className="bg-gray-50 px-4 py-3">
+            <RuleDetailGrid rule={rule as unknown as Record<string, unknown>} skipKeys={DLP_WEB_RULE_SKIP} />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function FirewallRuleRow({
+  rule,
+  onToggle,
+  togglePending,
+}: {
+  rule: FirewallRule;
+  onToggle: (id: number, next: string) => void;
+  togglePending: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <>
+      <tr className="cursor-pointer hover:bg-gray-50" onClick={() => setExpanded((x) => !x)}>
+        <td className="px-3 py-2 text-gray-500">{rule.order}</td>
+        <td className="px-3 py-2 text-gray-900 flex items-center gap-1.5">
+          <span className={`transition-transform ${expanded ? "rotate-90" : ""}`}>{CHEVRON}</span>
+          {rule.name}
+        </td>
+        <td className="px-3 py-2 text-gray-600">{rule.action}</td>
+        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+          <StateToggle ruleId={rule.id} state={rule.state} onToggle={(id, next) => onToggle(id as number, next)} pending={togglePending} />
+        </td>
+      </tr>
+      {expanded && (
+        <tr>
+          <td colSpan={4} className="bg-gray-50 px-4 py-3">
+            <RuleDetailGrid rule={rule as unknown as Record<string, unknown>} skipKeys={FIREWALL_SKIP} />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function SslRuleRow({
+  rule,
+  onToggle,
+  togglePending,
+}: {
+  rule: SslInspectionRule;
+  onToggle: (id: number, next: string) => void;
+  togglePending: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <>
+      <tr className="cursor-pointer hover:bg-gray-50" onClick={() => setExpanded((x) => !x)}>
+        <td className="px-3 py-2 text-gray-500">{rule.order}</td>
+        <td className="px-3 py-2 text-gray-900 flex items-center gap-1.5">
+          <span className={`transition-transform ${expanded ? "rotate-90" : ""}`}>{CHEVRON}</span>
+          {rule.name}
+        </td>
+        <td className="px-3 py-2 text-gray-600">{rule.action ?? "-"}</td>
+        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+          <StateToggle ruleId={rule.id} state={rule.state} onToggle={(id, next) => onToggle(id as number, next)} pending={togglePending} />
+        </td>
+      </tr>
+      {expanded && (
+        <tr>
+          <td colSpan={4} className="bg-gray-50 px-4 py-3">
+            <RuleDetailGrid rule={rule as unknown as Record<string, unknown>} skipKeys={SSL_SKIP} />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function ForwardingRuleRow({
+  rule,
+  onToggle,
+  togglePending,
+}: {
+  rule: ForwardingRule;
+  onToggle: (id: number, next: string) => void;
+  togglePending: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <>
+      <tr className="cursor-pointer hover:bg-gray-50" onClick={() => setExpanded((x) => !x)}>
+        <td className="px-3 py-2 text-gray-500">{rule.order}</td>
+        <td className="px-3 py-2 text-gray-900 flex items-center gap-1.5">
+          <span className={`transition-transform ${expanded ? "rotate-90" : ""}`}>{CHEVRON}</span>
+          {rule.name}
+        </td>
+        <td className="px-3 py-2 text-gray-500">{rule.type ?? "-"}</td>
+        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+          <StateToggle ruleId={rule.id} state={rule.state} onToggle={(id, next) => onToggle(id as number, next)} pending={togglePending} />
+        </td>
+      </tr>
+      {expanded && (
+        <tr>
+          <td colSpan={4} className="bg-gray-50 px-4 py-3">
+            <RuleDetailGrid rule={rule as unknown as Record<string, unknown>} skipKeys={FORWARDING_SKIP} />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
 function FirewallRulesSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
   const qc = useQueryClient();
+  const [toggleErr, setToggleErr] = useState<string | null>(null);
   const { data, isLoading, error } = useQuery({
     queryKey: ["zia-firewall-rules", tenantName],
     queryFn: () => fetchFirewallRules(tenantName),
@@ -898,7 +1122,11 @@ function FirewallRulesSection({ tenantName, isOpen }: { tenantName: string; isOp
   const toggleMut = useMutation({
     mutationFn: ({ id, state }: { id: number; state: string }) =>
       patchFirewallRuleState(tenantName, id, state),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["zia-firewall-rules", tenantName] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["zia-firewall-rules", tenantName] });
+      qc.invalidateQueries({ queryKey: ["zia-activation", tenantName] });
+    },
+    onError: (e: Error) => setToggleErr(e.message),
   });
 
   if (isLoading) return <LoadingSpinner />;
@@ -907,6 +1135,12 @@ function FirewallRulesSection({ tenantName, isOpen }: { tenantName: string; isOp
 
   return (
     <div className="overflow-x-auto">
+      {toggleErr && (
+        <div className="mb-2 px-3 py-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded">
+          Toggle failed: {toggleErr}
+          <button className="ml-2 underline" onClick={() => setToggleErr(null)}>Dismiss</button>
+        </div>
+      )}
       <table className="min-w-full divide-y divide-gray-200 text-sm">
         <thead className="bg-gray-50">
           <tr>
@@ -918,19 +1152,12 @@ function FirewallRulesSection({ tenantName, isOpen }: { tenantName: string; isOp
         </thead>
         <tbody className="divide-y divide-gray-100 bg-white">
           {data.map((r: FirewallRule) => (
-            <tr key={r.id}>
-              <td className="px-3 py-2 text-gray-500">{r.order}</td>
-              <td className="px-3 py-2 text-gray-900">{r.name}</td>
-              <td className="px-3 py-2 text-gray-600">{r.action}</td>
-              <td className="px-3 py-2">
-                <StateToggle
-                  ruleId={r.id}
-                  state={r.state}
-                  onToggle={(id, next) => toggleMut.mutate({ id: id as number, state: next })}
-                  pending={toggleMut.isPending}
-                />
-              </td>
-            </tr>
+            <FirewallRuleRow
+              key={r.id}
+              rule={r}
+              onToggle={(id, next) => { setToggleErr(null); toggleMut.mutate({ id, state: next }); }}
+              togglePending={toggleMut.isPending}
+            />
           ))}
           {data.length === 0 && (
             <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400">No firewall rules</td></tr>
@@ -943,6 +1170,7 @@ function FirewallRulesSection({ tenantName, isOpen }: { tenantName: string; isOp
 
 function SslInspectionSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
   const qc = useQueryClient();
+  const [toggleErr, setToggleErr] = useState<string | null>(null);
   const { data, isLoading, error } = useQuery({
     queryKey: ["zia-ssl-rules", tenantName],
     queryFn: () => fetchSslInspectionRules(tenantName),
@@ -952,7 +1180,11 @@ function SslInspectionSection({ tenantName, isOpen }: { tenantName: string; isOp
   const toggleMut = useMutation({
     mutationFn: ({ id, state }: { id: number; state: string }) =>
       patchSslRuleState(tenantName, id, state),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["zia-ssl-rules", tenantName] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["zia-ssl-rules", tenantName] });
+      qc.invalidateQueries({ queryKey: ["zia-activation", tenantName] });
+    },
+    onError: (e: Error) => setToggleErr(e.message),
   });
 
   if (isLoading) return <LoadingSpinner />;
@@ -961,6 +1193,12 @@ function SslInspectionSection({ tenantName, isOpen }: { tenantName: string; isOp
 
   return (
     <div className="overflow-x-auto">
+      {toggleErr && (
+        <div className="mb-2 px-3 py-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded">
+          Toggle failed: {toggleErr}
+          <button className="ml-2 underline" onClick={() => setToggleErr(null)}>Dismiss</button>
+        </div>
+      )}
       <table className="min-w-full divide-y divide-gray-200 text-sm">
         <thead className="bg-gray-50">
           <tr>
@@ -972,19 +1210,12 @@ function SslInspectionSection({ tenantName, isOpen }: { tenantName: string; isOp
         </thead>
         <tbody className="divide-y divide-gray-100 bg-white">
           {data.map((r: SslInspectionRule) => (
-            <tr key={r.id}>
-              <td className="px-3 py-2 text-gray-500">{r.order}</td>
-              <td className="px-3 py-2 text-gray-900">{r.name}</td>
-              <td className="px-3 py-2 text-gray-600">{r.action}</td>
-              <td className="px-3 py-2">
-                <StateToggle
-                  ruleId={r.id}
-                  state={r.state}
-                  onToggle={(id, next) => toggleMut.mutate({ id: id as number, state: next })}
-                  pending={toggleMut.isPending}
-                />
-              </td>
-            </tr>
+            <SslRuleRow
+              key={r.id}
+              rule={r}
+              onToggle={(id, next) => { setToggleErr(null); toggleMut.mutate({ id, state: next }); }}
+              togglePending={toggleMut.isPending}
+            />
           ))}
           {data.length === 0 && (
             <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400">No SSL inspection rules</td></tr>
@@ -996,10 +1227,22 @@ function SslInspectionSection({ tenantName, isOpen }: { tenantName: string; isOp
 }
 
 function ForwardingRulesSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const qc = useQueryClient();
+  const [toggleErr, setToggleErr] = useState<string | null>(null);
   const { data, isLoading, error } = useQuery({
     queryKey: ["zia-forwarding-rules", tenantName],
     queryFn: () => fetchForwardingRules(tenantName),
     enabled: isOpen,
+  });
+
+  const toggleMut = useMutation({
+    mutationFn: ({ id, state }: { id: number; state: string }) =>
+      patchForwardingRuleState(tenantName, id, state),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["zia-forwarding-rules", tenantName] });
+      qc.invalidateQueries({ queryKey: ["zia-activation", tenantName] });
+    },
+    onError: (e: Error) => setToggleErr(e.message),
   });
 
   if (isLoading) return <LoadingSpinner />;
@@ -1008,6 +1251,12 @@ function ForwardingRulesSection({ tenantName, isOpen }: { tenantName: string; is
 
   return (
     <div className="overflow-x-auto">
+      {toggleErr && (
+        <div className="mb-2 px-3 py-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded">
+          Toggle failed: {toggleErr}
+          <button className="ml-2 underline" onClick={() => setToggleErr(null)}>Dismiss</button>
+        </div>
+      )}
       <table className="min-w-full divide-y divide-gray-200 text-sm">
         <thead className="bg-gray-50">
           <tr>
@@ -1019,16 +1268,12 @@ function ForwardingRulesSection({ tenantName, isOpen }: { tenantName: string; is
         </thead>
         <tbody className="divide-y divide-gray-100 bg-white">
           {data.map((r: ForwardingRule) => (
-            <tr key={r.id}>
-              <td className="px-3 py-2 text-gray-500">{r.order}</td>
-              <td className="px-3 py-2 text-gray-900">{r.name}</td>
-              <td className="px-3 py-2 text-gray-500">{r.type ?? "-"}</td>
-              <td className="px-3 py-2">
-                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${r.state === "ENABLED" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-500"}`}>
-                  {r.state}
-                </span>
-              </td>
-            </tr>
+            <ForwardingRuleRow
+              key={r.id}
+              rule={r}
+              onToggle={(id, next) => { setToggleErr(null); toggleMut.mutate({ id, state: next }); }}
+              togglePending={toggleMut.isPending}
+            />
           ))}
           {data.length === 0 && (
             <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400">No forwarding rules</td></tr>
@@ -1046,6 +1291,21 @@ function DlpEnginesSection({ tenantName, isOpen }: { tenantName: string; isOpen:
     enabled: isOpen,
   });
 
+  // Fetch dictionaries to resolve D{id} references in engine expressions.
+  const { data: dicts } = useQuery({
+    queryKey: ["zia-dlp-dicts", tenantName],
+    queryFn: () => fetchDlpDictionaries(tenantName),
+    enabled: isOpen,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const dictMap = new Map<number, string>(
+    (dicts ?? []).map((d: DlpDictionary) => [
+      d.id,
+      d.predefined_phrases?.[0] ?? d.name,
+    ])
+  );
+
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
   if (!data) return null;
@@ -1062,11 +1322,7 @@ function DlpEnginesSection({ tenantName, isOpen }: { tenantName: string; isOpen:
         </thead>
         <tbody className="divide-y divide-gray-100 bg-white">
           {data.map((e: DlpEngine) => (
-            <tr key={e.id}>
-              <td className="px-3 py-2 font-mono text-xs text-gray-500">{e.id}</td>
-              <td className="px-3 py-2 text-gray-900">{e.name}</td>
-              <td className="px-3 py-2 text-gray-500">{e.predefinedEngine ? "Built-in" : "Custom"}</td>
-            </tr>
+            <DlpEngineRow key={e.id} engine={e} dictMap={dictMap} />
           ))}
           {data.length === 0 && (
             <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">No DLP engines</td></tr>
@@ -1077,12 +1333,28 @@ function DlpEnginesSection({ tenantName, isOpen }: { tenantName: string; isOpen:
   );
 }
 
+const CONFIDENCE_LABELS: Record<string, string> = {
+  CONFIDENCE_LEVEL_LOW: "Low",
+  CONFIDENCE_LEVEL_MEDIUM: "Medium",
+  CONFIDENCE_LEVEL_HIGH: "High",
+};
+
 function DlpDictionariesSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const qc = useQueryClient();
   const [filter, setFilter] = useState("");
+  const [confErr, setConfErr] = useState<string | null>(null);
+
   const { data, isLoading, error } = useQuery({
     queryKey: ["zia-dlp-dicts", tenantName],
     queryFn: () => fetchDlpDictionaries(tenantName),
     enabled: isOpen,
+  });
+
+  const confMut = useMutation({
+    mutationFn: ({ id, threshold }: { id: number; threshold: string }) =>
+      patchDlpDictionaryConfidence(tenantName, id, threshold),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["zia-dlp-dicts", tenantName] }),
+    onError: (e: Error) => setConfErr(e.message),
   });
 
   if (isLoading) return <LoadingSpinner />;
@@ -1095,6 +1367,12 @@ function DlpDictionariesSection({ tenantName, isOpen }: { tenantName: string; is
 
   return (
     <div className="space-y-3">
+      {confErr && (
+        <div className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+          Update failed: {confErr}
+          <button className="ml-2 underline" onClick={() => setConfErr(null)}>dismiss</button>
+        </div>
+      )}
       <input
         type="text"
         placeholder="Filter by name..."
@@ -1109,18 +1387,39 @@ function DlpDictionariesSection({ tenantName, isOpen }: { tenantName: string; is
               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Confidence Threshold</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 bg-white">
-            {filtered.map((d: DlpDictionary) => (
-              <tr key={d.id}>
-                <td className="px-3 py-2 font-mono text-xs text-gray-500">{d.id}</td>
-                <td className="px-3 py-2 text-gray-900">{d.name}</td>
-                <td className="px-3 py-2 text-gray-500">{d.type ?? "-"}</td>
-              </tr>
-            ))}
+            {filtered.map((d: DlpDictionary) => {
+              const rawThreshold = d.confidence_threshold ?? d.confidenceThreshold;
+              const canEdit = d.threshold_allowed === true || d.thresholdAllowed === true;
+              return (
+                <tr key={d.id}>
+                  <td className="px-3 py-2 font-mono text-xs text-gray-500">{d.id}</td>
+                  <td className="px-3 py-2 text-gray-900">{d.name}</td>
+                  <td className="px-3 py-2 text-gray-500">{d.type ?? "-"}</td>
+                  <td className="px-3 py-2">
+                    {canEdit ? (
+                      <select
+                        value={rawThreshold ?? ""}
+                        disabled={confMut.isPending}
+                        onChange={(e) => { setConfErr(null); confMut.mutate({ id: d.id, threshold: e.target.value }); }}
+                        className="border border-gray-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-zs-500 disabled:opacity-60"
+                      >
+                        <option value="CONFIDENCE_LEVEL_LOW">Low</option>
+                        <option value="CONFIDENCE_LEVEL_MEDIUM">Medium</option>
+                        <option value="CONFIDENCE_LEVEL_HIGH">High</option>
+                      </select>
+                    ) : (
+                      <span className="text-gray-500 text-xs">{rawThreshold ? (CONFIDENCE_LABELS[rawThreshold] ?? rawThreshold) : "-"}</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
             {filtered.length === 0 && (
-              <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">No results</td></tr>
+              <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400">No results</td></tr>
             )}
           </tbody>
         </table>
@@ -1130,10 +1429,23 @@ function DlpDictionariesSection({ tenantName, isOpen }: { tenantName: string; is
 }
 
 function DlpWebRulesSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const qc = useQueryClient();
+  const [toggleErr, setToggleErr] = useState<string | null>(null);
+
   const { data, isLoading, error } = useQuery({
     queryKey: ["zia-dlp-web-rules", tenantName],
     queryFn: () => fetchDlpWebRules(tenantName),
     enabled: isOpen,
+  });
+
+  const toggleMut = useMutation({
+    mutationFn: ({ id, state }: { id: number; state: string }) =>
+      patchDlpWebRuleState(tenantName, id, state),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["zia-dlp-web-rules", tenantName] });
+      qc.invalidateQueries({ queryKey: ["zia-activation", tenantName] });
+    },
+    onError: (e: Error) => setToggleErr(e.message),
   });
 
   if (isLoading) return <LoadingSpinner />;
@@ -1141,34 +1453,38 @@ function DlpWebRulesSection({ tenantName, isOpen }: { tenantName: string; isOpen
   if (!data) return null;
 
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200 text-sm">
-        <thead className="bg-gray-50">
-          <tr>
-            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Order</th>
-            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
-            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">State</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100 bg-white">
-          {data.map((r: DlpWebRule) => (
-            <tr key={r.id}>
-              <td className="px-3 py-2 text-gray-500">{r.order}</td>
-              <td className="px-3 py-2 text-gray-900">{r.name}</td>
-              <td className="px-3 py-2 text-gray-600">{r.action}</td>
-              <td className="px-3 py-2">
-                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${r.state === "ENABLED" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-500"}`}>
-                  {r.state}
-                </span>
-              </td>
+    <div>
+      {toggleErr && (
+        <div className="mb-2 rounded bg-red-50 px-3 py-2 text-sm text-red-700">
+          Toggle failed: {toggleErr}
+          <button className="ml-2 underline" onClick={() => setToggleErr(null)}>dismiss</button>
+        </div>
+      )}
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Order</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">State</th>
             </tr>
-          ))}
-          {data.length === 0 && (
-            <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400">No DLP web rules</td></tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-gray-100 bg-white">
+            {data.map((r: DlpWebRule) => (
+              <DlpWebRuleRow
+                key={r.id}
+                rule={r}
+                onToggle={(id, next) => { setToggleErr(null); toggleMut.mutate({ id, state: next }); }}
+                togglePending={toggleMut.isPending}
+              />
+            ))}
+            {data.length === 0 && (
+              <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400">No DLP web rules</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -2716,6 +3032,14 @@ function ZiaTab({ tenant }: { tenant: Tenant }) {
   const [open, setOpen] = useState<Record<string, boolean>>({});
   function toggleGroup(key: string) { setGroups((prev) => ({ ...prev, [key]: !prev[key] })); }
   function toggle(key: string) { setOpen((prev) => ({ ...prev, [key]: !prev[key] })); }
+
+  // Keep activation status cache warm regardless of accordion state.
+  useQuery({
+    queryKey: ["zia-activation", tenant.name],
+    queryFn: () => fetchActivationStatus(tenant.name),
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  });
 
   return (
     <div className="space-y-3">

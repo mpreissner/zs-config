@@ -352,13 +352,47 @@ def list_forwarding_rules(tenant: str, user: AuthUser = Depends(require_auth)):
     return _get_service(tenant, user).list_forwarding_rules()
 
 
+@router.patch("/{tenant}/forwarding-rules/{rule_id}/state")
+def patch_forwarding_rule_state(
+    tenant: str, rule_id: str, body: RuleStateRequest, user: AuthUser = Depends(require_auth)
+):
+    try:
+        return _get_service(tenant, user).toggle_forwarding_rule(rule_id, body.state)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ------------------------------------------------------------------
 # DLP
 # ------------------------------------------------------------------
 
+@router.patch("/{tenant}/dlp-web-rules/{rule_id}/state")
+def patch_dlp_web_rule_state(
+    tenant: str, rule_id: str, body: RuleStateRequest, user: AuthUser = Depends(require_auth)
+):
+    try:
+        return _get_service(tenant, user).toggle_dlp_web_rule(rule_id, body.state)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/{tenant}/dlp-engines")
 def list_dlp_engines(tenant: str, user: AuthUser = Depends(require_auth)):
     return _get_service(tenant, user).list_dlp_engines()
+
+
+class DlpDictionaryConfidenceRequest(BaseModel):
+    confidenceThreshold: str
+
+
+@router.patch("/{tenant}/dlp-dictionaries/{dict_id}/confidence")
+def patch_dlp_dictionary_confidence(
+    tenant: str, dict_id: str, body: DlpDictionaryConfidenceRequest, user: AuthUser = Depends(require_auth)
+):
+    try:
+        return _get_service(tenant, user).update_dlp_dictionary_confidence(dict_id, body.confidenceThreshold)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/{tenant}/dlp-dictionaries")

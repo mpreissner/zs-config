@@ -471,6 +471,12 @@ class ZIAClient:
         result, resp, err = self._sdk.zia.forwarding_control.list_rules()
         return _to_dicts(_unwrap(result, resp, err))
 
+    def get_forwarding_rule(self, rule_id: str) -> Dict:
+        if self._govcloud:
+            return self.zia_get(f"/zia/api/v1/forwardingRules/{rule_id}")
+        result, resp, err = self._sdk.zia.forwarding_control.get_rule(rule_id)
+        return _to_dict(_unwrap(result, resp, err))
+
     # ------------------------------------------------------------------
     # Sandbox Policy
     # ------------------------------------------------------------------
@@ -603,6 +609,13 @@ class ZIAClient:
             return self.zia_put(f"/zia/api/v1/dlpDictionaries/{dict_id}", config)
         result, resp, err = self._sdk.zia.dlp_dictionary.update_dict(int(dict_id), **config)
         return _to_dict(_unwrap(result, resp, err))
+
+    def update_dlp_dictionary_confidence(self, dict_id: str, confidence_threshold: str) -> Dict:
+        # Must use direct HTTP for both govcloud and SDK paths — the SDK doesn't
+        # handle predefined dictionary updates; GET full camelCase payload, patch field, PUT back.
+        current = self.zia_get(f"/zia/api/v1/dlpDictionaries/{dict_id}")
+        current["confidenceThreshold"] = confidence_threshold
+        return self.zia_put(f"/zia/api/v1/dlpDictionaries/{dict_id}", current)
 
     def delete_dlp_dictionary(self, dict_id: str) -> None:
         if self._govcloud:
@@ -809,6 +822,12 @@ class ZIAClient:
             return data if isinstance(data, list) else []
         result, resp, err = self._sdk.zia.dlp_web_rules.list_rules()
         return _to_dicts(_unwrap(result, resp, err))
+
+    def get_dlp_web_rule(self, rule_id: str) -> Dict:
+        if self._govcloud:
+            return self.zia_get(f"/zia/api/v1/webDlpRules/{rule_id}")
+        result, resp, err = self._sdk.zia.dlp_web_rules.get_rule(rule_id)
+        return _to_dict(_unwrap(result, resp, err))
 
     def create_dlp_web_rule(self, config: Dict) -> Dict:
         if self._govcloud:
