@@ -1,15 +1,20 @@
 import os
+import secrets as _secrets_mod
 import time
 import bcrypt
 from jose import jwt
 
 _ALGORITHM = "HS256"
-_ACCESS_TTL_DEFAULT = 3600
-_REFRESH_TTL_DEFAULT = 604800
+_ACCESS_TTL_DEFAULT = 300    # 5 minutes; not configurable via UI
+_REFRESH_TTL_DEFAULT = 3600  # 60 minutes; configurable via admin settings
+
+# Generated fresh on every container start. All refresh tokens signed with a
+# previous nonce are rejected, preventing session re-use across restarts.
+_STARTUP_NONCE = _secrets_mod.token_hex(16)
 
 
 def _secret() -> str:
-    return os.environ["JWT_SECRET"]
+    return os.environ["JWT_SECRET"] + _STARTUP_NONCE
 
 
 def _access_ttl() -> int:

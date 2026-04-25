@@ -12,9 +12,14 @@ export class ApiError extends Error {
 }
 
 let _getToken: (() => string | null) | null = null;
+let _onUnauthorized: (() => void) | null = null;
 
 export function setTokenGetter(fn: () => string | null) {
   _getToken = fn;
+}
+
+export function setOnUnauthorized(fn: () => void) {
+  _onUnauthorized = fn;
 }
 
 export function getAuthHeaders(): Record<string, string> {
@@ -39,6 +44,12 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
       const body = await res.json();
       message = body.detail ?? message;
     } catch { /* ignore */ }
+    // Only trigger logout if we actually sent a token and the server rejected it.
+    // Avoids false positives from unauthenticated requests fired before the token
+    // getter updates (e.g., queries that fire immediately after login).
+    if (res.status === 401 && token && !path.includes("/auth/")) {
+      _onUnauthorized?.();
+    }
     throw new ApiError(res.status, message);
   }
 

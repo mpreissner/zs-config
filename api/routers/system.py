@@ -28,8 +28,8 @@ def system_info():
 # ── Settings ──────────────────────────────────────────────────────────────────
 
 _DEFAULTS = {
-    "access_token_ttl":        "3600",
-    "refresh_token_ttl":       "604800",
+    "access_token_ttl":        "300",
+    "refresh_token_ttl":       "3600",
     "max_login_attempts":      "0",
     "audit_log_retention_days": "90",
     "idp_enabled":             "false",

@@ -198,12 +198,12 @@ export default function AdminSettingsPage() {
       <SectionCard title="Session">
         <FieldRow
           label="Session timeout"
-          hint="How long before a user is required to log in again."
+          hint="Maximum session duration from login. Users are also logged out after 15 minutes of inactivity."
         >
           <div className="flex items-center gap-2">
             <NumberInput
-              value={Math.round(draft.access_token_ttl / 60)}
-              onChange={(v) => set("access_token_ttl", v * 60)}
+              value={Math.round(draft.refresh_token_ttl / 60)}
+              onChange={(v) => set("refresh_token_ttl", v * 60)}
               min={5}
               max={1440}
             />

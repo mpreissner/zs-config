@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
-import { apiFetch, setTokenGetter } from "../api/client";
+import { apiFetch, setTokenGetter, setOnUnauthorized } from "../api/client";
+import { useIdleLogout } from "../hooks/useIdleLogout";
 
 interface TokenPayload {
   sub: number;
@@ -34,23 +35,80 @@ function parseToken(token: string): TokenPayload | null {
   }
 }
 
+function fmt(s: number): string {
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return m > 0 ? `${m}:${String(sec).padStart(2, "0")}` : `${s}s`;
+}
+
+function IdleWarningModal({ secondsLeft, onStay, onLogout }: {
+  secondsLeft: number;
+  onStay: () => void;
+  onLogout: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">
+        <h2 className="text-lg font-semibold text-gray-900 mb-2">Session Expiring</h2>
+        <p className="text-sm text-gray-600 mb-5">
+          You've been inactive. You'll be logged out in{" "}
+          <span className="font-mono font-semibold text-red-600">{fmt(secondsLeft)}</span>.
+        </p>
+        <div className="flex gap-3">
+          <button
+            onClick={onStay}
+            className="flex-1 px-4 py-2 text-sm font-medium rounded-md bg-zs-500 hover:bg-zs-600 text-white transition-colors"
+          >
+            Stay logged in
+          </button>
+          <button
+            onClick={onLogout}
+            className="flex-1 px-4 py-2 text-sm font-medium rounded-md border border-gray-300 hover:bg-gray-50 text-gray-700 transition-colors"
+          >
+            Log out now
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [auth, setAuth] = useState<AuthState>({ token: null, user: null });
   const [ready, setReady] = useState(false);
 
   const login = useCallback((token: string) => {
     const user = parseToken(token);
+    setTokenGetter(() => token);
     setAuth({ token, user });
   }, []);
 
   const logout = useCallback(async () => {
+    setTokenGetter(() => null);
     try { await apiFetch("/api/v1/auth/logout", { method: "POST" }); } catch { /* ignore */ }
     setAuth({ token: null, user: null });
   }, []);
 
   useEffect(() => {
-    setTokenGetter(() => auth.token);
-  }, [auth.token]);
+    setOnUnauthorized(logout);
+  }, [logout]);
+
+  // Proactively refresh the JWT 60 s before it expires. If the refresh cookie
+  // is also gone, the refresh fails and we log the user out.
+  useEffect(() => {
+    if (!auth.user) return;
+    const ms = auth.user.exp * 1000 - Date.now();
+    if (ms <= 0) { logout(); return; }
+    const timer = setTimeout(async () => {
+      try {
+        const r = await apiFetch<{ access_token: string }>("/api/v1/auth/refresh", { method: "POST" });
+        login(r.access_token);
+      } catch {
+        logout();
+      }
+    }, Math.max(0, ms - 60_000));
+    return () => clearTimeout(timer);
+  }, [auth.user, login, logout]);
 
   useEffect(() => {
     apiFetch<{ access_token: string }>("/api/v1/auth/refresh", { method: "POST" })
@@ -58,6 +116,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .catch(() => {})
       .finally(() => setReady(true));
   }, [login]);
+
+  const { showWarning, secondsLeft, extend } = useIdleLogout(!!auth.token, logout);
 
   if (!ready) return null;
 
@@ -71,6 +131,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mfaEnrollRequired: !!auth.user?.mfa_enroll,
     }}>
       {children}
+      {showWarning && (
+        <IdleWarningModal secondsLeft={secondsLeft} onStay={extend} onLogout={logout} />
+      )}
     </AuthContext.Provider>
   );
 }
