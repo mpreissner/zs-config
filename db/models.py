@@ -30,6 +30,7 @@ class TenantConfig(Base):
     zia_cloud = Column(String(255), nullable=True)          # e.g. "zscalertwo.net"; from orgInformation.cloudName
     zia_subscriptions = Column(JSON, nullable=True)         # full response from GET /subscriptions
     notes = Column(Text, nullable=True)
+    last_validation_error = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     govcloud = Column(Boolean, default=False, nullable=False)
     zpa_disabled_resources = Column(JSON, nullable=True)   # resource types auto-disabled after 401
@@ -269,3 +270,76 @@ class AppSettings(Base):
 
     def __repr__(self) -> str:
         return f"<AppSettings key={self.key!r} value={self.value!r}>"
+
+
+class User(Base):
+    __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint("sso_provider", "sso_subject", name="uq_user_sso"),
+    )
+    id                    = Column(Integer, primary_key=True)
+    username              = Column(String(255), unique=True, nullable=False)
+    email                 = Column(String(512), nullable=True)
+    role                  = Column(String(32), nullable=False, default="user")
+    password_hash         = Column(Text, nullable=True)
+    force_password_change = Column(Boolean, nullable=False, default=False)
+    sso_provider          = Column(String(64), nullable=True)
+    sso_subject           = Column(String(512), nullable=True)
+    is_active             = Column(Boolean, nullable=False, default=True)
+    mfa_required          = Column(Boolean, nullable=False, default=False)
+    created_at            = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at            = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    last_login_at         = Column(DateTime, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<User username={self.username!r} role={self.role!r}>"
+
+
+class WebAuthnCredential(Base):
+    """FIDO2 / WebAuthn credential registered by a local user.
+
+    One user may have multiple credentials (multiple hardware keys).
+    Federated (SSO) users do not register credentials here — they do MFA
+    at the IdP.
+    """
+
+    __tablename__ = "webauthn_credentials"
+
+    id             = Column(Integer, primary_key=True)
+    user_id        = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    credential_id  = Column(Text, nullable=False, unique=True)  # base64url-encoded bytes
+    public_key     = Column(Text, nullable=False)               # COSE key, base64url-encoded
+    sign_count     = Column(Integer, nullable=False, default=0)
+    aaguid         = Column(String(64), nullable=True)          # authenticator model GUID
+    label          = Column(String(255), nullable=True)         # user-assigned name ("YubiKey 5")
+    created_at     = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_used_at   = Column(DateTime, nullable=True)
+
+    user = relationship("User", backref="webauthn_credentials")
+
+    def __repr__(self) -> str:
+        return f"<WebAuthnCredential user_id={self.user_id} label={self.label!r}>"
+
+
+class UserTenantEntitlement(Base):
+    """Maps zs-config users to the tenants they are permitted to access.
+
+    Admin users bypass this table (they can access all tenants).
+    For role="user" accounts, only tenants with an entitlement row are visible.
+    """
+
+    __tablename__ = "user_tenant_entitlements"
+    __table_args__ = (
+        UniqueConstraint("user_id", "tenant_id", name="uq_user_tenant"),
+    )
+
+    id         = Column(Integer, primary_key=True)
+    user_id    = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    tenant_id  = Column(Integer, ForeignKey("tenant_configs.id", ondelete="CASCADE"), nullable=False)
+    granted_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user   = relationship("User", backref="tenant_entitlements")
+    tenant = relationship("TenantConfig", backref="user_entitlements")
+
+    def __repr__(self) -> str:
+        return f"<UserTenantEntitlement user_id={self.user_id} tenant_id={self.tenant_id}>"

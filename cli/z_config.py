@@ -114,18 +114,23 @@ def main():
 
     init_db()
 
+    _container_mode = os.environ.get("ZS_CONTAINER_MODE", "0") == "1"
+
     # ── Complete any deferred plugin install (branch override flow) ────────
-    from lib.plugin_manager import get_pending_plugin_install, clear_pending_plugin_install
-    _pending = get_pending_plugin_install()
-    if _pending:
-        from cli.menus.plugin_menu import _complete_pending_install
-        _complete_pending_install(_pending)
-        clear_pending_plugin_install()
+    # Skip in container mode — no TTY available; questionary would hang.
+    if not _container_mode:
+        from lib.plugin_manager import get_pending_plugin_install, clear_pending_plugin_install
+        _pending = get_pending_plugin_install()
+        if _pending:
+            from cli.menus.plugin_menu import _complete_pending_install
+            _complete_pending_install(_pending)
+            clear_pending_plugin_install()
 
     render_banner()
-    zs_update_found = check_for_updates()
-    if not zs_update_found:
-        check_plugin_updates()
+    if not _container_mode:
+        zs_update_found = check_for_updates()
+        if not zs_update_found:
+            check_plugin_updates()
 
     from services.config_service import list_tenants
     if list_tenants():

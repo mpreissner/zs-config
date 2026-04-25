@@ -36,7 +36,7 @@ class ResourceDef:
 
 # All resource types we import.  Order doesn't matter.
 RESOURCE_DEFINITIONS: List[ResourceDef] = [
-    ResourceDef("url_category",          "list_url_categories"),
+    ResourceDef("url_category",          "list_url_categories",  name_field="configured_name"),
     ResourceDef("url_filtering_rule",    "list_url_filtering_rules"),
     ResourceDef("firewall_rule",         "list_firewall_rules"),
     ResourceDef("firewall_dns_rule",     "list_firewall_dns_rules"),
@@ -81,6 +81,8 @@ RESOURCE_DEFINITIONS: List[ResourceDef] = [
                 id_field="id", name_field="name"),
     ResourceDef("tenancy_restriction_profile",   "list_tenancy_restriction_profiles"),
     ResourceDef("sandbox_rule",                  "list_sandbox_rules"),
+    ResourceDef("cloud_app_instance",            "list_cloud_app_instances",
+                id_field="instance_id", name_field="instance_name"),
 ]
 
 
