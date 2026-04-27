@@ -2,6 +2,7 @@ services:
   zs-config:
     build: .
     image: zs-config:latest
+    container_name: zs-config
     restart: unless-stopped
     ports:
       # Bound to localhost for local dev. Change to "0.0.0.0:8000:8000"

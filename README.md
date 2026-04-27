@@ -234,15 +234,9 @@ On first launch an encryption key is generated at `~/.config/zs-config/secret.ke
 If you deployed via `deploy.sh` / `deploy.ps1`, the TUI is available inside the running container — no separate install required. The container shares the same database and encryption key used by the web UI.
 
 ```bash
-docker exec -it zs-config-zs-config-1 zs-config
-```
-
-To find the container name if it differs (e.g. the repo was cloned into a differently-named directory):
-
-```bash
-docker compose ps          # shows container name in the first column
-# then:
-docker exec -it <container-name> zs-config
+docker exec -it zs-config /bin/bash
+# then inside the container:
+python -m cli.z_config
 ```
 
 **Dev setup:**
