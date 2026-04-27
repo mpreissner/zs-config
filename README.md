@@ -215,7 +215,9 @@ zs-config/
 
 ---
 
-## Installation (TUI)
+## Installation
+
+### TUI only (no Docker)
 
 ```bash
 pipx install zs-config   # recommended (isolated)
@@ -226,6 +228,22 @@ zs-config
 ```
 
 On first launch an encryption key is generated at `~/.config/zs-config/secret.key` and a default working directory is created at `~/Documents/zs-config`. File export and import prompts default to this directory. Go to **Settings → Add Tenant** to register a tenant, then run **Import Config** under ZIA or ZPA to populate the local cache.
+
+### TUI inside the Docker container
+
+If you deployed via `deploy.sh` / `deploy.ps1`, the TUI is available inside the running container — no separate install required. The container shares the same database and encryption key used by the web UI.
+
+```bash
+docker exec -it zs-config-zs-config-1 zs-config
+```
+
+To find the container name if it differs (e.g. the repo was cloned into a differently-named directory):
+
+```bash
+docker compose ps          # shows container name in the first column
+# then:
+docker exec -it <container-name> zs-config
+```
 
 **Dev setup:**
 ```bash
