@@ -11,6 +11,10 @@ Interactive TUI and browser-based UI for Zscaler OneAPI — manage ZPA, ZIA, ZCC
 
 zs-config v2.0.0 ships a browser-based management UI alongside the existing TUI. It runs as a self-contained Docker container with a FastAPI backend and a React + Tailwind frontend.
 
+### Upgrade
+
+If you are upgrading from a 1.x branch, run the deploy instructions below, followed by 'scripts/export_tui_db.sh [output_dir]'. This will copy out your database and encryption key to the target directory, which you may then import via the Web UI to migrate your existing database into the container. The deployment script creates persistent docker volumes, so persistence is maintained across restarts and upgrades.
+
 ### Deploy
 
 Requires Docker with Compose v2. Download and run the deploy script — it handles cloning, secret generation, volumes, build, and startup automatically.
