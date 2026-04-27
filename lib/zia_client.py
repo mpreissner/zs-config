@@ -159,7 +159,7 @@ class ZIAClient:
     def get_url_category(self, category_id: str) -> Dict:
         if self._govcloud:
             return self.zia_get(f"/zia/api/v1/urlCategories/{category_id}")
-        result, resp, err = self._sdk.zia.url_categories.get_url_category(category_id)
+        result, resp, err = self._sdk.zia.url_categories.get_category(category_id)
         return _to_dict(_unwrap(result, resp, err))
 
     def create_url_category(self, config: Dict) -> Dict:
@@ -204,6 +204,45 @@ class ZIAClient:
     # ------------------------------------------------------------------
     # User Management
     # ------------------------------------------------------------------
+
+    def get_user(self, user_id: str) -> Dict:
+        if self._govcloud:
+            return self.zia_get(f"/zia/api/v1/users/{user_id}")
+        result, resp, err = self._sdk.zia.user_management.get_user(int(user_id))
+        return _to_dict(_unwrap(result, resp, err))
+
+    def create_user(self, config: Dict) -> Dict:
+        if self._govcloud:
+            return self.zia_post("/zia/api/v1/users", config)
+        result, resp, err = self._sdk.zia.user_management.add_user(**config)
+        return _to_dict(_unwrap(result, resp, err))
+
+    def update_user(self, user_id: str, config: Dict) -> Dict:
+        if self._govcloud:
+            return self.zia_put(f"/zia/api/v1/users/{user_id}", config)
+        result, resp, err = self._sdk.zia.user_management.update_user(int(user_id), **config)
+        return _to_dict(_unwrap(result, resp, err))
+
+    def delete_user(self, user_id: str) -> None:
+        if self._govcloud:
+            self.zia_delete(f"/zia/api/v1/users/{user_id}")
+            return
+        result, resp, err = self._sdk.zia.user_management.delete_user(int(user_id))
+        _unwrap(result, resp, err)
+
+    def update_allowlist(self, urls: List[str]) -> Dict:
+        """Replace the entire allowlist with the provided URL list."""
+        if self._govcloud:
+            return self.zia_put("/zia/api/v1/security", {"whitelistedUrls": urls})
+        result, resp, err = self._sdk.zia.security_policy_settings.update_whitelist(whitelist_urls=urls)
+        return _to_dict(_unwrap(result, resp, err))
+
+    def update_denylist(self, urls: List[str]) -> Dict:
+        """Replace the entire denylist with the provided URL list."""
+        if self._govcloud:
+            return self.zia_put("/zia/api/v1/security/advanced", {"blacklistedUrls": urls})
+        result, resp, err = self._sdk.zia.security_policy_settings.update_blacklist(blacklist_urls=urls)
+        return _to_dict(_unwrap(result, resp, err))
 
     def list_users(self, name: Optional[str] = None, group: Optional[str] = None, dept: Optional[str] = None) -> List[Dict]:
         if self._govcloud:
@@ -364,6 +403,12 @@ class ZIAClient:
         _unwrap(result, resp, err)
         return True
 
+    def get_firewall_ips_rule(self, rule_id: str) -> Dict:
+        if self._govcloud:
+            return self.zia_get(f"/zia/api/v1/firewallIpsRules/{rule_id}")
+        result, resp, err = self._sdk.zia.cloud_firewall_ips.get_rule(int(rule_id))
+        return _to_dict(_unwrap(result, resp, err))
+
     # ------------------------------------------------------------------
     # Firewall Supporting Objects
     # ------------------------------------------------------------------
@@ -431,6 +476,12 @@ class ZIAClient:
             return data if isinstance(data, list) else []
         result, resp, err = self._sdk.zia.forwarding_control.list_rules()
         return _to_dicts(_unwrap(result, resp, err))
+
+    def get_forwarding_rule(self, rule_id: str) -> Dict:
+        if self._govcloud:
+            return self.zia_get(f"/zia/api/v1/forwardingRules/{rule_id}")
+        result, resp, err = self._sdk.zia.forwarding_control.get_rule(rule_id)
+        return _to_dict(_unwrap(result, resp, err))
 
     # ------------------------------------------------------------------
     # Sandbox Policy
@@ -565,6 +616,13 @@ class ZIAClient:
         result, resp, err = self._sdk.zia.dlp_dictionary.update_dict(int(dict_id), **config)
         return _to_dict(_unwrap(result, resp, err))
 
+    def update_dlp_dictionary_confidence(self, dict_id: str, confidence_threshold: str) -> Dict:
+        # Must use direct HTTP for both govcloud and SDK paths — the SDK doesn't
+        # handle predefined dictionary updates; GET full camelCase payload, patch field, PUT back.
+        current = self.zia_get(f"/zia/api/v1/dlpDictionaries/{dict_id}")
+        current["confidenceThreshold"] = confidence_threshold
+        return self.zia_put(f"/zia/api/v1/dlpDictionaries/{dict_id}", current)
+
     def delete_dlp_dictionary(self, dict_id: str) -> None:
         if self._govcloud:
             self.zia_delete(f"/zia/api/v1/dlpDictionaries/{dict_id}")
@@ -627,17 +685,12 @@ class ZIAClient:
     # ------------------------------------------------------------------
 
     def get_url_filtering_rule(self, rule_id: str) -> Dict:
-        if self._govcloud:
-            return self.zia_get(f"/zia/api/v1/urlFilteringRules/{rule_id}")
-        result, resp, err = self._sdk.zia.url_filtering.get_rule(rule_id)
-        return _to_dict(_unwrap(result, resp, err))
+        # Always use direct HTTP — returns camelCase JSON from the API
+        return self.zia_get(f"/zia/api/v1/urlFilteringRules/{rule_id}")
 
     def update_url_filtering_rule(self, rule_id: str, config: Dict) -> bool:
-        if self._govcloud:
-            self.zia_put(f"/zia/api/v1/urlFilteringRules/{rule_id}", config)
-            return True
-        result, resp, err = self._sdk.zia.url_filtering.update_rule(rule_id, **config)
-        _unwrap(result, resp, err)
+        # Always use direct HTTP with the camelCase config dict
+        self.zia_put(f"/zia/api/v1/urlFilteringRules/{rule_id}", config)
         return True
 
     # ------------------------------------------------------------------
@@ -651,7 +704,7 @@ class ZIAClient:
         if self._govcloud:
             return self.zia_put(f"/zia/api/v1/urlCategories/{category_id}", {**cat, "urls": merged})
         result, resp, err = self._sdk.zia.url_categories.update_url_category(
-            category_id, urls=merged
+            category_id, configured_name=cat.get("configured_name"), urls=merged
         )
         return _to_dict(_unwrap(result, resp, err))
 
@@ -663,7 +716,7 @@ class ZIAClient:
         if self._govcloud:
             return self.zia_put(f"/zia/api/v1/urlCategories/{category_id}", {**cat, "urls": updated})
         result, resp, err = self._sdk.zia.url_categories.update_url_category(
-            category_id, urls=updated
+            category_id, configured_name=cat.get("configured_name"), urls=updated
         )
         return _to_dict(_unwrap(result, resp, err))
 
@@ -693,6 +746,13 @@ class ZIAClient:
         if app_class:
             params["app_class"] = app_class
         result, resp, err = self._sdk.zia.cloud_applications.list_cloud_app_ssl_policy(query_params=params)
+        return _to_dicts(_unwrap(result, resp, err))
+
+    def list_cloud_app_instances(self) -> List[Dict]:
+        if self._govcloud:
+            data = self.zia_get("/zia/api/v1/cloudApplicationInstances")
+            return data if isinstance(data, list) else []
+        result, resp, err = self._sdk.zia.cloud_app_instances.list_cloud_app_instances()
         return _to_dicts(_unwrap(result, resp, err))
 
     # ------------------------------------------------------------------
@@ -775,6 +835,12 @@ class ZIAClient:
             return data if isinstance(data, list) else []
         result, resp, err = self._sdk.zia.dlp_web_rules.list_rules()
         return _to_dicts(_unwrap(result, resp, err))
+
+    def get_dlp_web_rule(self, rule_id: str) -> Dict:
+        if self._govcloud:
+            return self.zia_get(f"/zia/api/v1/webDlpRules/{rule_id}")
+        result, resp, err = self._sdk.zia.dlp_web_rules.get_rule(rule_id)
+        return _to_dict(_unwrap(result, resp, err))
 
     def create_dlp_web_rule(self, config: Dict) -> Dict:
         if self._govcloud:

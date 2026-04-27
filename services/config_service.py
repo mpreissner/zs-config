@@ -38,7 +38,13 @@ def _get_fernet() -> Fernet:
     if key:
         return Fernet(key.encode() if isinstance(key, str) else key)
 
-    # 2. Migrate from legacy key paths (zscaler-cli → z-config → zs-config)
+    # 2. Key stored alongside the DB file (persistent in Docker volume)
+    if db_path_env := os.environ.get("ZSCALER_DB_PATH"):
+        _db_sibling_key = Path(db_path_env).parent / "secret.key"
+        if _db_sibling_key.exists():
+            return Fernet(_db_sibling_key.read_text().strip().encode())
+
+    # 3. Migrate from legacy key paths (zscaler-cli → z-config → zs-config)
     for _legacy in (_KEY_FILE_LEGACY, _KEY_FILE_LEGACY2):
         if not _KEY_FILE.exists() and _legacy.exists():
             _KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -46,12 +52,12 @@ def _get_fernet() -> Fernet:
             _chmod_600(_KEY_FILE)
             break
 
-    # 3. Persisted key file
+    # 4. Persisted key file
     if _KEY_FILE.exists():
         key = _KEY_FILE.read_text().strip()
         return Fernet(key.encode())
 
-    # 4. First run — auto-generate and save
+    # 5. First run — auto-generate and save
     key = Fernet.generate_key().decode()
     _KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
     _KEY_FILE.write_text(key)
@@ -145,21 +151,40 @@ def add_tenant(
 ) -> TenantConfig:
     """Add a new tenant configuration to the database."""
     with get_session() as session:
-        tenant = TenantConfig(
-            name=name,
-            zidentity_base_url=zidentity_base_url.rstrip("/"),
-            oneapi_base_url=oneapi_base_url.rstrip("/"),
-            client_id=client_id,
-            client_secret_enc=encrypt_secret(client_secret),
-            govcloud=govcloud,
-            zpa_customer_id=zpa_customer_id or None,
-            zpa_tenant_cloud=zpa_tenant_cloud or None,
-            zia_tenant_id=zia_tenant_id or None,
-            zia_cloud=zia_cloud or None,
-            zia_subscriptions=zia_subscriptions or None,
-            notes=notes,
-        )
-        session.add(tenant)
+        tenant = session.query(TenantConfig).filter_by(name=name).first()
+        if tenant and tenant.is_active:
+            raise ValueError(f"Tenant '{name}' already exists.")
+        if tenant:
+            # Reactivate a previously soft-deleted tenant with fresh credentials.
+            tenant.zidentity_base_url = zidentity_base_url.rstrip("/")
+            tenant.oneapi_base_url = oneapi_base_url.rstrip("/")
+            tenant.client_id = client_id
+            tenant.client_secret_enc = encrypt_secret(client_secret)
+            tenant.govcloud = govcloud
+            tenant.zpa_customer_id = zpa_customer_id or None
+            tenant.zpa_tenant_cloud = zpa_tenant_cloud or None
+            tenant.zia_tenant_id = zia_tenant_id or None
+            tenant.zia_cloud = zia_cloud or None
+            tenant.zia_subscriptions = zia_subscriptions or None
+            tenant.notes = notes
+            tenant.last_validation_error = None
+            tenant.is_active = True
+        else:
+            tenant = TenantConfig(
+                name=name,
+                zidentity_base_url=zidentity_base_url.rstrip("/"),
+                oneapi_base_url=oneapi_base_url.rstrip("/"),
+                client_id=client_id,
+                client_secret_enc=encrypt_secret(client_secret),
+                govcloud=govcloud,
+                zpa_customer_id=zpa_customer_id or None,
+                zpa_tenant_cloud=zpa_tenant_cloud or None,
+                zia_tenant_id=zia_tenant_id or None,
+                zia_cloud=zia_cloud or None,
+                zia_subscriptions=zia_subscriptions or None,
+                notes=notes,
+            )
+            session.add(tenant)
         session.flush()
         session.refresh(tenant)
         return tenant

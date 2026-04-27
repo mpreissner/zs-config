@@ -4,6 +4,104 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [2.0.0] - 2026-04-27
+
+### Added
+
+#### Web UI — Browser-Based Management Interface
+
+A self-contained Docker container ships a React + Vite + Tailwind frontend backed by a FastAPI REST API. All existing TUI service logic is reused — the web layer is a new presentation layer over the same DB, services, and lib clients.
+
+**Authentication & Session Management**
+- Login with username/password; bcrypt-verified against a `WebUser` table in the local DB
+- Role-based access: `admin` and `user` roles; non-admin users are scoped to specific tenants via entitlements
+- Force password change on first login and on admin-initiated reset
+- MFA enrollment via TOTP — users with no key enrolled are shown a full-screen enrollment modal; QR code + manual entry supported
+- Idle timeout: configurable inactivity threshold (default 15 minutes) triggers a 2-minute countdown warning, then automatic logout; idle timer resets on mouse movement, clicks, keyboard input, and scroll events
+- Proactive JWT refresh: access token (5 min) is silently renewed against an httpOnly refresh cookie (60 min absolute from login); if the cookie has expired, the user is logged out cleanly
+- Container restart invalidation: a startup nonce is appended to the JWT signing secret on every container start; all tokens signed in prior runs are immediately rejected
+- OIDC/SAML IdP integration (configurable via Admin → Settings)
+
+**Tenant Workspace (ZIA)**
+- Activation — push pending changes and view activation status
+- URL Filtering Rules — list, search, enable/disable individual rules
+- URL Categories — list all categories with URL counts; add/remove custom URLs per category
+- URL Lookup — real-time URL categorization check against the live API
+- Cloud App Instances — list and search cloud application inventory from local DB
+- Tenancy Restrictions — view Microsoft 365 and Google tenant restriction profiles
+- Cloud App Rules — list, search, enable/disable by rule type
+- URL & Cloud App Control Advanced Settings — view and toggle global policy toggles
+- Allow / Deny Lists — view and edit the security allowlist and denylist
+- Firewall Policy — list, search, enable/disable; CSV export and full import/sync (same Option C algorithm as TUI)
+- DNS Filter Rules — list, search, enable/disable individual rules
+- IPS Rules — list, search, enable/disable individual rules
+- SSL Inspection — list, search, enable/disable
+- Forwarding Rules — list and search
+- Users, Locations, Departments, Groups — read-only from local DB
+- DLP Engines — list, search, view; edit expression and confidence inline
+- DLP Dictionaries — list, search, view; edit confidence threshold; expandable phrase/pattern detail
+- DLP Web Rules — list, search, enable/disable
+- Config Snapshots — save point-in-time snapshots, list, delete; restore to same tenant
+- Apply Snapshot from Other Tenant — delta-only or wipe-first push with full dry-run preview; streamed progress log; stop mid-push with automatic rollback of all already-applied changes
+
+**Tenant Workspace (ZPA)**
+- App Connectors — list and search from local DB
+- Service Edges — list and search from local DB
+- Application Segments — list and search from local DB
+- Segment Groups — list and search from local DB
+- Browser Access Certificates — list from local DB
+- PRA Portals — list and search from local DB
+
+**Tenant Workspace (ZDX)**
+- Device Search — look up devices by hostname or email; view health metrics table
+- User Lookup — search users by email or name; view ZDX score and device count
+
+**Tenant Workspace (ZCC)**
+- All Devices — list and search; OTP lookup per device
+- Trusted Networks — list and search
+- Forwarding Profiles — list and search
+- App Profiles (Web Policies) — list and view detail
+- Bypass App Services — list and view detail
+
+**Tenant Workspace (ZIdentity)**
+- Users — list and search
+- Groups — list, search, view members
+- API Clients — list, search, view details and secrets
+
+**Tenant Management**
+- Multi-tenant dashboard — list all tenants with validation status and cloud metadata
+- Add tenant — name, subdomain, client ID/secret; credentials verified immediately on save
+- Edit tenant — update any field; live token test before save
+- Delete tenant — with confirmation
+- Import Config (ZIA / ZPA) — streaming import with live job log; progress shown in modal
+
+**Admin Panel (admin-only)**
+- User Management — create, edit (username/password/role), delete web UI users
+- Entitlements — assign specific tenants to non-admin users
+- System Settings:
+  - Session timeout (drives refresh cookie TTL; min 5 min, max 24 hours)
+  - Max login attempts (0 = unlimited)
+  - Audit log retention period
+  - IdP integration (enable/disable, provider, issuer URL, client ID)
+  - SSL mode (none / ACME / manual cert upload)
+
+**Audit Log**
+- View full audit history with tenant, product, operation, resource, status, and timestamp
+- Paginated table with newest-first ordering
+
+**Profile**
+- Change password
+- View current session role and username
+
+#### TUI
+- **IPS rules toggle** — `_toggle_ips_rules` in `zia_menu.py` fully implemented (was previously a stub); queries DB for IPS rules, multi-select enable/disable, calls ZIA API and updates local DB immediately
+
+#### Deployment
+- **Linux/macOS deploy script** (`deploy.sh`) — two-mode operation: standalone fresh-machine clone, or in-repo pull and redeploy; auto-generates `JWT_SECRET`, creates Docker volumes, builds image, starts container, and health checks
+- **Windows deploy script** (`deploy.ps1`) — PowerShell equivalent of `deploy.sh`; same two-mode operation, JWT_SECRET generation via `RandomNumberGenerator`, volume creation, build, and health check; run as Administrator
+
+---
+
 ## [1.0.20] - 2026-04-15
 
 ### Fixed

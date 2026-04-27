@@ -192,6 +192,115 @@ class ZPAService:
     # Application helpers
     # ------------------------------------------------------------------
 
+    def get_application(self, app_id: str) -> Dict:
+        result = self.client.get_application(app_id)
+        audit_service.log(
+            product="ZPA", operation="get_application", action="READ", status="SUCCESS",
+            tenant_id=self.tenant_id, resource_type="application",
+            resource_id=app_id, resource_name=result.get("name"),
+        )
+        return result
+
+    def create_application(self, **kwargs) -> Dict:
+        result = self.client.create_application(**kwargs)
+        audit_service.log(
+            product="ZPA",
+            operation="create_application",
+            action="CREATE",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="application",
+            resource_id=result.get("id"),
+            resource_name=result.get("name"),
+        )
+        return result
+
+    def update_application(self, app_id: str, config: Dict) -> Dict:
+        self.client.update_application(app_id, config)
+        result = self.client.get_application(app_id)
+        audit_service.log(
+            product="ZPA",
+            operation="update_application",
+            action="UPDATE",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="application",
+            resource_id=app_id,
+            resource_name=config.get("name"),
+        )
+        return result
+
+    def delete_application(self, app_id: str, app_name: str) -> bool:
+        result = self.client.delete_application(app_id)
+        audit_service.log(
+            product="ZPA",
+            operation="delete_application",
+            action="DELETE",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="application",
+            resource_id=app_id,
+            resource_name=app_name,
+        )
+        return result
+
+    def set_application_enabled(self, app_id: str, enabled: bool) -> Dict:
+        app = self.client.get_application(app_id)
+        app["enabled"] = enabled
+        # Strip plural port range keys that conflict with the SDK
+        app.pop("tcp_port_ranges", None)
+        app.pop("udp_port_ranges", None)
+        self.client.update_application(app_id, app)
+        result = self.client.get_application(app_id)
+        audit_service.log(
+            product="ZPA",
+            operation="set_application_enabled",
+            action="UPDATE",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="application",
+            resource_id=app_id,
+            resource_name=app.get("name"),
+            details={"enabled": enabled},
+        )
+        return result
+
+    def list_segment_groups(self) -> List[Dict]:
+        result = self.client.list_segment_groups()
+        audit_service.log(
+            product="ZPA", operation="list_segment_groups", action="READ", status="SUCCESS",
+            tenant_id=self.tenant_id, resource_type="segment_group",
+            details={"count": len(result)},
+        )
+        return result
+
+    def list_server_groups(self) -> List[Dict]:
+        result = self.client.list_server_groups()
+        audit_service.log(
+            product="ZPA", operation="list_server_groups", action="READ", status="SUCCESS",
+            tenant_id=self.tenant_id, resource_type="server_group",
+            details={"count": len(result)},
+        )
+        return result
+
+    def list_app_connectors(self) -> List[Dict]:
+        result = self.client.list_connectors()
+        audit_service.log(
+            product="ZPA", operation="list_app_connectors", action="READ", status="SUCCESS",
+            tenant_id=self.tenant_id, resource_type="app_connector",
+            details={"count": len(result)},
+        )
+        return result
+
+    def list_service_edges(self) -> List[Dict]:
+        result = self.client.list_service_edges()
+        audit_service.log(
+            product="ZPA", operation="list_service_edges", action="READ", status="SUCCESS",
+            tenant_id=self.tenant_id, resource_type="service_edge",
+            details={"count": len(result)},
+        )
+        return result
+
     def list_applications(self, app_type: str = "BROWSER_ACCESS") -> List[Dict]:
         result = self.client.list_applications(app_type)
         audit_service.log(

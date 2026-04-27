@@ -174,6 +174,40 @@ class ZCCService:
     # ------------------------------------------------------------------
 
     # ------------------------------------------------------------------
+    # Trusted Networks
+    # ------------------------------------------------------------------
+
+    def list_trusted_networks(self) -> List[Dict]:
+        result = self.client.list_trusted_networks()
+        audit_service.log(
+            product="ZCC",
+            operation="list_trusted_networks",
+            action="READ",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="trusted_network",
+            details={"count": len(result)},
+        )
+        return result
+
+    # ------------------------------------------------------------------
+    # Forwarding Profiles
+    # ------------------------------------------------------------------
+
+    def list_forwarding_profiles(self) -> List[Dict]:
+        result = self.client.list_forwarding_profiles()
+        audit_service.log(
+            product="ZCC",
+            operation="list_forwarding_profiles",
+            action="READ",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="forwarding_profile",
+            details={"count": len(result)},
+        )
+        return result
+
+    # ------------------------------------------------------------------
     # Web App Services (Custom App Bypass definitions)
     # ------------------------------------------------------------------
 
