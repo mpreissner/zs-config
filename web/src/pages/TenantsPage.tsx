@@ -15,6 +15,7 @@ import {
   ImportResult,
 } from "../api/tenants";
 import { useJobStream } from "../hooks/useJobStream";
+import { useSystemInfo } from "../hooks/useSystemInfo";
 import LoadingSpinner from "../components/LoadingSpinner";
 import ErrorMessage from "../components/ErrorMessage";
 import { useAuth } from "../context/AuthContext";
@@ -103,6 +104,8 @@ const GOVCLOUD_ONEAPI_DEFAULT = "https://api.zscalergov.us";
 
 function CreateModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
+  const { data: sysInfo } = useSystemInfo();
+  const govcloudEnabled = sysInfo?.govcloud_enabled ?? false;
   const [form, setForm] = useState<TenantCreate>({
     name: "",
     vanity_domain: "",
@@ -172,7 +175,9 @@ function CreateModal({ onClose }: { onClose: () => void }) {
     <Modal title="Add Tenant" onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-3">
         <Field label="Name" value={form.name} onChange={(v) => set("name", v)} required />
-        <CheckboxField label="GovCloud" checked={form.govcloud ?? false} onChange={(v) => set("govcloud", v)} />
+        {govcloudEnabled && (
+          <CheckboxField label="GovCloud" checked={form.govcloud ?? false} onChange={(v) => set("govcloud", v)} />
+        )}
         <div>
           <Field
             label="Vanity Domain"
@@ -183,7 +188,7 @@ function CreateModal({ onClose }: { onClose: () => void }) {
           />
           <p className="text-xs text-gray-400 mt-1 font-mono">{vanityHint}</p>
         </div>
-        {form.govcloud && (
+        {govcloudEnabled && form.govcloud && (
           <Field
             label="OneAPI Base URL"
             value={form.govcloud_oneapi_url ?? GOVCLOUD_ONEAPI_DEFAULT}
@@ -214,6 +219,8 @@ function CreateModal({ onClose }: { onClose: () => void }) {
 
 function EditModal({ tenant, onClose }: { tenant: Tenant; onClose: () => void }) {
   const qc = useQueryClient();
+  const { data: sysInfo } = useSystemInfo();
+  const govcloudEnabled = sysInfo?.govcloud_enabled ?? false;
   const [form, setForm] = useState<TenantUpdate & { client_secret: string }>({
     vanity_domain: tenant.vanity_domain,
     client_id: tenant.client_id,
@@ -261,12 +268,14 @@ function EditModal({ tenant, onClose }: { tenant: Tenant; onClose: () => void })
     <Modal title={`Edit: ${tenant.name}`} onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-3">
         <Field label="Name" value={tenant.name} onChange={() => {}} readOnly />
-        <CheckboxField label="GovCloud" checked={form.govcloud ?? false} onChange={(v) => set("govcloud", v)} />
+        {govcloudEnabled && (
+          <CheckboxField label="GovCloud" checked={form.govcloud ?? false} onChange={(v) => set("govcloud", v)} />
+        )}
         <div>
           <Field label="Vanity Domain" value={form.vanity_domain ?? ""} onChange={(v) => set("vanity_domain", v)} placeholder="acme" />
           <p className="text-xs text-gray-400 mt-1 font-mono">{vanityHint}</p>
         </div>
-        {form.govcloud && (
+        {govcloudEnabled && form.govcloud && (
           <Field
             label="OneAPI Base URL"
             value={form.govcloud_oneapi_url ?? GOVCLOUD_ONEAPI_DEFAULT}
