@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [2.1.0] - 2026-04-28
+
+### Added
+
+#### Scheduled Cross-Tenant Sync Tasks
+
+Automated, cron-driven sync of ZIA configuration between tenants — no manual trigger required.
+
+**Sync by Resource Type**
+- Create named scheduled tasks that sync one or more resource groups (Firewall Rules, URL Filtering, SSL Inspection, DLP, Network Objects, etc.) from a source tenant to a target tenant on a configurable cron schedule (preset intervals: 1h, 4h, 12h, 24h; or any custom 5-field cron expression)
+- Optional **Sync Deletes** — removes resources from the target that are absent from the source; warned as irreversible once the target is activated
+- Per-task enable/disable toggle and manual "Run now" trigger
+- Owner email field for accountability
+
+**Sync by Label (new in 2.1.0)**
+- Alternative sync mode that targets resources by ZIA rule label rather than by type
+- Enter a label name (e.g. `prod`, `test`) and optionally restrict to a subset of the 12 label-supporting resource types: Firewall Rules, URL Filtering Rules, SSL Inspection Rules, Forwarding Rules, Bandwidth Control Rules, NAT Control Rules, DLP Web Rules, DNS Filter Rules, IPS Rules, Sandbox Rules, Traffic Capture Rules, Cloud App Control Rules
+- Label matching is case-sensitive and operates on the `labels` field of each resource's raw API payload
+- When all 12 label-supported types are selected, the engine queries all of them; selecting a subset scopes the sync to only those types
+
+**Task Monitoring tab**
+- Per-task run history: start time, duration, status (success / partial / failed), resource count, error count
+- Drill into any run with errors to see a table of failed resources with resource type, name, operation, and error message
+
+### Fixed
+
+- **URL Categories tooltip** — the ⓘ info icon in the scheduled task form was non-functional (native `title` attribute obscured by parent `cursor-pointer` cursor). Replaced with a CSS hover tooltip that appears immediately on hover and is keyboard-accessible.
+
+---
+
 ## [2.0.0] - 2026-04-27
 
 ### Added

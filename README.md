@@ -7,9 +7,9 @@ Interactive TUI and browser-based UI for Zscaler OneAPI — manage ZPA, ZIA, ZCC
 
 ---
 
-## Web UI — v2.0.0
+## Web UI — v2.1.0
 
-zs-config v2.0.0 ships a browser-based management UI alongside the existing TUI. It runs as a self-contained Docker container with a FastAPI backend and a React + Tailwind frontend.
+zs-config v2.1.0 ships a browser-based management UI alongside the existing TUI. It runs as a self-contained Docker container with a FastAPI backend and a React + Tailwind frontend.
 
 ### Upgrade
 
@@ -93,6 +93,7 @@ The web UI covers all major Zscaler product areas across multiple tenants simult
 - DLP Web Rules — list, search, enable/disable
 - Config Snapshots — save, list, delete point-in-time snapshots; restore same-tenant snapshots
 - Apply Snapshot from Other Tenant — delta or wipe-first push with preview; stop mid-push with automatic rollback of already-applied changes
+- Scheduled Tasks — cron-driven cross-tenant sync; sync by resource type or by ZIA rule label; per-task run history with error drill-down
 
 **ZPA — Private Access**
 - App Connectors — list and search
