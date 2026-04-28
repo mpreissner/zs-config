@@ -316,8 +316,14 @@ def update_task(
             if sync_mode not in ("resource_type", "label"):
                 raise ValueError("sync_mode must be 'resource_type' or 'label'.")
 
+        switching_to_resource_type = sync_mode == "resource_type" and task.sync_mode == "label"
+        switching_to_label = sync_mode == "label" and task.sync_mode == "resource_type"
+
         if effective_mode == "resource_type":
-            # Validate resource_groups only when a new list is being set
+            if switching_to_resource_type and resource_groups is None:
+                raise ValueError(
+                    "resource_groups is required when switching sync_mode to 'resource_type'."
+                )
             if resource_groups is not None:
                 if not resource_groups:
                     raise ValueError("resource_groups must be a non-empty list.")
@@ -325,12 +331,13 @@ def update_task(
                     if g not in RESOURCE_GROUP_MAP:
                         raise ValueError(f"Unknown resource group: '{g}'")
                 task.resource_groups = resource_groups
+            if switching_to_resource_type:
+                task.label_name = None
+                task.label_resource_types = None
         elif effective_mode == "label":
-            # In label mode, resource_groups is stored as []
-            if resource_groups is not None:
+            if switching_to_label:
                 task.resource_groups = []
-            elif sync_mode == "label" and task.sync_mode == "resource_type":
-                # Mode switch: clear groups
+            elif resource_groups is not None:
                 task.resource_groups = []
             if label_name is not None:
                 if not label_name.strip():
