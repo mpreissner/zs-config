@@ -8,6 +8,30 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+#### Admin — Clear Data (web UI)
+- **Clear Data on Settings page** — the Admin → Settings page now includes a "Clear Data" section. Admins can wipe imported resources, config snapshots, sync logs, and audit entries for all tenants or a specific tenant, with a confirmation checkbox before execution. Calls `POST /api/v1/admin/clear-data`.
+
+### Fixed
+
+#### Apply Snapshot — cross-tenant push reliability
+- **URL Filtering Rule 400 errors** — `update_url_filtering_rule` was sending a snake_case payload via direct HTTP, but the ZIA endpoint expects camelCase. Switched to the SDK `update_rule()` method for non-GovCloud tenants (consistent with all other rule update methods).
+- **DLP Web Rule duplicate treated as permanent failure** — when a name lookup failed (e.g. due to a transient 429 mid-lookup), the failure was marked `permanent` and never retried. Removed the `permanent:` prefix so multi-pass retry can recover after the rate window clears.
+- **429 rate-limit spinning** — transient failures were re-queued immediately with no delay, causing repeated 429 hits until the "stable, no progress" cutoff. The push service now detects 429/rate-limit errors and sleeps for `Retry-After + 0.5s` (default 2s) before re-queuing.
+- **ISOLATE action without CBI profile → 400** — URL Filtering Rules with `action: ISOLATE` fail when no matching CBI isolation profile exists in the target tenant. The normalizer now downgrades the action to `CAUTION` and records a warning in the push log. The rule can be corrected once a matching CBI profile is created in the target.
+
+#### Web UI — tenant and import UX
+- **Tenant switch — tab state not reset** — switching tenants via the left-side nav preserved component state (preview results, job IDs, expanded panels) because React retained the same component instances. Fixed by adding `key={tenant.id}` to all tab renders, forcing unmount/remount on tenant change.
+- **Apply Snapshot source dropdown included active tenant** — applying a snapshot to yourself is a restore, not a cross-tenant apply. The active tenant is now excluded from the source dropdown.
+- **Import progress — "This may take several minutes" message disappeared** — the advisory message was shown only in the indeterminate state and disappeared once per-resource-type progress arrived. Both the message and the progress counter are now always visible while an import is running.
+
+#### Admin role
+- **Scheduled Tasks hidden from Admin** — the Scheduled Tasks nav item is now hidden for users with the Admin role; admins are directed to admin-specific pages.
+- **Clear Data scope missing snapshots** — the TUI Clear Data function was not deleting `RestorePoint` records. Both the TUI and the new web endpoint now delete config snapshots in addition to ZIA/ZPA/ZCC resources, sync logs, and audit entries.
+
+---
+
+### Added
+
 #### Scheduled Cross-Tenant Sync Tasks
 
 Automated, cron-driven sync of ZIA configuration between tenants — no manual trigger required.
