@@ -31,6 +31,7 @@ def _serialize(t) -> dict:
         "last_validation_error": t.last_validation_error,
         "notes": t.notes,
         "created_at": t.created_at.isoformat() if t.created_at else None,
+        "zia_subscriptions": t.zia_subscriptions,
     }
 
 

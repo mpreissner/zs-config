@@ -177,6 +177,7 @@ READONLY_FIELDS: set = {
     "predefined",
     "last_modified_by",
     "last_modified_time",
+    "last_mod_time",      # alternate timestamp field used by some resources (e.g. location_group)
     "created_by",
     "creation_time",
     "created_at",

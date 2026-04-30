@@ -44,6 +44,109 @@ def _has_label(raw_config: Dict, label_name: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Config normalization for cross-tenant equality checks
+# ---------------------------------------------------------------------------
+
+# Fields that are tenant-specific and must be excluded when comparing whether
+# two resource configs are functionally identical across tenants.
+# Mirrors READONLY_FIELDS in zia_push_service plus any extras found in the wild.
+_COMPARE_STRIP = frozenset({
+    "id", "predefined", "last_modified_by", "last_modified_time", "last_mod_time",
+    "created_by", "creation_time", "created_at", "updated_at", "modified_time",
+    "modified_by", "last_modified_by_user", "is_deleted", "db_category_index",
+    "deleted", "default_rule", "access_control", "managed_by",
+})
+
+
+def _norm_for_compare(obj: Any, _top_level: bool = True) -> Any:
+    """Return a normalised copy of a resource config suitable for equality checks.
+
+    - Strips all fields in _COMPARE_STRIP (tenant-specific IDs, timestamps, etc.).
+    - For nested reference objects that carry a 'name' key, strips 'id' so
+      comparison is by name only (cross-tenant IDs always differ for the same
+      logical resource).
+    - Lists of named objects are sorted by name; lists of unnamed dicts (e.g.
+      port ranges) are sorted by their JSON representation for stable comparison.
+    """
+    if isinstance(obj, dict):
+        result = {k: _norm_for_compare(v, _top_level=False) for k, v in obj.items() if k not in _COMPARE_STRIP}
+        if not _top_level and "id" in obj and "name" in obj:
+            result.pop("id", None)
+        return result
+    if isinstance(obj, list):
+        import json as _json
+        items = [_norm_for_compare(i, _top_level=False) for i in obj]
+        if items and isinstance(items[0], dict):
+            if "name" in items[0]:
+                items = sorted(items, key=lambda x: str(x.get("name", "")))
+            else:
+                items = sorted(items, key=lambda x: _json.dumps(x, sort_keys=True))
+        return items
+    return obj
+
+
+# Fields excluded from content fingerprinting so that rules differing only in
+# name or position are still recognised as the same logical rule.
+_MATCH_EXCLUDE = frozenset({"name", "order", "rank"})
+
+
+def _content_fingerprint(raw_config: dict) -> str:
+    """Stable content fingerprint excluding name, order, and rank.
+
+    Used for content-first matching across tenants: two rules with the same
+    logical behaviour but different names or positions hash to the same value.
+    """
+    import json
+    stripped = {k: v for k, v in raw_config.items() if k not in _MATCH_EXCLUDE}
+    return json.dumps(_norm_for_compare(stripped), sort_keys=True)
+
+
+def _configs_equal(a: dict, b: dict) -> bool:
+    """Return True if two raw resource configs are functionally identical."""
+    import json
+    return json.dumps(_norm_for_compare(a), sort_keys=True) == json.dumps(_norm_for_compare(b), sort_keys=True)
+
+
+# ---------------------------------------------------------------------------
+# License comparison helper
+# ---------------------------------------------------------------------------
+
+def _compare_subscriptions(src_subs: Any, tgt_subs: Any) -> Optional[str]:
+    """Return a warning string if src and tgt subscription data differ, else None.
+
+    Handles both array-of-feature-objects and {features: [...]} shapes.
+    Falls back to a generic mismatch message if neither structure is recognized.
+    """
+    import json
+
+    if not src_subs or not tgt_subs:
+        return None
+    if json.dumps(src_subs, sort_keys=True) == json.dumps(tgt_subs, sort_keys=True):
+        return None
+
+    def _extract(subs: Any):
+        arr = subs if isinstance(subs, list) else (subs.get("features") if isinstance(subs, dict) else None)
+        if not isinstance(arr, list):
+            return None
+        return {(f.get("name") if isinstance(f, dict) else str(f)) for f in arr if f}
+
+    src_feats = _extract(src_subs)
+    tgt_feats = _extract(tgt_subs)
+
+    if src_feats is not None and tgt_feats is not None:
+        only_src = sorted(src_feats - tgt_feats)
+        only_tgt = sorted(tgt_feats - src_feats)
+        parts = []
+        if only_src:
+            parts.append(f"source-only: {', '.join(only_src)}")
+        if only_tgt:
+            parts.append(f"target-only: {', '.join(only_tgt)}")
+        return f"Subscription mismatch — {'; '.join(parts)}" if parts else None
+
+    return "Subscription data differs between source and target tenants"
+
+
+# ---------------------------------------------------------------------------
 # Diff record
 # ---------------------------------------------------------------------------
 
@@ -82,14 +185,20 @@ def run_sync_task(task_id: int) -> Optional[TaskRunHistory]:
         t_label_name = task.label_name
         t_label_resource_types = list(task.label_resource_types) if task.label_resource_types else None
 
-    # 1b. Load source tenant's ZIA tenant ID for create descriptions
+    # 1b. Load source and target tenant metadata
     from db.models import TenantConfig
+    t_license_warning: Optional[str] = None
     with get_session() as session:
         src_tenant = session.get(TenantConfig, t_source)
+        tgt_tenant = session.get(TenantConfig, t_target)
         t_source_zia_id = (
             str(src_tenant.zia_tenant_id)
             if src_tenant and src_tenant.zia_tenant_id
             else None
+        )
+        t_license_warning = _compare_subscriptions(
+            src_tenant.zia_subscriptions if src_tenant else None,
+            tgt_tenant.zia_subscriptions if tgt_tenant else None,
         )
 
     # 2. Create a "running" run record
@@ -115,6 +224,13 @@ def run_sync_task(task_id: int) -> Optional[TaskRunHistory]:
         resource_types = expand_resource_groups(t_groups)
 
     errors: List[Dict[str, str]] = []
+    if t_license_warning:
+        errors.append({
+            "resource_type": "system",
+            "resource_name": "license_check",
+            "operation": "license_comparison",
+            "error": f"WARNING: {t_license_warning}",
+        })
     synced = 0
     pending_audit: List[Dict] = []
 
@@ -141,47 +257,57 @@ def run_sync_task(task_id: int) -> Optional[TaskRunHistory]:
             label_name=t_label_name if t_sync_mode == "label" else None,
         )
 
-        # 8. Push diff to target (best-effort)
-        for rec in diff:
-            try:
-                _apply_one(target_client, t_target, t_source, rec, source_zia_id=t_source_zia_id)
-                synced += 1
-                pending_audit.append(dict(
-                    tenant_id=t_target,
-                    product="ZIA",
-                    operation="scheduled_sync",
-                    action=rec.operation.upper(),
-                    status="SUCCESS",
-                    resource_type=rec.resource_type,
-                    resource_name=rec.name,
-                    details={
-                        "task_id": t_id,
-                        "task_name": t_name,
-                        "source_tenant_id": t_source,
-                    },
-                ))
-            except Exception as exc:
-                errors.append({
-                    "resource_type": rec.resource_type,
-                    "resource_name": rec.name,
-                    "operation": rec.operation,
-                    "error": str(exc),
-                })
-                pending_audit.append(dict(
-                    tenant_id=t_target,
-                    product="ZIA",
-                    operation="scheduled_sync",
-                    action=rec.operation.upper(),
-                    status="FAILURE",
-                    resource_type=rec.resource_type,
-                    resource_name=rec.name,
-                    details={
-                        "task_id": t_id,
-                        "task_name": t_name,
-                        "source_tenant_id": t_source,
-                    },
-                    error_message=str(exc),
-                ))
+        # 8. Split diff into phases returned by _compute_diff:
+        #    phase 1 — create / update / rename / delete  (content operations)
+        #    phase 2 — reorder  (positional, after all rules exist on target)
+        phase1 = [r for r in diff if r.operation != "reorder"]
+        phase2 = [r for r in diff if r.operation == "reorder"]
+
+        def _apply_batch(batch):
+            nonlocal synced
+            for rec in batch:
+                try:
+                    _apply_one(target_client, t_target, t_source, rec, source_zia_id=t_source_zia_id)
+                    synced += 1
+                    pending_audit.append(dict(
+                        tenant_id=t_target,
+                        product="ZIA",
+                        operation="scheduled_sync",
+                        action=rec.operation.upper(),
+                        status="SUCCESS",
+                        resource_type=rec.resource_type,
+                        resource_name=rec.name,
+                        details={
+                            "task_id": t_id,
+                            "task_name": t_name,
+                            "source_tenant_id": t_source,
+                        },
+                    ))
+                except Exception as exc:
+                    errors.append({
+                        "resource_type": rec.resource_type,
+                        "resource_name": rec.name,
+                        "operation": rec.operation,
+                        "error": str(exc),
+                    })
+                    pending_audit.append(dict(
+                        tenant_id=t_target,
+                        product="ZIA",
+                        operation="scheduled_sync",
+                        action=rec.operation.upper(),
+                        status="FAILURE",
+                        resource_type=rec.resource_type,
+                        resource_name=rec.name,
+                        details={
+                            "task_id": t_id,
+                            "task_name": t_name,
+                            "source_tenant_id": t_source,
+                        },
+                        error_message=str(exc),
+                    ))
+
+        _apply_batch(phase1)
+        _apply_batch(phase2)
 
         # 9. Activate target if any resources were pushed
         if synced > 0:
@@ -286,101 +412,143 @@ def _compute_diff(
 ) -> List[_DiffRecord]:
     """Compare source and target ZIAResource rows; return ordered diff list.
 
-    Matching is by name (cross-tenant IDs differ).
-    Config comparison uses config_hash (SHA-256 of sorted JSON).
+    Matching is content-first: each source rule is matched against the target by
+    its content fingerprint (config normalised without name/order/rank) before
+    falling back to name.  This produces four operation types:
+
+      create  — no target match by content or name
+      update  — name match found but content differs
+      rename  — content match found under a different name
+      reorder — content+name match but order/rank value differs
+
+    Reorder records are appended after all content operations so callers can
+    process them in a second phase once all rules exist on the target.
+
     Zscaler-managed resources are excluded via _is_zscaler_managed().
-    When label_name is set, only resources carrying that label are included.
+    When label_name is set, only source rules carrying that label are synced;
+    deletes are also scoped to labelled target rules.
     """
     from services.zia_push_service import _is_zscaler_managed, PUSH_ORDER
 
-    diff: List[_DiffRecord] = []
+    content_diff: List[_DiffRecord] = []  # create / update / rename / delete
+    reorder_diff: List[_DiffRecord] = []  # reorder (processed after content)
 
-    # Iterate in PUSH_ORDER so creates/updates are applied in dependency order.
-    # Types not in PUSH_ORDER are appended after (should not normally occur for
-    # the resource types in RESOURCE_GROUP_MAP).
     ordered_types = [rt for rt in PUSH_ORDER if rt in resource_types]
     remaining = [rt for rt in resource_types if rt not in ordered_types]
     all_types = ordered_types + remaining
 
     with get_session() as session:
         for rtype in all_types:
-            # Source rows (non-deleted, same tenant)
             src_rows = (
                 session.query(ZIAResource)
                 .filter_by(tenant_id=source_tenant_id, resource_type=rtype, is_deleted=False)
                 .all()
             )
-            # Target rows
             tgt_rows = (
                 session.query(ZIAResource)
                 .filter_by(tenant_id=target_tenant_id, resource_type=rtype, is_deleted=False)
                 .all()
             )
 
-            # Build name-keyed maps
+            # Source: name → row
             src_by_name: Dict[str, ZIAResource] = {}
             for r in src_rows:
                 if r.name and not _is_zscaler_managed(rtype, r.raw_config or {}):
                     src_by_name[r.name] = r
 
-            tgt_by_name: Dict[str, ZIAResource] = {}
+            # Target: name → [all rows]  and  content_fingerprint → [all rows]
+            tgt_by_name_all: Dict[str, List[ZIAResource]] = {}
+            tgt_by_content: Dict[str, List[ZIAResource]] = {}
             for r in tgt_rows:
                 if r.name and not _is_zscaler_managed(rtype, r.raw_config or {}):
-                    tgt_by_name[r.name] = r
+                    tgt_by_name_all.setdefault(r.name, []).append(r)
+                    ck = _content_fingerprint(r.raw_config or {})
+                    tgt_by_content.setdefault(ck, []).append(r)
 
-            # Filter source to labelled resources only when label_name is set.
-            # tgt_by_name stays UNFILTERED so CREATE/UPDATE name matching covers
-            # all existing target rules — prevents duplicate creates on reruns
-            # when the synced rule doesn't carry the label on the target.
-            # A separate tgt_labelled view (label-filtered) is used for DELETE
-            # so we only remove target rules that actually carry the label.
+            # Label filtering: restrict source to labelled rules; deletes are
+            # scoped to labelled target rules only (tgt_labelled_names).
             if label_name is not None:
                 src_by_name = {
                     name: r for name, r in src_by_name.items()
                     if _has_label(r.raw_config or {}, label_name)
                 }
-                tgt_labelled = {
-                    name: r for name, r in tgt_by_name.items()
-                    if _has_label(r.raw_config or {}, label_name)
+                tgt_labelled_names = {
+                    name
+                    for name, rows in tgt_by_name_all.items()
+                    if any(_has_label(r.raw_config or {}, label_name) for r in rows)
                 }
             else:
-                tgt_labelled = tgt_by_name
+                tgt_labelled_names = set(tgt_by_name_all.keys())
 
-            # CREATE — in source, not in target (full name match)
-            for name, src in src_by_name.items():
-                if name not in tgt_by_name:
-                    diff.append(_DiffRecord(
-                        resource_type=rtype,
-                        name=name,
-                        operation="create",
-                        source_raw=copy.deepcopy(src.raw_config or {}),
-                    ))
+            # Track claimed target zia_ids to prevent double-matching.
+            claimed: set = set()
 
-            # UPDATE — in both, different hash
             for name, src in src_by_name.items():
-                if name in tgt_by_name:
-                    tgt = tgt_by_name[name]
-                    if src.config_hash != tgt.config_hash:
-                        diff.append(_DiffRecord(
-                            resource_type=rtype,
-                            name=name,
-                            operation="update",
+                src_ck = _content_fingerprint(src.raw_config or {})
+                src_order = (src.raw_config or {}).get("order")
+                content_matches = tgt_by_content.get(src_ck, [])
+
+                # 1. Content match with same name → no-op or reorder
+                same_name = next(
+                    (r for r in content_matches if r.name == name and r.zia_id not in claimed),
+                    None,
+                )
+                if same_name:
+                    claimed.add(same_name.zia_id)
+                    tgt_order = (same_name.raw_config or {}).get("order")
+                    if src_order is not None and src_order != tgt_order:
+                        reorder_diff.append(_DiffRecord(
+                            resource_type=rtype, name=name, operation="reorder",
                             source_raw=copy.deepcopy(src.raw_config or {}),
-                            target_id=tgt.zia_id,
+                            target_id=same_name.zia_id,
                         ))
+                    continue
 
-            # DELETE — labelled target rules not present in source
+                # 2. Content match with different name → rename
+                diff_name = next(
+                    (r for r in content_matches if r.zia_id not in claimed),
+                    None,
+                )
+                if diff_name:
+                    claimed.add(diff_name.zia_id)
+                    content_diff.append(_DiffRecord(
+                        resource_type=rtype, name=name, operation="rename",
+                        source_raw=copy.deepcopy(src.raw_config or {}),
+                        target_id=diff_name.zia_id,
+                    ))
+                    continue
+
+                # 3. Name match but content differs → update
+                name_match = next(
+                    (r for r in tgt_by_name_all.get(name, []) if r.zia_id not in claimed),
+                    None,
+                )
+                if name_match:
+                    claimed.add(name_match.zia_id)
+                    content_diff.append(_DiffRecord(
+                        resource_type=rtype, name=name, operation="update",
+                        source_raw=copy.deepcopy(src.raw_config or {}),
+                        target_id=name_match.zia_id,
+                    ))
+                    continue
+
+                # 4. No match → create
+                content_diff.append(_DiffRecord(
+                    resource_type=rtype, name=name, operation="create",
+                    source_raw=copy.deepcopy(src.raw_config or {}),
+                ))
+
+            # DELETE — unclaimed labelled target rows not matched by any source rule
             if sync_deletes:
-                for name, tgt in tgt_labelled.items():
-                    if name not in src_by_name:
-                        diff.append(_DiffRecord(
-                            resource_type=rtype,
-                            name=name,
-                            operation="delete",
-                            target_id=tgt.zia_id,
-                        ))
+                for del_name in tgt_labelled_names:
+                    for r in tgt_by_name_all.get(del_name, []):
+                        if r.zia_id not in claimed:
+                            content_diff.append(_DiffRecord(
+                                resource_type=rtype, name=del_name, operation="delete",
+                                target_id=r.zia_id,
+                            ))
 
-    return diff
+    return content_diff + reorder_diff
 
 
 # ---------------------------------------------------------------------------
@@ -622,7 +790,7 @@ def _apply_one(
         create_method = getattr(target_client, create_method_name)
         create_method(payload)
     else:
-        # update — inject the target's ID
+        # update / rename / reorder — inject the target's ID and call update
         payload["id"] = rec.target_id
         update_method = getattr(target_client, update_method_name)
         update_method(rec.target_id, payload)
