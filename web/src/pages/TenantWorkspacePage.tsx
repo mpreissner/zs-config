@@ -3489,8 +3489,13 @@ function ImportProductModal({
                   <p className="text-xs text-gray-400 text-right">{importProgress.done} / {importProgress.total}</p>
                 </div>
               ) : (
-                <ImportProgressBar active />
+                <div className="mt-2 space-y-1.5">
+                  <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
+                    <div className="h-full w-2/5 bg-zs-500 rounded-full animate-indeterminate" />
+                  </div>
+                </div>
               )}
+              <p className="text-xs text-gray-400 italic">This may take several minutes depending on the number of resources in the tenant.</p>
             </div>
           )}
           {err && <p className="text-xs text-red-600">{err}</p>}
@@ -3589,7 +3594,7 @@ function ApplySnapshotPanel({ tenant }: { tenant: Tenant }) {
   }
 
   const sortedTenants = allTenants
-    ? [...allTenants].sort((a, b) => a.name.localeCompare(b.name))
+    ? [...allTenants].filter((t) => t.id !== tenant.id).sort((a, b) => a.name.localeCompare(b.name))
     : [];
 
   const err = mutErr ?? previewStreamError ?? applyStreamError ?? null;
@@ -4355,11 +4360,11 @@ export default function TenantWorkspacePage() {
       </div>
 
       {/* Tab content */}
-      {activeTab === "zia" && <ZiaTab tenant={tenant} />}
-      {activeTab === "zpa" && tenant.zpa_customer_id && <ZpaTab tenant={tenant} />}
-      {activeTab === "zdx" && <ZdxTab tenant={tenant} />}
-      {activeTab === "zcc" && <ZccTab tenant={tenant} />}
-      {activeTab === "zid" && <ZidTab tenant={tenant} />}
+      {activeTab === "zia" && <ZiaTab key={tenant.id} tenant={tenant} />}
+      {activeTab === "zpa" && tenant.zpa_customer_id && <ZpaTab key={tenant.id} tenant={tenant} />}
+      {activeTab === "zdx" && <ZdxTab key={tenant.id} tenant={tenant} />}
+      {activeTab === "zcc" && <ZccTab key={tenant.id} tenant={tenant} />}
+      {activeTab === "zid" && <ZidTab key={tenant.id} tenant={tenant} />}
 
       {importModal && (
         <ImportProductModal
