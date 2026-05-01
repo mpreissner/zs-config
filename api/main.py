@@ -18,6 +18,12 @@ import secrets
 # Ensure repo root is importable when run via uvicorn from repo root
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+if os.environ.get("ZS_TUI_ONLY") == "1":
+    sys.exit(
+        "ZS_TUI_ONLY=1 is set. The FastAPI server will not start. "
+        "Run: python -m cli.z_config"
+    )
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Depends
@@ -76,6 +82,9 @@ async def lifespan(app: FastAPI):
     temp_password = seed_admin_if_needed()
     if temp_password:
         print(f"[zs-config] Admin account created. Initial password: {temp_password}", flush=True)
+
+    from services.encryption_service import rotate_key_if_due
+    rotate_key_if_due()
 
     from services.scheduled_task_service import start_scheduler, stop_scheduler
     start_scheduler()

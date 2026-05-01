@@ -21,6 +21,10 @@ services:
       # ALLOWED_ORIGINS: "https://your-host.example.com"
       # Override the build-time CA bundle at runtime (e.g. if cert changes after image build)
       # REQUESTS_CA_BUNDLE: /data/db/ca-bundle.pem
+      # TUI-only mode: set to "1" to launch the TUI directly instead of the web UI.
+      # Access via: docker exec -it zs-config python -m cli.z_config
+      # The HEALTHCHECK will fail in TUI mode — add "healthcheck: disable" to your override.
+      # ZS_TUI_ONLY: "1"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s

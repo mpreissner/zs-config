@@ -104,3 +104,16 @@ export function clearData(tenantId?: number): Promise<ClearDataResult> {
     body: JSON.stringify({ tenant_id: tenantId ?? null }),
   });
 }
+
+export interface RotateKeyResult {
+  rotated: number;
+  algorithm: string;
+  rotated_at: string;
+}
+
+export function rotateKey(algorithm: string): Promise<RotateKeyResult> {
+  return apiFetch("/api/v1/admin/rotate-key", {
+    method: "POST",
+    body: JSON.stringify({ algorithm }),
+  });
+}

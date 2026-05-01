@@ -40,11 +40,13 @@ COPY pyproject.toml requirements.txt* ./
 RUN pip install --no-cache-dir ".[api]"
 
 # Copy application source
-COPY api/      ./api/
-COPY cli/      ./cli/
-COPY db/       ./db/
-COPY lib/      ./lib/
-COPY services/ ./services/
+COPY api/          ./api/
+COPY cli/          ./cli/
+COPY db/           ./db/
+COPY lib/          ./lib/
+COPY services/     ./services/
+COPY entrypoint.sh ./entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 # Copy compiled frontend from stage 1
 COPY --from=frontend-build /build/api/static ./api/static
@@ -74,4 +76,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
 
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["/app/entrypoint.sh"]

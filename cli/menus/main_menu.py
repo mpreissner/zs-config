@@ -23,7 +23,7 @@ def _zia_label() -> str:
     return "  ZIA   Zscaler Internet Access"
 
 
-def main_menu():
+def main_menu(tui_only: bool = False):
     while True:
         render_banner()
 
@@ -237,6 +237,8 @@ def settings_menu():
                 questionary.Separator(),
                 questionary.Choice("Clear Imported Data & Audit Log", value="cleardata"),
                 questionary.Separator(),
+                questionary.Choice("Security: Rotate Encryption Key", value="rotate_key"),
+                questionary.Separator(),
                 questionary.Choice("← Back", value="back"),
             ],
         ).ask()
@@ -253,6 +255,8 @@ def settings_menu():
             _remove_tenant()
         elif choice == "cleardata":
             _clear_imported_data()
+        elif choice == "rotate_key":
+            _rotate_encryption_key()
         elif choice in ("back", None):
             break
 
@@ -711,31 +715,54 @@ def _configure_conf_file():
     questionary.press_any_key_to_continue("Press any key to continue...").ask()
 
 
-def _generate_key():
-    from services.config_service import generate_key, _KEY_FILE
+def _rotate_encryption_key():
+    from db.database import get_setting
+    from lib.crypto import CryptoAlgorithm
+
+    current_algo = get_setting("encryption_algorithm") or CryptoAlgorithm.FERNET
+    last_rotated = get_setting("key_last_rotated_at") or "Never"
+
+    algo_labels = {
+        CryptoAlgorithm.FERNET: "Fernet (AES-128-CBC)",
+        CryptoAlgorithm.AES256GCM: "AES-256-GCM",
+        CryptoAlgorithm.CHACHA20POLY1305: "ChaCha20-Poly1305 (non-FIPS)",
+    }
+
+    console.print(f"\n[bold]Rotate Encryption Key[/bold]")
+    console.print(f"  Current algorithm : {algo_labels.get(current_algo, current_algo)}")
+    console.print(f"  Last rotated      : {last_rotated}\n")
+
+    new_algo = questionary.select(
+        "Select new algorithm:",
+        choices=[
+            questionary.Choice(algo_labels[CryptoAlgorithm.FERNET], value=CryptoAlgorithm.FERNET),
+            questionary.Choice(algo_labels[CryptoAlgorithm.AES256GCM], value=CryptoAlgorithm.AES256GCM),
+            questionary.Choice(algo_labels[CryptoAlgorithm.CHACHA20POLY1305], value=CryptoAlgorithm.CHACHA20POLY1305),
+        ],
+        default=current_algo,
+    ).ask()
+    if new_algo is None:
+        return
 
     confirmed = questionary.confirm(
-        "Generate a new encryption key? This will replace the existing key and make "
-        "any previously saved tenant secrets unreadable.",
+        "This will re-encrypt all tenant secrets with a new key. Continue?",
         default=False,
     ).ask()
     if not confirmed:
         return
 
-    key = generate_key()
-    console.print(
-        Panel(
-            f"[bold yellow]{key}[/bold yellow]",
-            title="New Encryption Key Generated",
-            subtitle=f"Saved to {_KEY_FILE}",
-            border_style="yellow",
+    from services.encryption_service import rotate_key
+    try:
+        with console.status("[cyan]Rotating key...[/cyan]"):
+            result = rotate_key(new_algo)
+        console.print(
+            f"[green]✓ Rotated {result['rotated']} tenant secrets. "
+            f"Algorithm: {algo_labels.get(result['algorithm'], result['algorithm'])}. "
+            f"Completed at {result['rotated_at']}.[/green]"
         )
-    )
-    console.print(
-        f"[green]✓ Key saved to[/green] [cyan]{_KEY_FILE}[/cyan]\n"
-        "[dim]To override with an env var instead: "
-        f"export ZSCALER_SECRET_KEY={key}[/dim]"
-    )
+    except Exception as exc:
+        console.print(f"[red]✗ Rotation failed: {exc}[/red]")
+
     questionary.press_any_key_to_continue("Press any key to continue...").ask()
 
 

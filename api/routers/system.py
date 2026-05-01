@@ -34,17 +34,21 @@ def system_info():
 # ── Settings ──────────────────────────────────────────────────────────────────
 
 _DEFAULTS = {
-    "access_token_ttl":        "300",
-    "refresh_token_ttl":       "3600",
-    "idle_timeout_minutes":    "15",
-    "max_login_attempts":      "0",
-    "audit_log_retention_days": "90",
-    "idp_enabled":             "false",
-    "idp_provider":            "",
-    "idp_issuer_url":          "",
-    "idp_client_id":           "",
-    "ssl_mode":                "none",
-    "ssl_domain":              "",
+    "access_token_ttl":           "300",
+    "refresh_token_ttl":          "3600",
+    "idle_timeout_minutes":       "15",
+    "max_login_attempts":         "0",
+    "audit_log_retention_days":   "90",
+    "idp_enabled":                "false",
+    "idp_provider":               "",
+    "idp_issuer_url":             "",
+    "idp_client_id":              "",
+    "ssl_mode":                   "none",
+    "ssl_domain":                 "",
+    "encryption_algorithm":       "fernet",
+    "fips_mode":                  "false",
+    "key_rotation_interval_days": "0",
+    "key_last_rotated_at":        "",
 }
 
 _KEYS = set(_DEFAULTS.keys())
@@ -52,17 +56,21 @@ _KEYS = set(_DEFAULTS.keys())
 
 def _coerce(raw: dict) -> dict:
     return {
-        "access_token_ttl":        int(raw["access_token_ttl"]),
-        "refresh_token_ttl":       int(raw["refresh_token_ttl"]),
-        "idle_timeout_minutes":    int(raw["idle_timeout_minutes"]),
-        "max_login_attempts":      int(raw["max_login_attempts"]),
-        "audit_log_retention_days": int(raw["audit_log_retention_days"]),
-        "idp_enabled":             raw["idp_enabled"] == "true",
-        "idp_provider":            raw["idp_provider"],
-        "idp_issuer_url":          raw["idp_issuer_url"],
-        "idp_client_id":           raw["idp_client_id"],
-        "ssl_mode":                raw["ssl_mode"],
-        "ssl_domain":              raw["ssl_domain"],
+        "access_token_ttl":           int(raw["access_token_ttl"]),
+        "refresh_token_ttl":          int(raw["refresh_token_ttl"]),
+        "idle_timeout_minutes":       int(raw["idle_timeout_minutes"]),
+        "max_login_attempts":         int(raw["max_login_attempts"]),
+        "audit_log_retention_days":   int(raw["audit_log_retention_days"]),
+        "idp_enabled":                raw["idp_enabled"] == "true",
+        "idp_provider":               raw["idp_provider"],
+        "idp_issuer_url":             raw["idp_issuer_url"],
+        "idp_client_id":              raw["idp_client_id"],
+        "ssl_mode":                   raw["ssl_mode"],
+        "ssl_domain":                 raw["ssl_domain"],
+        "encryption_algorithm":       raw["encryption_algorithm"],
+        "fips_mode":                  raw["fips_mode"] == "true",
+        "key_rotation_interval_days": int(raw["key_rotation_interval_days"]),
+        "key_last_rotated_at":        raw["key_last_rotated_at"] or None,
     }
 
 
@@ -71,17 +79,20 @@ def _load() -> dict:
 
 
 class SettingsPatch(BaseModel):
-    access_token_ttl:        Optional[int] = None
-    refresh_token_ttl:       Optional[int] = None
-    idle_timeout_minutes:    Optional[int] = None
-    max_login_attempts:      Optional[int] = None
-    audit_log_retention_days: Optional[int] = None
-    idp_enabled:             Optional[bool] = None
-    idp_provider:            Optional[str] = None
-    idp_issuer_url:          Optional[str] = None
-    idp_client_id:           Optional[str] = None
-    ssl_mode:                Optional[str] = None
-    ssl_domain:              Optional[str] = None
+    access_token_ttl:           Optional[int] = None
+    refresh_token_ttl:          Optional[int] = None
+    idle_timeout_minutes:       Optional[int] = None
+    max_login_attempts:         Optional[int] = None
+    audit_log_retention_days:   Optional[int] = None
+    idp_enabled:                Optional[bool] = None
+    idp_provider:               Optional[str] = None
+    idp_issuer_url:             Optional[str] = None
+    idp_client_id:              Optional[str] = None
+    ssl_mode:                   Optional[str] = None
+    ssl_domain:                 Optional[str] = None
+    encryption_algorithm:       Optional[str] = None
+    fips_mode:                  Optional[bool] = None
+    key_rotation_interval_days: Optional[int] = None
 
 
 @router.get("/api/v1/system/settings", tags=["System"])
