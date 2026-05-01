@@ -1,89 +1,34 @@
 """Tenant configuration management with encrypted secret storage.
 
-Secrets (client_secret) are encrypted with Fernet symmetric encryption before
-being stored in the database.
-
-Key resolution order:
-  1. ZSCALER_SECRET_KEY environment variable (explicit override)
-  2. Key file at ~/.config/zs-config/secret.key (auto-created on first run)
-
-On first launch the key is generated automatically — no manual setup required.
+Secrets (client_secret) are encrypted before being stored in the database.
+The active algorithm is read from app_settings; key material from env or key file.
 """
 
-import os
-import sys
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
-from cryptography.fernet import Fernet, InvalidToken
 
-from db.database import get_session
+from db.database import get_session, get_setting
 from db.models import TenantConfig
-
-_KEY_FILE = Path.home() / ".config" / "zs-config" / "secret.key"
-_KEY_FILE_LEGACY = Path.home() / ".config" / "z-config" / "secret.key"
-_KEY_FILE_LEGACY2 = Path.home() / ".config" / "zscaler-cli" / "secret.key"
+from lib.crypto import CryptoAlgorithm, decrypt, encrypt, load_key
 
 
-def _chmod_600(path: Path) -> None:
-    """Set file permissions to 600 on platforms that support it."""
-    if sys.platform != "win32":
-        path.chmod(0o600)
-
-
-def _get_fernet() -> Fernet:
-    # 1. Explicit env var override
-    key = os.environ.get("ZSCALER_SECRET_KEY")
-    if key:
-        return Fernet(key.encode() if isinstance(key, str) else key)
-
-    # 2. Key stored alongside the DB file (persistent in Docker volume)
-    if db_path_env := os.environ.get("ZSCALER_DB_PATH"):
-        _db_sibling_key = Path(db_path_env).parent / "secret.key"
-        if _db_sibling_key.exists():
-            return Fernet(_db_sibling_key.read_text().strip().encode())
-
-    # 3. Migrate from legacy key paths (zscaler-cli → z-config → zs-config)
-    for _legacy in (_KEY_FILE_LEGACY, _KEY_FILE_LEGACY2):
-        if not _KEY_FILE.exists() and _legacy.exists():
-            _KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
-            _KEY_FILE.write_text(_legacy.read_text())
-            _chmod_600(_KEY_FILE)
-            break
-
-    # 4. Persisted key file
-    if _KEY_FILE.exists():
-        key = _KEY_FILE.read_text().strip()
-        return Fernet(key.encode())
-
-    # 5. First run — auto-generate and save
-    key = Fernet.generate_key().decode()
-    _KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _KEY_FILE.write_text(key)
-    _chmod_600(_KEY_FILE)
-    return Fernet(key.encode())
-
-
-def generate_key() -> str:
-    """Generate a new Fernet encryption key and persist it to the key file."""
-    key = Fernet.generate_key().decode()
-    _KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _KEY_FILE.write_text(key)
-    _chmod_600(_KEY_FILE)
-    return key
+def _active_algorithm() -> str:
+    return get_setting("encryption_algorithm") or CryptoAlgorithm.FERNET
 
 
 def encrypt_secret(value: str) -> str:
-    return _get_fernet().encrypt(value.encode()).decode()
+    algo = _active_algorithm()
+    return encrypt(value, algo, load_key(algo))
 
 
 def decrypt_secret(value: str) -> str:
+    algo = _active_algorithm()
     try:
-        return _get_fernet().decrypt(value.encode()).decode()
-    except InvalidToken as e:
+        return decrypt(value, algo, load_key(algo))
+    except ValueError as e:
         raise ValueError(
-            "Failed to decrypt client secret — ZSCALER_SECRET_KEY may be wrong or the record is corrupted."
+            "Failed to decrypt client secret — key may be wrong or the record is corrupted."
         ) from e
 
 

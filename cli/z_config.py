@@ -115,6 +115,7 @@ def main():
     init_db()
 
     _container_mode = os.environ.get("ZS_CONTAINER_MODE", "0") == "1"
+    _tui_only = os.environ.get("ZS_TUI_ONLY", "0") == "1"
 
     # ── Complete any deferred plugin install (branch override flow) ────────
     # Skip in container mode — no TTY available; questionary would hang.
@@ -142,7 +143,7 @@ def main():
             verify_and_activate_tenant(tenant)
             questionary.press_any_key_to_continue("Press any key to continue...").ask()
 
-    main_menu()
+    main_menu(tui_only=_tui_only)
 
 
 if __name__ == "__main__":
