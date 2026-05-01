@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from api.dependencies import require_admin, AuthUser
 from api.auth_utils import hash_password
-from db.database import get_session, init_db, get_db_url
+from db.database import get_session, get_setting, init_db, get_db_url
 from db.models import (
     AuditLog, RestorePoint, SyncLog, TenantConfig,
     User, UserTenantEntitlement, ZCCResource, ZIAResource, ZPAResource,
@@ -251,6 +251,27 @@ def clear_data(body: ClearDataRequest, _: AuthUser = Depends(require_admin)):
         "sync_logs": sync_count,
         "audit_entries": audit_count,
     }
+
+
+# ── Key Rotation ─────────────────────────────────────────────────────────────
+
+class RotateKeyRequest(BaseModel):
+    algorithm: Optional[str] = None
+
+
+@router.post("/rotate-key")
+def rotate_encryption_key(body: RotateKeyRequest, _: AuthUser = Depends(require_admin)):
+    from services.encryption_service import rotate_key
+    from lib.crypto import CryptoAlgorithm
+
+    algorithm = body.algorithm or get_setting("encryption_algorithm") or CryptoAlgorithm.FERNET
+    try:
+        result = rotate_key(algorithm)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return result
 
 
 # ── Database Import ───────────────────────────────────────────────────────────

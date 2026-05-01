@@ -1,25 +1,39 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchSettings, patchSettings, SystemSettings } from "../api/system";
-import { importDatabase, ImportDbResult, clearData, ClearDataResult } from "../api/admin";
+import { importDatabase, ImportDbResult, clearData, ClearDataResult, rotateKey, RotateKeyResult } from "../api/admin";
 import { fetchTenants, Tenant } from "../api/tenants";
 import LoadingSpinner from "../components/LoadingSpinner";
 import ErrorMessage from "../components/ErrorMessage";
 
 // ── Shared field components ───────────────────────────────────────────────────
 
-function SectionCard({ title, badge, children }: {
+function SectionCard({ title, badge, children, defaultOpen = false }: {
   title: string;
   badge?: React.ReactNode;
   children: React.ReactNode;
+  defaultOpen?: boolean;
 }) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-100 bg-gray-50">
+      <button
+        type="button"
+        onClick={() => setIsOpen((o) => !o)}
+        className="w-full flex items-center gap-3 px-6 py-4 border-b border-gray-100 bg-gray-50 text-left hover:bg-gray-100 transition-colors"
+      >
+        <svg
+          className={`h-4 w-4 text-gray-400 transition-transform duration-200 flex-shrink-0 ${isOpen ? "rotate-90" : ""}`}
+          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+        </svg>
         <h2 className="font-semibold text-gray-800 text-sm">{title}</h2>
         {badge}
+      </button>
+      <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isOpen ? "max-h-[2000px]" : "max-h-0"}`}>
+        <div className="px-6 py-5 space-y-4">{children}</div>
       </div>
-      <div className="px-6 py-5 space-y-4">{children}</div>
     </div>
   );
 }
@@ -89,7 +103,7 @@ function TextInput({ value, onChange, placeholder, disabled }: {
 function SelectInput({ value, onChange, options, disabled }: {
   value: string;
   onChange: (v: string) => void;
-  options: { value: string; label: string }[];
+  options: { value: string; label: string; disabled?: boolean }[];
   disabled?: boolean;
 }) {
   return (
@@ -100,7 +114,7 @@ function SelectInput({ value, onChange, options, disabled }: {
       className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500 disabled:bg-gray-50 disabled:text-gray-400"
     >
       {options.map((o) => (
-        <option key={o.value} value={o.value}>{o.label}</option>
+        <option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>
       ))}
     </select>
   );
@@ -128,6 +142,14 @@ function Toggle({ checked, onChange, disabled }: {
     </button>
   );
 }
+
+// ── Algorithm labels ──────────────────────────────────────────────────────────
+
+const ALGO_LABELS: Record<string, string> = {
+  fernet: "Fernet (AES-128-CBC)",
+  aes256gcm: "AES-256-GCM",
+  chacha20poly1305: "ChaCha20-Poly1305 (non-FIPS)",
+};
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
@@ -345,18 +367,38 @@ export default function AdminSettingsPage() {
         </FieldRow>
       </SectionCard>
 
-      {/* ── Import Database ───────────────────────────────────────────────── */}
-      <ImportDatabaseCard />
-
-      {/* ── Clear Data ────────────────────────────────────────────────────── */}
-      <ClearDataCard />
+      {/* ── Database Maintenance ──────────────────────────────────────────── */}
+      <DatabaseMaintenanceCard draft={draft} set={set} />
     </div>
   );
 }
 
-// ── Import Database card ──────────────────────────────────────────────────────
+// ── Database Maintenance card (Import + Clear Data + Encryption) ──────────────
 
-function ImportDatabaseCard() {
+function DatabaseMaintenanceCard({
+  draft,
+  set,
+}: {
+  draft: SystemSettings;
+  set: <K extends keyof SystemSettings>(key: K, value: SystemSettings[K]) => void;
+}) {
+  return (
+    <SectionCard title="Database Maintenance">
+      <p className="text-sm font-semibold text-gray-700 mb-1">Import Database</p>
+      <ImportDatabaseSection />
+      <hr className="border-gray-100" />
+      <p className="text-sm font-semibold text-gray-700 mb-1">Clear Data</p>
+      <ClearDataSection />
+      <hr className="border-gray-100" />
+      <p className="text-sm font-semibold text-gray-700 mb-1">Encryption</p>
+      <EncryptionSection draft={draft} set={set} />
+    </SectionCard>
+  );
+}
+
+// ── Import Database section ───────────────────────────────────────────────────
+
+function ImportDatabaseSection() {
   const [dbFile, setDbFile] = useState<File | null>(null);
   const [keyFile, setKeyFile] = useState<File | null>(null);
   const [result, setResult] = useState<ImportDbResult | null>(null);
@@ -385,7 +427,7 @@ function ImportDatabaseCard() {
   }
 
   return (
-    <SectionCard title="Import Database">
+    <div className="space-y-4">
       <p className="text-xs text-gray-500">
         Replace the running database with one exported from a local TUI-based zs-config install.
         Use the <code className="bg-gray-100 px-1 rounded text-xs font-mono">scripts/export_tui_db.sh</code> script
@@ -454,13 +496,13 @@ function ImportDatabaseCard() {
           {loading ? "Importing…" : "Import Database"}
         </button>
       </div>
-    </SectionCard>
+    </div>
   );
 }
 
-// ── Clear Data card ───────────────────────────────────────────────────────────
+// ── Clear Data section ────────────────────────────────────────────────────────
 
-function ClearDataCard() {
+function ClearDataSection() {
   const { data: tenants } = useQuery<Tenant[]>({
     queryKey: ["tenants"],
     queryFn: fetchTenants,
@@ -496,7 +538,7 @@ function ClearDataCard() {
   const canSubmit = !loading && confirm && (scope === "all" || !!tenantId);
 
   return (
-    <SectionCard title="Clear Data">
+    <div className="space-y-4">
       <p className="text-xs text-gray-500">
         Permanently deletes imported resources, config snapshots, sync logs, and audit log entries.
         Tenant configuration (credentials, connection details) is preserved.
@@ -559,6 +601,151 @@ function ClearDataCard() {
           {loading ? "Clearing…" : "Clear Data"}
         </button>
       </div>
-    </SectionCard>
+    </div>
+  );
+}
+
+// ── Encryption section ────────────────────────────────────────────────────────
+
+function EncryptionSection({
+  draft,
+  set,
+}: {
+  draft: SystemSettings;
+  set: <K extends keyof SystemSettings>(key: K, value: SystemSettings[K]) => void;
+}) {
+  const qc = useQueryClient();
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [rotating, setRotating] = useState(false);
+  const [rotateResult, setRotateResult] = useState<RotateKeyResult | null>(null);
+  const [rotateError, setRotateError] = useState<string | null>(null);
+
+  async function handleRotate() {
+    setRotating(true);
+    setRotateResult(null);
+    setRotateError(null);
+    try {
+      const res = await rotateKey(draft.encryption_algorithm);
+      setRotateResult(res);
+      setShowConfirm(false);
+      qc.invalidateQueries({ queryKey: ["system-settings"] });
+    } catch (e: unknown) {
+      setRotateError(e instanceof Error ? e.message : "Rotation failed");
+    } finally {
+      setRotating(false);
+    }
+  }
+
+  function handleFipsModeChange(v: boolean) {
+    set("fips_mode", v);
+    if (v && draft.encryption_algorithm === "chacha20poly1305") {
+      set("encryption_algorithm", "fernet");
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <FieldRow label="Current algorithm">
+        <span className="text-sm text-gray-700">{ALGO_LABELS[draft.encryption_algorithm] ?? draft.encryption_algorithm}</span>
+      </FieldRow>
+
+      <FieldRow label="Last rotated">
+        <span className="text-sm text-gray-700">
+          {draft.key_last_rotated_at
+            ? new Date(draft.key_last_rotated_at + "Z").toLocaleString()
+            : "Never"}
+        </span>
+      </FieldRow>
+
+      <FieldRow
+        label="Algorithm"
+        hint="Select the encryption algorithm for tenant secrets."
+      >
+        <SelectInput
+          value={draft.encryption_algorithm}
+          onChange={(v) => set("encryption_algorithm", v)}
+          options={[
+            { value: "fernet", label: "Fernet (AES-128-CBC)" },
+            { value: "aes256gcm", label: "AES-256-GCM" },
+            { value: "chacha20poly1305", label: "ChaCha20-Poly1305 (non-FIPS)", disabled: draft.fips_mode },
+          ]}
+        />
+        {draft.fips_mode && draft.encryption_algorithm === "chacha20poly1305" && (
+          <p className="text-xs text-amber-600 mt-1">ChaCha20-Poly1305 is not FIPS-compliant. Algorithm reset to Fernet.</p>
+        )}
+      </FieldRow>
+
+      <FieldRow
+        label="FIPS mode"
+        hint="Restrict algorithm selection to FIPS 140-2 validated ciphers. Actual FIPS compliance requires a FIPS-validated OpenSSL build."
+      >
+        <Toggle checked={draft.fips_mode} onChange={handleFipsModeChange} />
+      </FieldRow>
+
+      <FieldRow
+        label="Auto-rotation interval"
+        hint="Automatically rotate the key after this interval at startup. 0 = disabled."
+      >
+        <SelectInput
+          value={String(draft.key_rotation_interval_days)}
+          onChange={(v) => set("key_rotation_interval_days", parseInt(v, 10))}
+          options={[
+            { value: "0", label: "Off" },
+            { value: "30", label: "30 days" },
+            { value: "60", label: "60 days" },
+            { value: "90", label: "90 days" },
+            { value: "180", label: "180 days" },
+            { value: "365", label: "365 days" },
+          ]}
+        />
+      </FieldRow>
+
+      <hr className="border-gray-100" />
+
+      <FieldRow label="Manual rotation">
+        {!showConfirm ? (
+          <button
+            type="button"
+            onClick={() => { setShowConfirm(true); setRotateResult(null); setRotateError(null); }}
+            className="px-4 py-2 text-sm font-medium rounded-md border border-red-400 text-red-600 hover:bg-red-50 transition-colors"
+          >
+            Rotate Key Now
+          </button>
+        ) : (
+          <div className="space-y-3 rounded-lg border border-amber-300 bg-amber-50 p-4">
+            <p className="text-sm text-amber-800">
+              This will re-encrypt all tenant secrets with a new key. The old key will be
+              overwritten. Ensure you have a database backup.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setShowConfirm(false)}
+                disabled={rotating}
+                className="px-3 py-1.5 text-sm font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 disabled:opacity-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleRotate}
+                disabled={rotating}
+                className="px-3 py-1.5 text-sm font-medium rounded-md bg-red-600 hover:bg-red-700 text-white disabled:opacity-50 transition-colors"
+              >
+                {rotating ? "Rotating…" : "Confirm Rotation"}
+              </button>
+            </div>
+          </div>
+        )}
+      </FieldRow>
+
+      {rotateResult && (
+        <p className="text-xs text-green-700 font-medium">
+          Rotated {rotateResult.rotated} tenant secrets using {ALGO_LABELS[rotateResult.algorithm] ?? rotateResult.algorithm}.
+          Completed at {new Date(rotateResult.rotated_at + "Z").toLocaleString()}.
+        </p>
+      )}
+      {rotateError && <p className="text-xs text-red-600">{rotateError}</p>}
+    </div>
   );
 }

@@ -26,6 +26,10 @@ export interface SystemSettings {
   idp_client_id: string;
   ssl_mode: string;
   ssl_domain: string;
+  encryption_algorithm: string;
+  fips_mode: boolean;
+  key_rotation_interval_days: number;
+  key_last_rotated_at: string | null;
 }
 
 export function fetchSystemInfo(): Promise<SystemInfo> {
