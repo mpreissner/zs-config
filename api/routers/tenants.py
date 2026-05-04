@@ -322,7 +322,8 @@ def import_zia(tenant_id: int, user: AuthUser = Depends(require_auth)):
     import threading
     from api.jobs import store
 
-    check_tenant_access(tenant_id, user)
+    if user.role != "admin":
+        check_tenant_access(tenant_id, user)
     client, tenant_name = _get_import_client(tenant_id)
     job_id = store.create()
 
@@ -374,7 +375,8 @@ def import_zpa(tenant_id: int, user: AuthUser = Depends(require_auth)):
     from lib.zpa_client import ZPAClient
     from services.config_service import decrypt_secret
 
-    check_tenant_access(tenant_id, user)
+    if user.role != "admin":
+        check_tenant_access(tenant_id, user)
     with get_session() as session:
         t = session.query(TenantConfig).filter_by(id=tenant_id, is_active=True).first()
         if not t:
