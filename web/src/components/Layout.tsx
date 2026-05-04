@@ -195,9 +195,11 @@ export default function Layout({ children }: LayoutProps) {
           )}
 
           {/* Templates */}
-          <NavLink to="/templates" className={navLinkClass}>
-            Templates
-          </NavLink>
+          {!isAdmin && (
+            <NavLink to="/templates" className={navLinkClass}>
+              Templates
+            </NavLink>
+          )}
 
           {/* Audit Log */}
           <NavLink to="/audit" className={navLinkClass}>
