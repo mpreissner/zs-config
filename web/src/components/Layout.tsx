@@ -194,6 +194,11 @@ export default function Layout({ children }: LayoutProps) {
             </NavLink>
           )}
 
+          {/* Templates */}
+          <NavLink to="/templates" className={navLinkClass}>
+            Templates
+          </NavLink>
+
           {/* Audit Log */}
           <NavLink to="/audit" className={navLinkClass}>
             Audit Log
