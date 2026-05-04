@@ -133,6 +133,19 @@ def _migrate(engine) -> None:
         "ALTER TABLE scheduled_tasks ADD COLUMN sync_mode VARCHAR(16) NOT NULL DEFAULT 'resource_type'",
         "ALTER TABLE scheduled_tasks ADD COLUMN label_name VARCHAR(255)",
         "ALTER TABLE scheduled_tasks ADD COLUMN label_resource_types JSON",
+        # ZIA Templates — tenant-agnostic sanitised snapshots
+        """CREATE TABLE IF NOT EXISTS zia_templates (
+            id                 INTEGER PRIMARY KEY,
+            name               VARCHAR(255) NOT NULL UNIQUE,
+            description        TEXT,
+            source_tenant_id   INTEGER REFERENCES tenant_configs(id) ON DELETE SET NULL,
+            source_snapshot_id INTEGER REFERENCES restore_points(id) ON DELETE SET NULL,
+            created_at         DATETIME NOT NULL,
+            updated_at         DATETIME NOT NULL,
+            resource_count     INTEGER NOT NULL DEFAULT 0,
+            stripped_types     JSON NOT NULL,
+            snapshot           JSON NOT NULL
+        )""",
     ]
     for stmt in migrations:
         with engine.connect() as conn:
