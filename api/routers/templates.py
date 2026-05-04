@@ -96,7 +96,7 @@ def _get_import_client(tenant_id: int):
     """
     from db.database import get_session
     from db.models import TenantConfig
-    from services.encryption_service import decrypt_secret
+    from services.config_service import decrypt_secret
     from lib.zia_client import ZIAClient
 
     with get_session() as session:
