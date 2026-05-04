@@ -20,6 +20,7 @@ export interface ZIATemplateDetail extends ZIATemplate {
 export interface TemplatePreviewResult {
   included: { resource_type: string; count: number }[];
   stripped: { resource_type: string; count: number; reason: string }[];
+  stripped_rule_entries: { resource_type: string; count: number; reason: string }[];
 }
 
 export interface TemplatePreviewRequest {

@@ -228,6 +228,29 @@ function CreateTemplateDialog({ onClose, onCreated }: { onClose: () => void; onC
                   </div>
                 </div>
               )}
+              {preview.stripped_rule_entries?.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-orange-700 mb-2">Stripped rules (location/ZPA-scoped, {preview.stripped_rule_entries.reduce((s, r) => s + r.count, 0)} rules across {preview.stripped_rule_entries.length} type{preview.stripped_rule_entries.length !== 1 ? "s" : ""}):</p>
+                  <div className="max-h-24 overflow-y-auto border border-orange-200 rounded-md">
+                    <table className="min-w-full text-xs divide-y divide-orange-100">
+                      <thead className="bg-orange-50 sticky top-0">
+                        <tr>
+                          <th className="px-3 py-1.5 text-left font-medium text-orange-600 uppercase">Type</th>
+                          <th className="px-3 py-1.5 text-right font-medium text-orange-600 uppercase">Stripped</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-orange-100 bg-white">
+                        {preview.stripped_rule_entries.map((r) => (
+                          <tr key={r.resource_type}>
+                            <td className="px-3 py-1.5 font-mono text-gray-700">{r.resource_type}</td>
+                            <td className="px-3 py-1.5 text-right text-gray-700">{r.count}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
 
               {/* Metadata fields */}
               <div>

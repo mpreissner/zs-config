@@ -35,9 +35,7 @@ from sqlalchemy.orm import Session
 from db.models import RestorePoint, ZIATemplate
 
 
-# Resource types stripped when creating a template.
-# Includes both tenant-specific types (locations, VPN creds, etc.) and
-# reference-only types that are not pushable.
+# Resource types stripped entirely when creating a template.
 TEMPLATE_STRIP_TYPES: set = {
     # Tenant-specific — encode public IPs, PSKs, or physical topology
     "location",
@@ -53,57 +51,211 @@ TEMPLATE_STRIP_TYPES: set = {
     "network_app",
     "cloud_app_policy",
     "cloud_app_ssl_policy",
+    # Identity — not portable across tenants
     "user",
     "group",
     "department",
     "admin_user",
     "admin_role",
+    # Reference-only
     "cloud_app_instance",
+    # System-defined, not pushable via API
+    "network_app_group",
+    # network_service is kept — rules reference services by source-tenant ID and the
+    # push service needs the source entries to remap those IDs to target-tenant IDs.
+    # Tenant-specific admin hierarchy / entitlement-scoped
+    "tenancy_restriction_profile",
+    # DLP engines: Zscaler-supplied defaults are indistinguishable from custom;
+    # target tenant already has all built-in engines.
+    "dlp_engine",
 }
 
-# Human-readable reason strings for the stripped types (for preview display).
+# Zscaler-managed locations that exist in every tenant and are safe to reference
+# in a portable template.  Any other location name is a physical/tenant-specific
+# location and causes that rule entry to be stripped.
+#   LOC_DEFAULT   — Road Warrior / Client Connector users
+#   Cloud Browser — CBI isolation (entitlement-gated, but the location always exists)
+PORTABLE_LOCATIONS: frozenset = frozenset({"LOC_DEFAULT", "Cloud Browser"})
+
+# Human-readable reasons for type-level strips (shown in the preview UI).
 _STRIP_REASONS: Dict[str, str] = {
-    "location":            "Encodes public IP addresses and VPN credential references",
-    "sublocation":         "Child of a location; IP-topology-specific",
-    "vpn_credential":      "Contains FQDN + pre-shared key unique to source network",
-    "static_ip":           "Public IP registered with ZIA; unique to source network",
-    "gre_tunnel":          "References source public IPs; entirely topology-specific",
-    "pac_file":            "May reference internal hostnames or proxy IPs",
-    "location_lite":       "Reference-only — imported for ID remapping, not pushable",
-    "location_group":      "Reference-only — read-only in SDK",
-    "device_group":        "Reference-only — predefined OS/platform groups",
-    "network_app":         "Reference-only — system-defined, read-only",
-    "cloud_app_policy":    "Reference data, not policy",
-    "cloud_app_ssl_policy":"Reference data, not policy",
-    "user":                "Identity data, not portable across tenants",
-    "group":               "Identity data, not portable across tenants",
-    "department":          "Identity data, not portable across tenants",
-    "admin_user":          "Admin accounts are tenant-specific",
-    "admin_role":          "Admin roles are tenant-specific",
-    "cloud_app_instance":  "Reference-only — tenant-specific cloud app instance IDs",
+    "location":                 "Encodes public IP addresses and VPN credential references",
+    "sublocation":              "Child of a location; IP-topology-specific",
+    "vpn_credential":           "Contains FQDN + pre-shared key unique to source network",
+    "static_ip":                "Public IP registered with ZIA; unique to source network",
+    "gre_tunnel":               "References source public IPs; entirely topology-specific",
+    "pac_file":                 "May reference internal hostnames or proxy IPs",
+    "location_lite":            "Reference-only — imported for ID remapping, not pushable",
+    "location_group":           "Reference-only — read-only in SDK",
+    "device_group":             "Reference-only — predefined OS/platform groups",
+    "network_app":              "Reference-only — system-defined, read-only",
+    "cloud_app_policy":         "Reference data, not policy",
+    "cloud_app_ssl_policy":     "Reference data, not policy",
+    "user":                     "Identity data, not portable across tenants",
+    "group":                    "Identity data, not portable across tenants",
+    "department":               "Identity data, not portable across tenants",
+    "admin_user":               "Admin accounts are tenant-specific",
+    "admin_role":               "Admin roles are tenant-specific",
+    "cloud_app_instance":       "Reference-only — tenant-specific cloud app instance IDs",
+    "network_app_group":        "System-defined — not pushable via API",
+    "tenancy_restriction_profile": "Tenant-specific; references tenant-specific IDs",
+    "dlp_engine":               "Zscaler-supplied defaults indistinguishable from custom; target tenant already has built-in engines",
 }
+
+_ENTRY_STRIP_REASON = "Some entries stripped (tenant-specific scope, system rules, or non-portable references)"
+
+
+def _has_tenant_location(rc: dict) -> bool:
+    """Return True if raw_config references any non-portable (physical) location."""
+    return any(
+        loc.get("name") not in PORTABLE_LOCATIONS
+        for loc in rc.get("locations", [])
+    )
+
+
+def _has_zpa_ref(rc: dict) -> bool:
+    """Return True if raw_config references ZPA App Segments or segment groups."""
+    return bool(
+        rc.get("zpa_app_segments")
+        or rc.get("zpa_application_segments")
+        or rc.get("zpa_application_segment_groups")
+    )
+
+
+def _should_strip_entry(rtype: str, entry: dict) -> bool:
+    """Return True if an individual resource entry should be excluded from the template.
+
+    Decisions per type, derived from reviewing the commercial-zs2 snapshot:
+
+    dlp_dictionary  — keep only custom=True; BUILTIN dictionaries exist in every tenant
+    url_category    — keep only custom_category=True; BUILTIN categories exist in every tenant
+    cloud_app_control_rule — strip if scoped to tenancy profiles (tenant-specific IDs)
+
+    All rule types:
+      - Strip system rules (order < 0)
+      - Strip firewall_dns_rule entries named "ZPA Resolver …" (auto-managed by Zscaler)
+      - Strip entries referencing non-portable locations (anything except LOC_DEFAULT / Cloud Browser)
+      - Strip entries referencing ZPA App Segments or segment groups
+    """
+    rc = entry.get("raw_config", {})
+
+    if rtype == "dlp_dictionary":
+        return not rc.get("custom", False)
+
+    if rtype == "url_category":
+        return not rc.get("custom_category", False)
+
+    if rtype == "cloud_app_control_rule":
+        return bool(rc.get("tenancy_profile_ids"))
+
+    # Rule-level checks apply to all remaining types
+    order = rc.get("order")
+    if order is not None and order < 0:
+        return True
+
+    if rtype == "firewall_dns_rule" and "ZPA Resolver" in entry.get("name", ""):
+        return True
+
+    if _has_tenant_location(rc):
+        return True
+
+    if _has_zpa_ref(rc):
+        return True
+
+    return False
+
+
+def _renumber_single_list(entries: List[dict]) -> List[dict]:
+    """Sort by original order and assign sequential orders 1, 2, 3, …"""
+    sorted_entries = sorted(
+        entries,
+        key=lambda e: (
+            e.get("raw_config", {}).get("order") is None,
+            e.get("raw_config", {}).get("order", 0),
+        ),
+    )
+    result = []
+    new_order = 1
+    for entry in sorted_entries:
+        rc = entry.get("raw_config", {})
+        if "order" in rc:
+            entry = {**entry, "raw_config": {**rc, "order": new_order}}
+            new_order += 1
+        result.append(entry)
+    return result
+
+
+def _renumber_orders(entries: List[dict], group_field: Optional[str] = None) -> List[dict]:
+    """Renumber order fields sequentially after stripping entries to close gaps.
+
+    For most rule types, entries share a single global ordered list.
+    cloud_app_control_rule is an exception: each value of its `type` field
+    (WEBMAIL, STREAMING_MEDIA, etc.) has its own independent 1-based ordered list,
+    so group_field="type" must be passed for that type.
+
+    Entries without an order field in raw_config are left unchanged.
+    """
+    if not entries:
+        return entries
+    if not any("order" in e.get("raw_config", {}) for e in entries):
+        return entries
+
+    if group_field:
+        from collections import defaultdict
+        groups: Dict[str, List[dict]] = defaultdict(list)
+        for e in entries:
+            key = e.get("raw_config", {}).get(group_field, "")
+            groups[key].append(e)
+        result = []
+        for group_entries in groups.values():
+            result.extend(_renumber_single_list(group_entries))
+        return result
+
+    return _renumber_single_list(entries)
 
 
 def _strip_snapshot(
     resources: Dict[str, List[dict]],
-) -> Tuple[Dict[str, List[dict]], List[str], List[str]]:
+) -> Tuple[Dict[str, List[dict]], List[str], List[str], Dict[str, int]]:
     """Separate portable from tenant-specific resources.
 
+    Every type in TEMPLATE_STRIP_TYPES is dropped entirely.  For all other types,
+    _should_strip_entry is applied to each entry individually; if all entries are
+    stripped the type is treated as fully stripped.
+
     Returns:
-        (kept_resources, stripped_type_names, included_type_names)
+        (kept_resources, stripped_type_names, included_type_names,
+         stripped_entry_counts)
+
+    stripped_entry_counts maps resource_type → number of entries stripped (only
+    for types where at least one entry was kept).
     """
     kept: Dict[str, List[dict]] = {}
     stripped_types: List[str] = []
     included_types: List[str] = []
+    stripped_entry_counts: Dict[str, int] = {}
 
     for rtype, entries in resources.items():
         if rtype in TEMPLATE_STRIP_TYPES:
             stripped_types.append(rtype)
-        else:
-            kept[rtype] = entries
-            included_types.append(rtype)
+            continue
 
-    return kept, sorted(stripped_types), sorted(included_types)
+        portable = [e for e in entries if not _should_strip_entry(rtype, e)]
+        n_stripped = len(entries) - len(portable)
+
+        if portable:
+            if n_stripped:
+                group_field = "type" if rtype == "cloud_app_control_rule" else None
+                kept[rtype] = _renumber_orders(portable, group_field=group_field)
+            else:
+                kept[rtype] = portable
+            included_types.append(rtype)
+            if n_stripped:
+                stripped_entry_counts[rtype] = n_stripped
+        elif entries:
+            stripped_types.append(rtype)
+
+    return kept, sorted(stripped_types), sorted(included_types), stripped_entry_counts
 
 
 def _load_snapshot(
@@ -131,26 +283,31 @@ def preview_template_from_snapshot(
         {
             "included": [{"resource_type": str, "count": int}],
             "stripped": [{"resource_type": str, "count": int, "reason": str}],
+            "stripped_rule_entries": [{"resource_type": str, "count": int, "reason": str}],
         }
     """
     snap = _load_snapshot(snapshot_id, source_tenant_id, session)
     resources = snap.snapshot.get("resources", {})
-    kept, stripped_types, included_types = _strip_snapshot(resources)
+    kept, stripped_types, included_types, stripped_entry_counts = _strip_snapshot(resources)
 
     included = [
-        {"resource_type": rt, "count": len(kept.get(rt, []))}
+        {"resource_type": rt, "count": len(kept[rt])}
         for rt in included_types
     ]
-    stripped = []
-    for rt in stripped_types:
-        count = len(resources.get(rt, []))
-        stripped.append({
+    stripped = [
+        {
             "resource_type": rt,
-            "count": count,
+            "count": len(resources.get(rt, [])),
             "reason": _STRIP_REASONS.get(rt, "Tenant-specific or reference-only"),
-        })
+        }
+        for rt in stripped_types
+    ]
+    stripped_rule_entries = [
+        {"resource_type": rt, "count": n, "reason": _ENTRY_STRIP_REASON}
+        for rt, n in sorted(stripped_entry_counts.items())
+    ]
 
-    return {"included": included, "stripped": stripped}
+    return {"included": included, "stripped": stripped, "stripped_rule_entries": stripped_rule_entries}
 
 
 def create_template_from_snapshot(
@@ -172,16 +329,14 @@ def create_template_from_snapshot(
     The caller is responsible for writing audit events AFTER the session closes
     (SQLite write-lock rule — do not call audit_service.log() inside this block).
     """
-    # Check for duplicate name before loading the snapshot
     existing = session.query(ZIATemplate).filter_by(name=name).first()
     if existing is not None:
         raise ValueError(f"duplicate_name:A template with this name already exists")
 
     snap = _load_snapshot(snapshot_id, source_tenant_id, session)
     resources = snap.snapshot.get("resources", {})
-    kept, stripped_types, _ = _strip_snapshot(resources)
+    kept, stripped_types, _, _ = _strip_snapshot(resources)
 
-    # Count portable resources
     resource_count = sum(len(v) for v in kept.values())
     if resource_count == 0:
         stripped_summary = ", ".join(stripped_types) if stripped_types else "all types"
@@ -203,7 +358,7 @@ def create_template_from_snapshot(
         snapshot=kept,
     )
     session.add(tmpl)
-    session.flush()   # populate tmpl.id without committing
+    session.flush()
     return tmpl
 
 
