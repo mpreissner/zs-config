@@ -36,6 +36,8 @@ from __future__ import annotations
 import copy
 import json
 import re
+import secrets
+import string
 import time
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Tuple
@@ -127,12 +129,17 @@ SKIP_TYPES: set = {
     "admin_user",
     "admin_role",
     "location_group",       # read-only in SDK
-    "location",             # tenant-specific; public IPs and VPN credentials cannot be copied cross-tenant
+    "location",             # tenant-specific; Full Clone only
     "location_lite",        # predefined/system locations (Road Warrior etc.) — imported for ID remapping only
     "device_group",         # predefined OS/platform groups (Windows, iOS, etc.) — imported for ID remapping only
     "network_app",          # system-defined, read-only
     "cloud_app_policy",     # reference data, not policy
     "cloud_app_ssl_policy",
+    # Full Clone-only types — pushed via _push_full_clone_entry, never via classify_baseline
+    "static_ip",
+    "vpn_credential",
+    "gre_tunnel",
+    "sublocation",
 }
 
 # Specific resource names that are system-managed and must never be pushed,
@@ -1437,12 +1444,15 @@ class ZIAPushService:
         if resource_type == "vpn_credential":
             psk = payload.get("psk") or payload.get("preSharedKey") or ""
             if psk == "*****" or not psk:
-                # Masked or absent PSK — cannot copy; emit warning, omit field
-                payload.pop("psk", None)
+                # PSK is masked — generate a random placeholder so the credential
+                # can be created, then surface it in warnings for manual update.
+                alphabet = string.ascii_letters + string.digits
+                placeholder_psk = "".join(secrets.choice(alphabet) for _ in range(20))
+                payload["psk"] = placeholder_psk
                 payload.pop("preSharedKey", None)
                 warnings.append(
-                    f"vpn_credential '{name}': PSK is masked and cannot be copied "
-                    f"automatically — set the PSK manually in the target tenant"
+                    f"PSK cannot be transferred — a random placeholder was set "
+                    f"({placeholder_psk}). Update the PSK manually in the target tenant."
                 )
             # Strip per-org fields that cannot be replicated
             for f in ("id", "location", "locationId"):
