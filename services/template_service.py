@@ -125,10 +125,10 @@ def _has_zpa_ref(rc: dict) -> bool:
 def _should_strip_entry(rtype: str, entry: dict) -> bool:
     """Return True if an individual resource entry should be excluded from the template.
 
-    Decisions per type, derived from reviewing the commercial-zs2 snapshot:
+    Decisions per type:
 
     dlp_dictionary  — keep only custom=True; BUILTIN dictionaries exist in every tenant
-    url_category    — keep only custom_category=True; BUILTIN categories exist in every tenant
+    url_category    — keep ALL; built-in categories needed for source→target ID remapping
     cloud_app_control_rule — strip if scoped to tenancy profiles (tenant-specific IDs)
 
     All rule types:
@@ -143,7 +143,11 @@ def _should_strip_entry(rtype: str, entry: dict) -> bool:
         return not rc.get("custom", False)
 
     if rtype == "url_category":
-        return not rc.get("custom_category", False)
+        # Keep ALL categories — built-in categories are needed in the template so
+        # classify_baseline can register source→target ID remaps for rule payloads.
+        # Custom categories are created in the target; built-ins are matched by name
+        # and skipped (already exist), but both must be present for ID remapping.
+        return False
 
     if rtype == "cloud_app_control_rule":
         return bool(rc.get("tenancy_profile_ids"))
@@ -240,20 +244,37 @@ def _strip_snapshot(
             stripped_types.append(rtype)
             continue
 
-        portable = [e for e in entries if not _should_strip_entry(rtype, e)]
-        n_stripped = len(entries) - len(portable)
+        portable = []
+        n_stripped_total = 0
+        n_stripped_noisy = 0  # strips worth surfacing in the preview UI
+        for e in entries:
+            if not _should_strip_entry(rtype, e):
+                portable.append(e)
+            else:
+                n_stripped_total += 1
+                # order < 0 entries are Zscaler default/catch-all system rules that
+                # exist in every tenant — strip silently without surfacing a warning.
+                rc = e.get("raw_config", {})
+                order = rc.get("order")
+                if order is None or order >= 0:
+                    n_stripped_noisy += 1
 
         if portable:
-            if n_stripped:
+            if n_stripped_total:
                 group_field = "type" if rtype == "cloud_app_control_rule" else None
                 kept[rtype] = _renumber_orders(portable, group_field=group_field)
             else:
                 kept[rtype] = portable
             included_types.append(rtype)
-            if n_stripped:
-                stripped_entry_counts[rtype] = n_stripped
+            if n_stripped_noisy:
+                stripped_entry_counts[rtype] = n_stripped_noisy
         elif entries:
-            stripped_types.append(rtype)
+            # Only surface as a stripped type when at least one entry was a noisy
+            # strip (user-created rule dropped for portability). Types where every
+            # entry was a silent strip (order < 0 system defaults) are simply absent
+            # from the template — no user-visible warning needed.
+            if n_stripped_noisy:
+                stripped_types.append(rtype)
 
     return kept, sorted(stripped_types), sorted(included_types), stripped_entry_counts
 
