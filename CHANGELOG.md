@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [3.0.0] - 2026-05-06
+
+### Breaking Changes
+
+- **`libsqlcipher` system dependency required for native TUI** — v3.0.0 encrypts the entire SQLite database file using SQLCipher. The `sqlcipher3` Python package compiles a C extension against `libsqlcipher`, which must be present on the system before installation or upgrade. Docker deployments are unaffected (bundled in the image). The TUI auto-updater handles the system install automatically when upgrading from within the TUI; for a fresh install see the [Installation](#installation) section in the README.
+
+### Added
+
+- **Full SQLite database encryption (SQLCipher)** — the entire database file is now encrypted with AES-256-CBC via SQLCipher. All tables, indexes, and metadata are encrypted at rest. Previous versions encrypted only the `client_secret_enc` column; v3.0.0 encrypts the full file. The SQLCipher key is derived from the same `secret.key` material used for column encryption, so no separate key management is required.
+- **Automatic plaintext migration** — on first launch after upgrading, an existing plaintext SQLite database is converted to SQLCipher in-place using `ATTACH DATABASE + sqlcipher_export()` (the SQLCipher-recommended migration path). A `.plaintext.bak` file is retained alongside the database until manually deleted.
+- **Key rotation re-encrypts the database file** — `PRAGMA rekey` is issued atomically with column re-encryption so the full-database encryption key rotates in the same operation. The two phases are committed in order (columns first, then rekey) so a failure in phase 2 leaves a clear recovery path.
+- **TUI auto-upgrade libsqlcipher gate** — when upgrading from the TUI to v3.0.0+, the update checker detects whether `sqlcipher3` is importable. If not, it offers to install `libsqlcipher` via the system package manager (brew / apt-get / dnf / pacman / zypper) before running the pip/pipx upgrade. If the user declines, the upgrade is skipped.
+
+### Fixed
+
+- **APScheduler job store bypassed SQLCipher** — `SQLAlchemyJobStore` was initialized with a plain `url=` argument, causing it to create its own SQLAlchemy engine without the SQLCipher `creator` function. This caused "file is not a database" errors on startup when SQLCipher was active. Fixed by passing `engine=get_engine()` so the job store shares the existing SQLCipher-capable engine.
+
+---
+
 ## [2.1.3] - 2026-05-05
 
 ### Added
