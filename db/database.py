@@ -10,6 +10,7 @@ from typing import Generator, Optional
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from .models import Base, AppSettings
 
@@ -173,6 +174,7 @@ def init_db(db_url: Optional[str] = None) -> None:
             "sqlite+pysqlite://",
             echo=False,
             creator=_make_sqlcipher_creator(db_path),
+            poolclass=StaticPool,
         )
     else:
         # PostgreSQL or explicit ZSCALER_DB_URL — no SQLCipher
