@@ -617,6 +617,17 @@ class ZIAPushService:
         except Exception:
             self._cbi_profile_map = {}
 
+        # cloud_app_policy is in SKIP_TYPES so it never lands in zia_resources or
+        # _target_known_ids.  Fetch it live here so _push_cloud_app_rule can compare
+        # app names against what's actually available in the target tenant.
+        try:
+            cloud_apps = self._client.list_cloud_app_policy()
+            self._target_known_ids["cloud_app_policy"] = {
+                a.get("name", "") for a in cloud_apps if a.get("name")
+            }
+        except Exception:
+            pass  # conservative fallback: empty set → warnings still fire
+
         resources = baseline.get("resources", {})
         ordered_types = [t for t in PUSH_ORDER if t in resources]
         extra_types = [t for t in resources if t not in PUSH_ORDER]
@@ -2817,6 +2828,12 @@ def _is_zscaler_managed(resource_type: str, raw_config: dict) -> bool:
     name = raw_config.get("name", "")
     if name and name in SKIP_NAMED.get(resource_type, set()):
         return True
+    # url_filtering_rule: Cloud Browser Isolation rules are auto-provisioned by Zscaler when
+    # isolation categories are enabled. The API rejects deletion but the SDK omits predefined:true
+    # — guard by name prefix as the detection signal.
+    if resource_type == "url_filtering_rule":
+        if name.startswith("Isolate of "):
+            return True
     # network_service: PREDEFINED (protocol definitions) and STANDARD (5 base services)
     if resource_type == "network_service":
         svc_type = raw_config.get("type", "")
