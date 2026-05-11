@@ -40,7 +40,7 @@ import secrets
 import string
 import time
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 # ---------------------------------------------------------------------------
 # Push order — resources are attempted tier by tier within each pass
@@ -120,6 +120,25 @@ WIPE_ORDER: List[str] = [
     "time_interval",
     "rule_label",
 ]
+
+# Rule types where position/order is load-bearing — wipe-first is required so that
+# pushed rules land at the correct ranks without conflicts.  All other WIPE_ORDER
+# types are unordered objects (groups, labels, categories, etc.) that can be safely
+# updated in-place when a template already contains them.
+_ORDERED_WIPE_TYPES: frozenset = frozenset({
+    "url_filtering_rule",
+    "firewall_rule",
+    "firewall_dns_rule",
+    "firewall_ips_rule",
+    "ssl_inspection_rule",
+    "nat_control_rule",
+    "forwarding_rule",
+    "dlp_web_rule",
+    "bandwidth_control_rule",
+    "traffic_capture_rule",
+    "cloud_app_control_rule",
+    "sandbox_rule",
+})
 
 # Types that are env-specific or read-only in the SDK — skip entirely
 SKIP_TYPES: set = {
@@ -476,6 +495,7 @@ class ZIAPushService:
     def classify_wipe(
         self,
         import_progress_callback: Optional[Callable] = None,
+        preserve_names: Optional[Dict[str, Set[str]]] = None,
     ) -> WipeResult:
         """Identify all user-created resources on the target tenant for deletion.
 
@@ -486,6 +506,11 @@ class ZIAPushService:
         Args:
             import_progress_callback: Called during import phase.
                 Signature: callback(resource_type: str, done: int, total: int)
+            preserve_names: Optional {resource_type: {name, ...}} map.  Resources
+                whose name appears in the set for their type are skipped — they will
+                be handled by the push phase (update in-place) rather than deleted
+                and recreated.  Only meaningful for unordered types; ordered types
+                (rules) should not be in this map.
         """
         from services.zia_import_service import ZIAImportService
         import_svc = ZIAImportService(self._client, self._tenant_id)
@@ -502,6 +527,7 @@ class ZIAPushService:
             if rtype in ("allowlist", "denylist"):
                 continue  # cleared differently — no individual resource deletion
 
+            preserved = preserve_names.get(rtype, set()) if preserve_names else set()
             existing_for_type = existing.get(rtype) or {}
             for zia_id, entry in existing_for_type.items():
                 name = entry.get("name", "")
@@ -510,6 +536,8 @@ class ZIAPushService:
                     continue
                 if name in SKIP_NAMED.get(rtype, set()):
                     continue
+                if name and name in preserved:
+                    continue  # in template — push phase will update it
                 to_delete.append(WipeRecord(
                     resource_type=rtype,
                     name=name or zia_id,
@@ -1305,7 +1333,12 @@ class ZIAPushService:
         wipe_records: List[WipeRecord] = []
 
         if wipe:
-            wipe_result = self.classify_wipe(import_progress_callback)
+            # For ordered rule types wipe-first is required for clean rank ordering.
+            # Unordered objects (labels, groups, categories, etc.) that already exist
+            # in the baseline are preserved and updated in-place by the push phase —
+            # no need to delete and recreate them.
+            preserve = _build_preserve_names(baseline)
+            wipe_result = self.classify_wipe(import_progress_callback, preserve_names=preserve)
             wipe_records = self.execute_wipe(wipe_result, wipe_progress_callback)
             # Fresh import happens inside classify_baseline below
         else:
@@ -2873,6 +2906,27 @@ def _is_zscaler_managed(resource_type: str, raw_config: dict) -> bool:
         if raw_config.get("custom") == False:  # noqa: E712
             return True
     return False
+
+
+def _build_preserve_names(baseline: dict) -> Dict[str, Set[str]]:
+    """Return {resource_type: {name, ...}} for unordered types present in the baseline.
+
+    Used by apply_baseline() so that classify_wipe() skips resources that already
+    exist in the baseline — the push phase will update them in-place instead of
+    deleting and recreating.  Ordered rule types are excluded because wipe-first
+    is required for correct rank ordering.
+    """
+    resources = (baseline or {}).get("resources", {})
+    result: Dict[str, Set[str]] = {}
+    for rtype, entries in resources.items():
+        if rtype in _ORDERED_WIPE_TYPES:
+            continue
+        if not isinstance(entries, list):
+            continue
+        names = {e.get("name") for e in entries if e.get("name")}
+        if names:
+            result[rtype] = names
+    return result
 
 
 def _is_writable(raw_config: dict) -> bool:
