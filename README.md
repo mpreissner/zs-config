@@ -7,14 +7,14 @@ Interactive TUI and browser-based UI for Zscaler OneAPI — manage ZPA, ZIA, ZCC
 
 ---
 
-## What's New — v3.0.0
+## What's New — v3.0.1
 
-> **v3.0.0 is the current release** — full SQLite database encryption via SQLCipher. This is a breaking change for native TUI users (requires `libsqlcipher`). See the [changelog](CHANGELOG.md) for details.
+> **v3.0.1 is the current release** — template apply improvements and audit logging. See the [changelog](CHANGELOG.md) for details.
 
-- **Full database encryption** — the entire SQLite database file is now encrypted with SQLCipher (AES-256-CBC). Previous versions only encrypted tenant secrets at the column level; v3.0.0 encrypts every row and every table at rest. Existing plaintext databases are migrated automatically on first launch — a `.plaintext.bak` backup is retained until you manually delete it.
-- **Key rotation re-encrypts the database file** — `PRAGMA rekey` is issued alongside column re-encryption so the full-database key and the column key rotate atomically.
-- **Native TUI users: system dependency required** — `libsqlcipher` must be installed before upgrading. The TUI auto-updater handles this automatically (brew on macOS; apt/dnf/pacman/zypper on Linux). Docker deployments are unaffected.
-- **Docker: no changes required** — `libsqlcipher` and `sqlcipher3` are bundled in the container image. Run `./deploy.sh` to rebuild.
+- **Smart wipe for template apply** — unordered resources (rule labels, DLP engines, URL categories, network app groups, etc.) that already exist in the template are preserved and updated in-place instead of being deleted and recreated.
+- **Isolation rules protected from wipe** — auto-provisioned Cloud Browser Isolation rules (`Isolate of …`) are now correctly skipped during the wipe phase.
+- **Granular audit logging** — the audit log records individual `DELETE`, `CREATE`, and `UPDATE` entries for every resource touched by a template apply, in addition to the summary entry.
+- **Template creation includes more reference types** — DLP engines, network apps, and cloud app reference types are no longer stripped from templates, enabling correct wipe preservation and ID remapping.
 
 ---
 

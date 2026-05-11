@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [3.0.1] - 2026-05-11
+
+### Fixed
+
+- **Template apply — smart wipe now preserves unordered resources** — unordered resources (rule labels, DLP engines, DLP dictionaries, URL categories, network app groups, etc.) that already exist in the template are preserved and updated in-place rather than deleted and recreated. Ordered rule types (URL filtering, firewall, SSL inspection, etc.) continue to use full wipe-first to ensure clean rank ordering.
+- **Template apply — auto-provisioned isolation rules no longer wiped** — Cloud Browser Isolation rules auto-provisioned by Zscaler (`Isolate of …`) are now correctly detected as Zscaler-managed and skipped during wipe. Previously the API rejected their deletion with a 400, causing a cascading failure on any rule label they referenced.
+- **Template apply — false-positive cloud app warnings removed** — cloud app control rules were incorrectly flagged with "applications may include custom cloud apps not in target" for standard Zscaler apps (GTALK, FACEBOOK, MYSPACE, etc.). The detection logic used the SaaS Security policy list as a proxy for the full cloud app catalog, which was the wrong data source.
+- **Template creation — DLP engines, network apps, and cloud app reference types included** — `dlp_engine`, `dlp_dictionary`, `network_app`, `network_app_group`, `cloud_app_policy`, `cloud_app_ssl_policy`, and `cloud_app_instance` are no longer stripped from templates. Including them ensures the smart wipe can preserve them and the push service has the reference data needed for ID remapping. Existing templates should be recreated to pick up these types.
+- **Template apply — granular per-resource audit logging** — the audit log now records an individual `DELETE`, `CREATE`, or `UPDATE` entry for every resource affected by a template apply, in addition to the existing summary entry. Wipe (DELETE) entries are written before push (CREATE/UPDATE) entries so timestamp ordering in the audit log matches the actual execution sequence.
+
+---
+
 ## [3.0.0] - 2026-05-06
 
 ### Breaking Changes
