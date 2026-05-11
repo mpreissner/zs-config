@@ -48,26 +48,16 @@ TEMPLATE_STRIP_TYPES: set = {
     "location_lite",
     "location_group",
     "device_group",
-    "network_app",
-    "cloud_app_policy",
-    "cloud_app_ssl_policy",
     # Identity — not portable across tenants
     "user",
     "group",
     "department",
     "admin_user",
     "admin_role",
-    # Reference-only
-    "cloud_app_instance",
-    # System-defined, not pushable via API
-    "network_app_group",
     # network_service is kept — rules reference services by source-tenant ID and the
     # push service needs the source entries to remap those IDs to target-tenant IDs.
     # Tenant-specific admin hierarchy / entitlement-scoped
     "tenancy_restriction_profile",
-    # DLP engines: Zscaler-supplied defaults are indistinguishable from custom;
-    # target tenant already has all built-in engines.
-    "dlp_engine",
 }
 
 # Zscaler-managed locations that exist in every tenant and are safe to reference
@@ -88,18 +78,12 @@ _STRIP_REASONS: Dict[str, str] = {
     "location_lite":            "Reference-only — imported for ID remapping, not pushable",
     "location_group":           "Reference-only — read-only in SDK",
     "device_group":             "Reference-only — predefined OS/platform groups",
-    "network_app":              "Reference-only — system-defined, read-only",
-    "cloud_app_policy":         "Reference data, not policy",
-    "cloud_app_ssl_policy":     "Reference data, not policy",
     "user":                     "Identity data, not portable across tenants",
     "group":                    "Identity data, not portable across tenants",
     "department":               "Identity data, not portable across tenants",
     "admin_user":               "Admin accounts are tenant-specific",
     "admin_role":               "Admin roles are tenant-specific",
-    "cloud_app_instance":       "Reference-only — tenant-specific cloud app instance IDs",
-    "network_app_group":        "System-defined — not pushable via API",
     "tenancy_restriction_profile": "Tenant-specific; references tenant-specific IDs",
-    "dlp_engine":               "Zscaler-supplied defaults indistinguishable from custom; target tenant already has built-in engines",
 }
 
 _ENTRY_STRIP_REASON = "Some entries stripped (tenant-specific scope, system rules, or non-portable references)"
@@ -127,8 +111,10 @@ def _should_strip_entry(rtype: str, entry: dict) -> bool:
 
     Decisions per type:
 
-    dlp_dictionary  — keep only custom=True; BUILTIN dictionaries exist in every tenant
-    url_category    — keep ALL; built-in categories needed for source→target ID remapping
+    dlp_dictionary / dlp_engine / network_app / network_app_group /
+    cloud_app_policy / cloud_app_ssl_policy / cloud_app_instance / url_category
+                    — keep ALL; system/reference entries needed for source→target ID
+                      remapping; push service skips creating read-only entries
     cloud_app_control_rule — strip if scoped to tenancy profiles (tenant-specific IDs)
 
     All rule types:
@@ -139,14 +125,16 @@ def _should_strip_entry(rtype: str, entry: dict) -> bool:
     """
     rc = entry.get("raw_config", {})
 
-    if rtype == "dlp_dictionary":
-        return not rc.get("custom", False)
-
-    if rtype == "url_category":
-        # Keep ALL categories — built-in categories are needed in the template so
-        # classify_baseline can register source→target ID remaps for rule payloads.
-        # Custom categories are created in the target; built-ins are matched by name
-        # and skipped (already exist), but both must be present for ID remapping.
+    if rtype in (
+        "dlp_dictionary", "dlp_engine",
+        "network_app", "network_app_group",
+        "cloud_app_policy", "cloud_app_ssl_policy", "cloud_app_instance",
+        "url_category",
+    ):
+        # Keep ALL entries — built-ins are needed so classify_baseline can register
+        # source→target ID remaps. The push service skips creating entries that already
+        # exist in the target; custom entries are created there. Both must be present in
+        # the template so the smart wipe preserves them instead of deleting them.
         return False
 
     if rtype == "cloud_app_control_rule":

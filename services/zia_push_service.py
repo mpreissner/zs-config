@@ -645,17 +645,6 @@ class ZIAPushService:
         except Exception:
             self._cbi_profile_map = {}
 
-        # cloud_app_policy is in SKIP_TYPES so it never lands in zia_resources or
-        # _target_known_ids.  Fetch it live here so _push_cloud_app_rule can compare
-        # app names against what's actually available in the target tenant.
-        try:
-            cloud_apps = self._client.list_cloud_app_policy()
-            self._target_known_ids["cloud_app_policy"] = {
-                a.get("name", "") for a in cloud_apps if a.get("name")
-            }
-        except Exception:
-            pass  # conservative fallback: empty set → warnings still fire
-
         resources = baseline.get("resources", {})
         ordered_types = [t for t in PUSH_ORDER if t in resources]
         extra_types = [t for t in resources if t not in PUSH_ORDER]
@@ -2051,25 +2040,11 @@ class ZIAPushService:
 
         payload = self._build_payload("cloud_app_control_rule", raw_config)
 
-        # Detect custom cloud apps in the rule's applications list.
-        # Custom cloud apps cannot be created via the public API and must be created
-        # manually in the target tenant's web UI before this rule will work correctly.
-        # Detection: any app name not present in the target's imported cloud_app_policy set.
-        record_warnings: List[str] = []
-        known_apps = self._target_known_ids.get("cloud_app_policy", set())
-        baseline_apps = raw_config.get("applications") or []
-        unknown_apps = [a for a in baseline_apps if str(a) not in known_apps]
-        if unknown_apps:
-            record_warnings.append(
-                f"applications may include custom cloud apps not in target "
-                f"(create manually in web UI): {', '.join(str(a) for a in unknown_apps)}"
-            )
-
         if action == "update" and target_id:
             try:
                 self._client.update_cloud_app_rule(rule_type, target_id, payload)
                 return PushRecord(resource_type="cloud_app_control_rule", name=name,
-                                  status="updated", warnings=record_warnings)
+                                  status="updated")
             except Exception as exc:
                 return self._classify_error("cloud_app_control_rule", name, exc)
 
@@ -2082,7 +2057,7 @@ class ZIAPushService:
             if source_id and new_target_id:
                 self._register_remap(source_id, new_target_id)
             return PushRecord(resource_type="cloud_app_control_rule", name=name,
-                              status="created", warnings=record_warnings)
+                              status="created")
         except Exception as exc:
             exc_str = str(exc)
             if ("409" in exc_str or "DUPLICATE_ITEM" in exc_str
