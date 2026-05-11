@@ -2799,6 +2799,11 @@ def _is_zscaler_managed(resource_type: str, raw_config: dict) -> bool:
     if resource_type in ("url_filter_cloud_app_settings", "advanced_settings",
                          "browser_control_settings"):
         return True  # singletons — always present in every tenant, never created/deleted
+    # access_control:"READ_ONLY" — Zscaler explicitly marks managed resources that cannot be
+    # deleted or replaced.  This catches cloud_app_control_rule entries and named DLP engines
+    # (e.g. HIPAA, PCI) that lack predefined:true but are still Zscaler-owned.
+    if raw_config.get("access_control") == "READ_ONLY":
+        return True
     if raw_config.get("predefined"):
         return True
     # ciparule:true — CIPA Compliance Rule; Zscaler-managed, toggled via enableCIPACompliance
