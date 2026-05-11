@@ -23,6 +23,7 @@ interface AuthContextValue extends AuthState {
   isAuthenticated: boolean;
   isAdmin: boolean;
   mfaEnrollRequired: boolean;
+  logoutReason: string | null;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -79,11 +80,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [auth, setAuth] = useState<AuthState>({ token: null, user: null });
   const [ready, setReady] = useState(false);
   const [idleMinutes, setIdleMinutes] = useState(15);
+  const [logoutReason, setLogoutReason] = useState<string | null>(null);
 
   const login = useCallback((token: string) => {
     const user = parseToken(token);
     setTokenGetter(() => token);
     setAuth({ token, user });
+    setLogoutReason(null);
   }, []);
 
   const logout = useCallback(async () => {
@@ -92,9 +95,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuth({ token: null, user: null });
   }, []);
 
-  useEffect(() => {
-    setOnUnauthorized(logout);
+  const logoutWithReason = useCallback(async (reason: string) => {
+    setLogoutReason(reason);
+    await logout();
   }, [logout]);
+
+  useEffect(() => {
+    setOnUnauthorized(() => logoutWithReason("unauthorized"));
+  }, [logoutWithReason]);
 
   // Proactively refresh the JWT 60 s before it expires. If the refresh cookie
   // is also gone, the refresh fails and we log the user out.
@@ -107,11 +115,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const r = await apiFetch<{ access_token: string }>("/api/v1/auth/refresh", { method: "POST" });
         login(r.access_token);
       } catch {
-        logout();
+        logoutWithReason("expired");
       }
     }, Math.max(0, ms - 60_000));
     return () => clearTimeout(timer);
-  }, [auth.user, login, logout]);
+  }, [auth.user, login, logout, logoutWithReason]);
 
   useEffect(() => {
     Promise.all([
@@ -136,6 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: !!auth.token,
       isAdmin: auth.user?.role === "admin",
       mfaEnrollRequired: !!auth.user?.mfa_enroll,
+      logoutReason,
     }}>
       {children}
       {showWarning && (

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { formatDate } from "../utils/time";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, Link } from "react-router-dom";
@@ -497,20 +498,37 @@ function KebabMenu({
   onAction: (action: "import" | "edit" | "delete", t: Tenant) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ top: 0, right: 0 });
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (
+        menuRef.current && !menuRef.current.contains(e.target as Node) &&
+        buttonRef.current && !buttonRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false);
+      }
     }
     if (open) document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [open]);
 
+  function handleToggle(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!open && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    }
+    setOpen((v) => !v);
+  }
+
   return (
-    <div ref={ref} className="relative">
+    <>
       <button
-        onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+        ref={buttonRef}
+        onClick={handleToggle}
         className="p-1 rounded hover:bg-gray-200 text-gray-500 hover:text-gray-700"
         title="Actions"
       >
@@ -518,8 +536,12 @@ function KebabMenu({
           <path d="M10 3a1.5 1.5 0 110 3 1.5 1.5 0 010-3zm0 5.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zm0 5.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3z" />
         </svg>
       </button>
-      {open && (
-        <div className="absolute right-0 mt-1 w-36 bg-white border border-gray-200 rounded-md shadow-lg z-20">
+      {open && createPortal(
+        <div
+          ref={menuRef}
+          style={{ position: "fixed", top: pos.top, right: pos.right, zIndex: 9999 }}
+          className="w-36 bg-white border border-gray-200 rounded-md shadow-lg"
+        >
           <button
             onClick={(e) => { e.stopPropagation(); setOpen(false); onAction("import", tenant); }}
             className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
@@ -542,9 +564,10 @@ function KebabMenu({
               </button>
             </>
           )}
-        </div>
+        </div>,
+        document.body
       )}
-    </div>
+    </>
   );
 }
 
