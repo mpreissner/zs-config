@@ -47,6 +47,35 @@ def log(
         pass  # Never let audit failures surface to the caller
 
 
+def log_many(entries: List[Dict[str, Any]]) -> None:
+    """Write multiple audit log entries in a single session.
+
+    Each element of entries is a dict with the same keyword arguments as log().
+    Fire-and-forget — errors are silently swallowed.
+    """
+    try:
+        now = datetime.utcnow()
+        with get_session() as session:
+            for kw in entries:
+                resource_id = kw.get("resource_id")
+                resource_name = kw.get("resource_name")
+                session.add(AuditLog(
+                    tenant_id=kw.get("tenant_id"),
+                    timestamp=now,
+                    product=kw["product"],
+                    operation=kw["operation"],
+                    action=kw["action"],
+                    status=kw["status"],
+                    resource_type=kw.get("resource_type"),
+                    resource_id=str(resource_id) if resource_id is not None else None,
+                    resource_name=str(resource_name) if resource_name is not None else None,
+                    details=kw.get("details"),
+                    error_message=kw.get("error_message"),
+                ))
+    except Exception:
+        pass
+
+
 def get_recent(
     tenant_id: Optional[int] = None,
     product: Optional[str] = None,

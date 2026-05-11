@@ -40,7 +40,7 @@ import secrets
 import string
 import time
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 # ---------------------------------------------------------------------------
 # Push order — resources are attempted tier by tier within each pass
@@ -120,6 +120,25 @@ WIPE_ORDER: List[str] = [
     "time_interval",
     "rule_label",
 ]
+
+# Rule types where position/order is load-bearing — wipe-first is required so that
+# pushed rules land at the correct ranks without conflicts.  All other WIPE_ORDER
+# types are unordered objects (groups, labels, categories, etc.) that can be safely
+# updated in-place when a template already contains them.
+_ORDERED_WIPE_TYPES: frozenset = frozenset({
+    "url_filtering_rule",
+    "firewall_rule",
+    "firewall_dns_rule",
+    "firewall_ips_rule",
+    "ssl_inspection_rule",
+    "nat_control_rule",
+    "forwarding_rule",
+    "dlp_web_rule",
+    "bandwidth_control_rule",
+    "traffic_capture_rule",
+    "cloud_app_control_rule",
+    "sandbox_rule",
+})
 
 # Types that are env-specific or read-only in the SDK — skip entirely
 SKIP_TYPES: set = {
@@ -476,6 +495,7 @@ class ZIAPushService:
     def classify_wipe(
         self,
         import_progress_callback: Optional[Callable] = None,
+        preserve_names: Optional[Dict[str, Set[str]]] = None,
     ) -> WipeResult:
         """Identify all user-created resources on the target tenant for deletion.
 
@@ -486,6 +506,11 @@ class ZIAPushService:
         Args:
             import_progress_callback: Called during import phase.
                 Signature: callback(resource_type: str, done: int, total: int)
+            preserve_names: Optional {resource_type: {name, ...}} map.  Resources
+                whose name appears in the set for their type are skipped — they will
+                be handled by the push phase (update in-place) rather than deleted
+                and recreated.  Only meaningful for unordered types; ordered types
+                (rules) should not be in this map.
         """
         from services.zia_import_service import ZIAImportService
         import_svc = ZIAImportService(self._client, self._tenant_id)
@@ -502,6 +527,7 @@ class ZIAPushService:
             if rtype in ("allowlist", "denylist"):
                 continue  # cleared differently — no individual resource deletion
 
+            preserved = preserve_names.get(rtype, set()) if preserve_names else set()
             existing_for_type = existing.get(rtype) or {}
             for zia_id, entry in existing_for_type.items():
                 name = entry.get("name", "")
@@ -510,6 +536,8 @@ class ZIAPushService:
                     continue
                 if name in SKIP_NAMED.get(rtype, set()):
                     continue
+                if name and name in preserved:
+                    continue  # in template — push phase will update it
                 to_delete.append(WipeRecord(
                     resource_type=rtype,
                     name=name or zia_id,
@@ -1294,7 +1322,12 @@ class ZIAPushService:
         wipe_records: List[WipeRecord] = []
 
         if wipe:
-            wipe_result = self.classify_wipe(import_progress_callback)
+            # For ordered rule types wipe-first is required for clean rank ordering.
+            # Unordered objects (labels, groups, categories, etc.) that already exist
+            # in the baseline are preserved and updated in-place by the push phase —
+            # no need to delete and recreate them.
+            preserve = _build_preserve_names(baseline)
+            wipe_result = self.classify_wipe(import_progress_callback, preserve_names=preserve)
             wipe_records = self.execute_wipe(wipe_result, wipe_progress_callback)
             # Fresh import happens inside classify_baseline below
         else:
@@ -2007,25 +2040,11 @@ class ZIAPushService:
 
         payload = self._build_payload("cloud_app_control_rule", raw_config)
 
-        # Detect custom cloud apps in the rule's applications list.
-        # Custom cloud apps cannot be created via the public API and must be created
-        # manually in the target tenant's web UI before this rule will work correctly.
-        # Detection: any app name not present in the target's imported cloud_app_policy set.
-        record_warnings: List[str] = []
-        known_apps = self._target_known_ids.get("cloud_app_policy", set())
-        baseline_apps = raw_config.get("applications") or []
-        unknown_apps = [a for a in baseline_apps if str(a) not in known_apps]
-        if unknown_apps:
-            record_warnings.append(
-                f"applications may include custom cloud apps not in target "
-                f"(create manually in web UI): {', '.join(str(a) for a in unknown_apps)}"
-            )
-
         if action == "update" and target_id:
             try:
                 self._client.update_cloud_app_rule(rule_type, target_id, payload)
                 return PushRecord(resource_type="cloud_app_control_rule", name=name,
-                                  status="updated", warnings=record_warnings)
+                                  status="updated")
             except Exception as exc:
                 return self._classify_error("cloud_app_control_rule", name, exc)
 
@@ -2038,7 +2057,7 @@ class ZIAPushService:
             if source_id and new_target_id:
                 self._register_remap(source_id, new_target_id)
             return PushRecord(resource_type="cloud_app_control_rule", name=name,
-                              status="created", warnings=record_warnings)
+                              status="created")
         except Exception as exc:
             exc_str = str(exc)
             if ("409" in exc_str or "DUPLICATE_ITEM" in exc_str
@@ -2799,6 +2818,11 @@ def _is_zscaler_managed(resource_type: str, raw_config: dict) -> bool:
     if resource_type in ("url_filter_cloud_app_settings", "advanced_settings",
                          "browser_control_settings"):
         return True  # singletons — always present in every tenant, never created/deleted
+    # access_control:"READ_ONLY" — Zscaler explicitly marks managed resources that cannot be
+    # deleted or replaced.  This catches cloud_app_control_rule entries and named DLP engines
+    # (e.g. HIPAA, PCI) that lack predefined:true but are still Zscaler-owned.
+    if raw_config.get("access_control") == "READ_ONLY":
+        return True
     if raw_config.get("predefined"):
         return True
     # ciparule:true — CIPA Compliance Rule; Zscaler-managed, toggled via enableCIPACompliance
@@ -2812,6 +2836,12 @@ def _is_zscaler_managed(resource_type: str, raw_config: dict) -> bool:
     name = raw_config.get("name", "")
     if name and name in SKIP_NAMED.get(resource_type, set()):
         return True
+    # url_filtering_rule: Cloud Browser Isolation rules are auto-provisioned by Zscaler when
+    # isolation categories are enabled. The API rejects deletion but the SDK omits predefined:true
+    # — guard by name prefix as the detection signal.
+    if resource_type == "url_filtering_rule":
+        if name.startswith("Isolate of "):
+            return True
     # network_service: PREDEFINED (protocol definitions) and STANDARD (5 base services)
     if resource_type == "network_service":
         svc_type = raw_config.get("type", "")
@@ -2851,6 +2881,27 @@ def _is_zscaler_managed(resource_type: str, raw_config: dict) -> bool:
         if raw_config.get("custom") == False:  # noqa: E712
             return True
     return False
+
+
+def _build_preserve_names(baseline: dict) -> Dict[str, Set[str]]:
+    """Return {resource_type: {name, ...}} for unordered types present in the baseline.
+
+    Used by apply_baseline() so that classify_wipe() skips resources that already
+    exist in the baseline — the push phase will update them in-place instead of
+    deleting and recreating.  Ordered rule types are excluded because wipe-first
+    is required for correct rank ordering.
+    """
+    resources = (baseline or {}).get("resources", {})
+    result: Dict[str, Set[str]] = {}
+    for rtype, entries in resources.items():
+        if rtype in _ORDERED_WIPE_TYPES:
+            continue
+        if not isinstance(entries, list):
+            continue
+        names = {e.get("name") for e in entries if e.get("name")}
+        if names:
+            result[rtype] = names
+    return result
 
 
 def _is_writable(raw_config: dict) -> bool:

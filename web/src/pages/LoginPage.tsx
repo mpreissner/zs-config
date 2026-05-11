@@ -7,7 +7,7 @@ import { beginAuthentication, completeAuthentication } from "../api/webauthn";
 import zLogo from "../assets/z-logo.jpg";
 
 export default function LoginPage() {
-  const { login: setToken } = useAuth();
+  const { login: setToken, logoutReason } = useAuth();
   const navigate = useNavigate();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -76,6 +76,13 @@ export default function LoginPage() {
           </div>
         </div>
         <div className="bg-white rounded-b-xl shadow-lg px-8 py-6">
+          {logoutReason && (
+            <div className="mb-4 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+              {logoutReason === "expired"
+                ? "Your session has expired. Please sign in again."
+                : "Your session is no longer valid. Please sign in again."}
+            </div>
+          )}
           <h2 className="text-gray-700 font-semibold mb-4">Sign in</h2>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>

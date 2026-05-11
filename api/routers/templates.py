@@ -426,6 +426,55 @@ def apply_template_to_tenant(
             total_failed = len(failed_items)
             status = "SUCCESS" if total_failed == 0 else "PARTIAL"
 
+            # Per-resource audit entries — two separate log_many calls so wipe entries
+            # get an earlier timestamp than push entries, matching the actual execution
+            # order (wipe-before-push) and keeping "newest first" display correct.
+            tmpl_ctx = {"template_id": req.template_id, "template_name": tmpl_name}
+
+            wipe_audit: list = []
+            for r in wipe_records:
+                if r.is_deleted:
+                    wipe_audit.append(dict(
+                        product="ZIA", operation="apply_template", action="DELETE",
+                        status="success", tenant_id=tenant_id,
+                        resource_type=r.resource_type, resource_name=r.name,
+                        details=tmpl_ctx,
+                    ))
+                elif r.is_failed:
+                    wipe_audit.append(dict(
+                        product="ZIA", operation="apply_template", action="DELETE",
+                        status="failure", tenant_id=tenant_id,
+                        resource_type=r.resource_type, resource_name=r.name,
+                        details=tmpl_ctx,
+                        error_message=r.status[len("failed:"):],
+                    ))
+            audit_service.log_many(wipe_audit)
+
+            push_audit: list = []
+            for r in push_records:
+                if r.is_created or r.is_updated:
+                    d = dict(tmpl_ctx)
+                    if r.warnings:
+                        d["warnings"] = r.warnings
+                    push_audit.append(dict(
+                        product="ZIA", operation="apply_template",
+                        action="CREATE" if r.is_created else "UPDATE",
+                        status="success", tenant_id=tenant_id,
+                        resource_type=r.resource_type, resource_name=r.name,
+                        details=d,
+                    ))
+                elif r.is_failed:
+                    push_audit.append(dict(
+                        product="ZIA", operation="apply_template",
+                        action="CREATE",
+                        status="failure", tenant_id=tenant_id,
+                        resource_type=r.resource_type, resource_name=r.name,
+                        details=tmpl_ctx,
+                        error_message=r.failure_reason,
+                    ))
+            audit_service.log_many(push_audit)
+
+            # Summary entry
             audit_service.log(
                 product="ZIA",
                 operation="apply_template",

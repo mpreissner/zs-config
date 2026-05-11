@@ -775,10 +775,11 @@ def _apply_one(
     # Strip 'id' field from creates (target assigns its own)
     if rec.operation == "create":
         payload.pop("id", None)
-        # Set order to target rule count + 1 — source order often exceeds target count
-        payload["order"] = _next_order(target_tenant_id, rtype)
-        if source_zia_id:
-            payload["description"] = f"Sync'd from {source_zia_id}"
+        # Only inject order for types that actually use it — unordered types
+        # (tenancy_restriction_profile, dlp_engine, etc.) lack the field entirely
+        # and the ZIA API rejects the unexpected key with a 400.
+        if "order" in (rec.source_raw or {}):
+            payload["order"] = _next_order(target_tenant_id, rtype)
 
     # Reduce embedded ref objects to [{id}] and apply per-type fixups
     payload = _slim_payload(rtype, payload)
