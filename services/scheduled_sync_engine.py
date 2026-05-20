@@ -586,7 +586,7 @@ def _drop_nulls(obj):
 _EMPTY_STRIP_FIELDS: frozenset = frozenset({
     "platforms", "device_trust_levels", "user_agent_types",
     "cloud_applications", "url_categories", "time_windows",
-    "proxy_gateways",
+    "proxy_gateways", "user_risk_score_levels",
 })
 
 
@@ -645,6 +645,52 @@ def _slim_payload(rtype: str, payload: Dict) -> Dict:
             else:
                 payload.pop("zpa_gateway", None)
 
+    return payload
+
+
+def _resolve_env_refs(payload: Dict, source_tenant_id: int, target_tenant_id: int) -> Dict:
+    """Remap location/location_group refs from source IDs to target IDs by name.
+
+    Location IDs are tenant-specific. Sending source IDs to the target API causes
+    "id(s) do not exist" rejections. Refs with no name match in the target are dropped.
+    """
+    _ENV_REF_TYPES = {
+        "locations": "location",
+        "location_groups": "location_group",
+    }
+    for field, rtype in _ENV_REF_TYPES.items():
+        refs = payload.get(field)
+        if not isinstance(refs, list) or not refs:
+            continue
+        with get_session() as session:
+            src_rows = (
+                session.query(ZIAResource)
+                .filter_by(tenant_id=source_tenant_id, resource_type=rtype, is_deleted=False)
+                .all()
+            )
+            tgt_rows = (
+                session.query(ZIAResource)
+                .filter_by(tenant_id=target_tenant_id, resource_type=rtype, is_deleted=False)
+                .all()
+            )
+        src_id_to_name = {str(r.zia_id): r.name for r in src_rows}
+        tgt_name_to_id = {r.name: r.zia_id for r in tgt_rows}
+        remapped = []
+        for ref in refs:
+            if not isinstance(ref, dict):
+                continue
+            name = src_id_to_name.get(str(ref.get("id", "")))
+            if name:
+                tgt_id = tgt_name_to_id.get(name)
+                if tgt_id:
+                    try:
+                        remapped.append({"id": int(tgt_id)})
+                    except (ValueError, TypeError):
+                        remapped.append({"id": tgt_id})
+        if remapped:
+            payload[field] = remapped
+        else:
+            payload.pop(field, None)
     return payload
 
 
@@ -786,6 +832,17 @@ def _apply_one(
 
     # Remap label IDs: source tenant IDs differ from target tenant IDs
     payload = _remap_label_ids(payload, source_tenant_id, target_tenant_id)
+
+    # Remap location/location_group refs: IDs are tenant-specific
+    payload = _resolve_env_refs(payload, source_tenant_id, target_tenant_id)
+
+    # Clamp reorder operations to the target's valid range
+    if rec.operation == "reorder" and "order" in payload:
+        src_order = payload["order"]
+        if isinstance(src_order, int):
+            max_target = _next_order(target_tenant_id, rtype) - 1
+            if max_target > 0 and src_order > max_target:
+                payload["order"] = max_target
 
     if rec.operation == "create":
         create_method = getattr(target_client, create_method_name)
