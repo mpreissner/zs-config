@@ -7,14 +7,13 @@ Interactive TUI and browser-based UI for Zscaler OneAPI — manage ZPA, ZIA, ZCC
 
 ---
 
-## What's New — v3.0.1
+## What's New — v3.0.2
 
-> **v3.0.1 is the current release** — template apply improvements and audit logging. See the [changelog](CHANGELOG.md) for details.
+> **v3.0.2 is the current release** — scheduled sync reliability fixes. See the [changelog](CHANGELOG.md) for details.
 
-- **Smart wipe for template apply** — unordered resources (rule labels, DLP engines, URL categories, network app groups, etc.) that already exist in the template are preserved and updated in-place instead of being deleted and recreated.
-- **Isolation rules protected from wipe** — auto-provisioned Cloud Browser Isolation rules (`Isolate of …`) are now correctly skipped during the wipe phase.
-- **Granular audit logging** — the audit log records individual `DELETE`, `CREATE`, and `UPDATE` entries for every resource touched by a template apply, in addition to the summary entry.
-- **Template creation includes more reference types** — DLP engines, network apps, and cloud app reference types are no longer stripped from templates, enabling correct wipe preservation and ID remapping.
+- **Location/location group remapping by name** — scheduled sync now resolves location and location group references to the correct target-tenant IDs by name, rather than passing source-tenant IDs verbatim.
+- **Reorder operations clamped to target rule count** — `order` values are clamped to the target tenant's current rule count, preventing out-of-range API errors.
+- **Empty field stripping** — `user_risk_score_levels` and other empty arrays are stripped before sync to avoid API rejections.
 
 ---
 

@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [3.0.2] - 2026-05-20
+
+### Fixed
+
+- **Scheduled sync — `user_risk_score_levels` stripped from payloads** — empty `user_risk_score_levels` arrays are now removed before syncing, preventing API rejection errors.
+- **Scheduled sync — location and location group references remapped by name** — `locations` and `location_groups` references are now resolved to the correct target-tenant IDs by matching resource names across tenants, rather than passing source-tenant IDs verbatim. References with no name match in the target are dropped cleanly.
+- **Scheduled sync — reorder operations clamped to target rule count** — `order` values in reorder operations are now clamped to the target tenant's current rule count to prevent out-of-range API errors.
+
+---
+
 ## [3.0.1] - 2026-05-11
 
 ### Fixed
