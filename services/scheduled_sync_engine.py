@@ -263,11 +263,27 @@ def run_sync_task(task_id: int) -> Optional[TaskRunHistory]:
         phase1 = [r for r in diff if r.operation != "reorder"]
         phase2 = [r for r in diff if r.operation == "reorder"]
 
+        # Sort creates within phase1 by ascending source order so that
+        # API-level position shifts are applied in the correct sequence and
+        # the order_tracker below hands out strictly increasing values for
+        # rules that need to be clamped.
+        def _create_sort_key(r):
+            if r.operation != "create":
+                return (r.resource_type, float("inf"))
+            return (r.resource_type, (r.source_raw or {}).get("order", float("inf")))
+
+        phase1.sort(key=_create_sort_key)
+
+        # Shared tracker: seeded from the pre-run DB snapshot on first use per
+        # resource type, then incremented for each clamped append so successive
+        # creates in the same run never collide on the same position.
+        order_tracker: Dict[str, int] = {}
+
         def _apply_batch(batch):
             nonlocal synced
             for rec in batch:
                 try:
-                    _apply_one(target_client, t_target, t_source, rec, source_zia_id=t_source_zia_id)
+                    _apply_one(target_client, t_target, t_source, rec, source_zia_id=t_source_zia_id, order_tracker=order_tracker)
                     synced += 1
                     pending_audit.append(dict(
                         tenant_id=t_target,
@@ -780,6 +796,7 @@ def _apply_one(
     source_tenant_id: int,
     rec: _DiffRecord,
     source_zia_id: Optional[str] = None,
+    order_tracker: Optional[Dict[str, int]] = None,
 ) -> None:
     """Apply a single diff record to the target tenant.
 
@@ -825,7 +842,20 @@ def _apply_one(
         # (tenancy_restriction_profile, dlp_engine, etc.) lack the field entirely
         # and the ZIA API rejects the unexpected key with a 400.
         if "order" in (rec.source_raw or {}):
-            payload["order"] = _next_order(target_tenant_id, rtype)
+            src_order = (rec.source_raw or {}).get("order")
+            # Seed the tracker from the DB snapshot on first create for this type.
+            if order_tracker is not None and rtype not in order_tracker:
+                order_tracker[rtype] = _next_order(target_tenant_id, rtype)
+            next_order = order_tracker[rtype] if order_tracker is not None else _next_order(target_tenant_id, rtype)
+            if isinstance(src_order, int) and src_order <= next_order:
+                # Source position is within the target's current range — use it directly.
+                payload["order"] = src_order
+            else:
+                # Source position exceeds target range — append in order and advance
+                # the tracker so subsequent clamped creates stack correctly.
+                payload["order"] = next_order
+                if order_tracker is not None:
+                    order_tracker[rtype] = next_order + 1
 
     # Reduce embedded ref objects to [{id}] and apply per-type fixups
     payload = _slim_payload(rtype, payload)
