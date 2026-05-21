@@ -42,6 +42,7 @@ from api.routers import zcc as zcc_router, zdx as zdx_router, zid as zid_router
 from api.routers import jobs as jobs_router
 from api.routers import scheduled_tasks as scheduled_tasks_router
 from api.routers import templates as templates_router
+from api.routers import ssl as ssl_router
 from api.auth_utils import decode_token
 from api.dependencies import require_auth, AuthUser
 from cli.banner import VERSION
@@ -93,6 +94,18 @@ async def lifespan(app: FastAPI):
     yield
 
     stop_scheduler()
+
+
+class HSTSMiddleware(BaseHTTPMiddleware):
+    """Add Strict-Transport-Security on HTTPS responses (port 8443 only).
+    Tells browsers to go directly to HTTPS on future visits, skipping the
+    HTTP→HTTPS redirect on port 8000 entirely."""
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        if request.url.port == 8443:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000"
+        return response
 
 
 class MfaEnrollMiddleware(BaseHTTPMiddleware):
@@ -151,6 +164,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(HSTSMiddleware)
 app.add_middleware(MfaEnrollMiddleware)
 app.add_middleware(ForcePasswordChangeMiddleware)
 
@@ -169,6 +183,7 @@ app.include_router(zcc_router.router, prefix="/api/v1/zcc", tags=["ZCC"])
 app.include_router(zdx_router.router, prefix="/api/v1/zdx", tags=["ZDX"])
 app.include_router(zid_router.router, prefix="/api/v1/zid", tags=["ZID"])
 app.include_router(system.router)
+app.include_router(ssl_router.router)
 app.include_router(auth_router.router)
 app.include_router(tenants_router.router)
 app.include_router(admin_router.router)

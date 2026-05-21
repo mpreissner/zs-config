@@ -132,6 +132,31 @@ if [[ -z "${JWT_SECRET:-}" ]]; then
     echo "Generated JWT_SECRET and saved to $REPO_DIR/.env — keep this file safe."
 fi
 
+# ── Network binding ───────────────────────────────────────────────────────────
+# BIND_ADDR controls which interface ports 8000/8443 bind to.
+# 127.0.0.1 = localhost-only (default, safe for single-user machines)
+# 0.0.0.0   = all interfaces (required for server/remote access)
+
+if [[ -z "${BIND_ADDR:-}" ]]; then
+    if [[ -t 0 ]]; then
+        echo ""
+        echo "Network binding:"
+        echo "  [1] Localhost only — 127.0.0.1 (default, single machine)"
+        echo "  [2] All interfaces — 0.0.0.0   (server / remote access)"
+        read -r -p "Choice [1/2, default 1]: " _bind_choice
+        case "${_bind_choice:-1}" in
+            2) BIND_ADDR="0.0.0.0" ;;
+            *) BIND_ADDR="127.0.0.1" ;;
+        esac
+    else
+        echo "Non-interactive — defaulting to localhost-only binding (127.0.0.1)."
+        BIND_ADDR="127.0.0.1"
+    fi
+    echo "BIND_ADDR=${BIND_ADDR}" >> "$REPO_DIR/.env"
+    echo "Network binding set to ${BIND_ADDR} — saved to .env."
+    echo ""
+fi
+
 # ── Ensure persistent Docker volumes exist ────────────────────────────────────
 
 for vol in zs-config_zs-db zs-config_zs-plugins; do

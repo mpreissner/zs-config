@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Response, Cookie
 from pydantic import BaseModel
 
-from db.database import get_session
+from db.database import get_session, get_setting
 from db.models import User, WebAuthnCredential
 from api.auth_utils import (
     verify_password, hash_password, issue_access_token,
@@ -191,7 +191,7 @@ def webauthn_register_begin(
     except ImportError:
         raise HTTPException(status_code=501, detail="WebAuthn not available (py-webauthn not installed)")
 
-    rp_id = os.environ.get("WEBAUTHN_RP_ID", "localhost")
+    rp_id = get_setting("webauthn_rp_id") or os.environ.get("WEBAUTHN_RP_ID", "localhost")
 
     with get_session() as session:
         existing_creds = session.query(WebAuthnCredential).filter_by(user_id=user.user_id).all()
@@ -230,8 +230,8 @@ def webauthn_register_complete(
     except ImportError:
         raise HTTPException(status_code=501, detail="WebAuthn not available (py-webauthn not installed)")
 
-    rp_id = os.environ.get("WEBAUTHN_RP_ID", "localhost")
-    origin = os.environ.get("WEBAUTHN_ORIGIN", "http://localhost:8000")
+    rp_id = get_setting("webauthn_rp_id") or os.environ.get("WEBAUTHN_RP_ID", "localhost")
+    origin = get_setting("webauthn_origin") or os.environ.get("WEBAUTHN_ORIGIN", "http://localhost:8000")
 
     challenge = _pop_challenge(f"reg:{user.user_id}")
     if challenge is None:
@@ -311,7 +311,7 @@ def webauthn_authenticate_begin(body: WebAuthnAuthBeginRequest):
     except ImportError:
         raise HTTPException(status_code=501, detail="WebAuthn not available (py-webauthn not installed)")
 
-    rp_id = os.environ.get("WEBAUTHN_RP_ID", "localhost")
+    rp_id = get_setting("webauthn_rp_id") or os.environ.get("WEBAUTHN_RP_ID", "localhost")
 
     with get_session() as session:
         db_user = session.query(User).filter_by(username=body.username, is_active=True).first()
@@ -346,8 +346,8 @@ def webauthn_authenticate_complete(body: WebAuthnAuthCompleteRequest, response: 
     except ImportError:
         raise HTTPException(status_code=501, detail="WebAuthn not available (py-webauthn not installed)")
 
-    rp_id = os.environ.get("WEBAUTHN_RP_ID", "localhost")
-    origin = os.environ.get("WEBAUTHN_ORIGIN", "http://localhost:8000")
+    rp_id = get_setting("webauthn_rp_id") or os.environ.get("WEBAUTHN_RP_ID", "localhost")
+    origin = get_setting("webauthn_origin") or os.environ.get("WEBAUTHN_ORIGIN", "http://localhost:8000")
 
     challenge = _pop_challenge(f"auth:{body.username}")
     if challenge is None:

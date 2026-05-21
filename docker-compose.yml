@@ -5,9 +5,11 @@ services:
     container_name: zs-config
     restart: unless-stopped
     ports:
-      # Bound to localhost for local dev. Change to "0.0.0.0:8000:8000"
-      # for a server deployment (set ALLOWED_ORIGINS accordingly).
-      - "127.0.0.1:8000:8000"
+      # BIND_ADDR controls which interface the ports are bound to.
+      # 127.0.0.1 (default) = localhost-only; 0.0.0.0 = all interfaces (server deployment).
+      # Set BIND_ADDR in your .env file or pass it in the environment.
+      - "${BIND_ADDR:-127.0.0.1}:8000:8000"
+      - "${BIND_ADDR:-127.0.0.1}:8443:8443"
     volumes:
       - zs-db:/data/db
       - zs-plugins:/data/plugins
@@ -18,7 +20,10 @@ services:
       PYTHONUSERBASE: /data/plugins
       JWT_SECRET: ${JWT_SECRET}
       # Lock down CORS in production — comma-separated list of allowed origins
-      # ALLOWED_ORIGINS: "https://your-host.example.com"
+      # ALLOWED_ORIGINS: "https://your-host.example.com:8443"
+      # When SSL is active, update both of these to the HTTPS origin:
+      # ALLOWED_ORIGINS: "https://your-host.example.com:8443"
+      # WEBAUTHN_ORIGIN: "https://your-host.example.com:8443"
       # Override the build-time CA bundle at runtime (e.g. if cert changes after image build)
       # REQUESTS_CA_BUNDLE: /data/db/ca-bundle.pem
       # TUI-only mode: set to "1" to launch the TUI directly instead of the web UI.
@@ -29,10 +34,12 @@ services:
       # client_secret_enc. Only set this if you have rotated away from the default.
       # ZSCALER_ENCRYPTION_ALGORITHM: "fernet"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      test: ["CMD", "python", "-c",
+        "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=4)"]
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 10s
 
 volumes:
   zs-db:

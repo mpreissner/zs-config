@@ -1,8 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchSettings, patchSettings, SystemSettings } from "../api/system";
+import { fetchSettings, patchSettings, SystemSettings, fetchSystemInfo } from "../api/system";
 import { importDatabase, ImportDbResult, clearData, ClearDataResult, rotateKey, RotateKeyResult } from "../api/admin";
 import { fetchTenants, Tenant } from "../api/tenants";
+import {
+  fetchSSLStatus, SSLStatus,
+  uploadSSLPfx, uploadSSLPemFile, uploadSSLPemPaste,
+  removeSSL,
+} from "../api/ssl";
+import { ApiError } from "../api/client";
 import LoadingSpinner from "../components/LoadingSpinner";
 import ErrorMessage from "../components/ErrorMessage";
 
@@ -159,6 +165,10 @@ export default function AdminSettingsPage() {
     queryKey: ["system-settings"],
     queryFn: fetchSettings,
   });
+  const { data: sysInfo } = useQuery({
+    queryKey: ["system-info"],
+    queryFn: fetchSystemInfo,
+  });
 
   const [draft, setDraft] = useState<SystemSettings | null>(null);
   const [saved, setSaved] = useState(false);
@@ -306,48 +316,7 @@ export default function AdminSettingsPage() {
       </SectionCard>
 
       {/* ── SSL / TLS ─────────────────────────────────────────────────────── */}
-      <SectionCard title="SSL / TLS" badge={<ComingSoon />}>
-        <p className="text-xs text-gray-500">
-          HTTPS termination configuration is planned for a future release. Currently, SSL
-          should be handled by a reverse proxy (nginx, Caddy, etc.) in front of zs-config.
-        </p>
-        <FieldRow label="SSL mode">
-          <SelectInput
-            value={draft.ssl_mode}
-            onChange={(v) => set("ssl_mode", v)}
-            options={[
-              { value: "none", label: "None (HTTP only)" },
-              { value: "upload", label: "Upload certificate & key" },
-              { value: "letsencrypt", label: "Let's Encrypt (ACME)" },
-            ]}
-            disabled
-          />
-        </FieldRow>
-        <FieldRow label="Domain" hint="Required for Let's Encrypt.">
-          <TextInput
-            value={draft.ssl_domain}
-            onChange={(v) => set("ssl_domain", v)}
-            placeholder="zs-config.example.com"
-            disabled
-          />
-        </FieldRow>
-        {draft.ssl_mode === "upload" && (
-          <FieldRow label="Certificate files">
-            <div className="space-y-2">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Certificate (.crt / .pem)</label>
-                <input type="file" accept=".crt,.pem,.cer" disabled
-                  className="text-sm text-gray-400 file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:bg-gray-100 file:text-gray-500" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Private key (.key)</label>
-                <input type="file" accept=".key,.pem" disabled
-                  className="text-sm text-gray-400 file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:bg-gray-100 file:text-gray-500" />
-              </div>
-            </div>
-          </FieldRow>
-        )}
-      </SectionCard>
+      {sysInfo?.container_mode && <SSLTlsSection />}
 
       {/* ── Audit & Retention ─────────────────────────────────────────────── */}
       <SectionCard title="Audit &amp; Retention">
@@ -370,6 +339,388 @@ export default function AdminSettingsPage() {
       {/* ── Database Maintenance ──────────────────────────────────────────── */}
       <DatabaseMaintenanceCard draft={draft} set={set} />
     </div>
+  );
+}
+
+// ── SSL / TLS section ─────────────────────────────────────────────────────────
+
+const SSL_ERROR_MESSAGES: Record<string, string> = {
+  no_private_key:     "No private key found in the uploaded file.",
+  no_certificates:    "No certificates found in the uploaded file.",
+  key_cert_mismatch:  "The private key does not match the certificate.",
+  domain_mismatch:    "The domain does not match any Subject CN or SAN in the certificate.",
+  chain_order:        "Could not determine certificate chain order. Verify the bundle contains a leaf certificate.",
+  pfx_decrypt_failed: "Failed to decrypt the PFX file. Check the password.",
+};
+
+type SSLPhase =
+  | { kind: "idle" }
+  | { kind: "uploading" }
+  | { kind: "success" }
+  | { kind: "error"; code: string; message: string }
+  | { kind: "removing" };
+
+function ExpiryBadge({ days }: { days: number }) {
+  const color = days > 30 ? "text-green-700 bg-green-50" : days >= 8 ? "text-amber-700 bg-amber-50" : "text-red-700 bg-red-50";
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${color}`}>
+      {days > 0 ? `${days} days` : "Expired"}
+    </span>
+  );
+}
+
+function SSLTlsSection() {
+  const qc = useQueryClient();
+  const { data: sslStatus, isLoading: statusLoading } = useQuery<SSLStatus>({
+    queryKey: ["ssl-status"],
+    queryFn: fetchSSLStatus,
+  });
+
+  const [phase, setPhase] = useState<SSLPhase>({ kind: "idle" });
+  const [selectedTab, setSelectedTab] = useState<"pfx" | "pem_file" | "pem_paste">("pfx");
+  const [domain, setDomain] = useState("");
+  const [pfxFile, setPfxFile] = useState<File | null>(null);
+  const [pfxPassword, setPfxPassword] = useState("");
+  const [pemFile, setPemFile] = useState<File | null>(null);
+  const [leafCertText, setLeafCertText] = useState("");
+  const [chainCertText, setChainCertText] = useState("");
+  const [privateKeyText, setPrivateKeyText] = useState("");
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
+  const [showFido2Confirm, setShowFido2Confirm] = useState(false);
+  const pfxRef = useRef<HTMLInputElement>(null);
+  const pemFileRef = useRef<HTMLInputElement>(null);
+
+  function handleError(e: unknown) {
+    const code = e instanceof ApiError ? e.message : "unknown";
+    const msg = SSL_ERROR_MESSAGES[code] ?? `Validation failed: ${code}`;
+    setPhase({ kind: "error", code, message: msg });
+  }
+
+  async function handleUpload() {
+    if (!domain.trim()) return;
+    setPhase({ kind: "uploading" });
+    try {
+      if (selectedTab === "pfx" && pfxFile) {
+        await uploadSSLPfx(pfxFile, pfxPassword, domain);
+      } else if (selectedTab === "pem_file" && pemFile) {
+        await uploadSSLPemFile(pemFile, domain);
+      } else if (selectedTab === "pem_paste") {
+        const combined = [leafCertText, chainCertText, privateKeyText]
+          .map((t) => t.trim())
+          .filter(Boolean)
+          .join("\n");
+        if (!combined) { setPhase({ kind: "idle" }); return; }
+        await uploadSSLPemPaste(combined, domain);
+      } else {
+        setPhase({ kind: "idle" });
+        return;
+      }
+    } catch (e) {
+      handleError(e);
+      return;
+    }
+    // Container is restarting in the background; show the HTTPS link immediately.
+    setPhase({ kind: "success" });
+    qc.invalidateQueries({ queryKey: ["ssl-status"] });
+  }
+
+  async function handleRemove() {
+    setShowRemoveConfirm(false);
+    setPhase({ kind: "removing" });
+    try {
+      await removeSSL();
+    } catch (e) {
+      handleError(e);
+      return;
+    }
+    const deadline = Date.now() + 30_000;
+    let recovered = false;
+    while (Date.now() < deadline) {
+      try {
+        const res = await fetch(`http://${window.location.hostname}:8000/health`);
+        if (res.ok) { recovered = true; break; }
+      } catch { /* not yet up */ }
+      await new Promise((r) => setTimeout(r, 1_000));
+    }
+    if (recovered) {
+      window.location.reload();
+    } else {
+      setPhase({
+        kind: "error",
+        code: "restart_timeout",
+        message: "Container did not return on port 8000 within 30 seconds. Check container logs.",
+      });
+    }
+  }
+
+  const busy = phase.kind === "uploading" || phase.kind === "removing";
+  const hasActiveCert = sslStatus?.active && sslStatus?.mode === "upload";
+
+  return (
+    <SectionCard title="SSL / TLS" defaultOpen={hasActiveCert}>
+      {/* Security warning: hardware key FIDO2 caveat */}
+      <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+        <strong>Hardware security keys (YubiKey, etc.)</strong> require this certificate to be trusted
+        by the browser. Use a CA-signed certificate, or import a self-signed certificate into your
+        system/browser trust store before enrolling hardware keys.
+      </div>
+
+      {/* Current certificate info */}
+      {statusLoading && <p className="text-xs text-gray-400">Loading certificate status…</p>}
+      {hasActiveCert && sslStatus && (
+        <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 space-y-1.5 text-xs text-gray-700">
+          <p className="text-sm font-semibold text-gray-800 mb-2">Current certificate</p>
+          {sslStatus.subject && (
+            <div className="flex gap-2"><span className="w-20 text-gray-500">Subject</span><span className="font-mono">{sslStatus.subject}</span></div>
+          )}
+          {sslStatus.sans && sslStatus.sans.length > 0 && (
+            <div className="flex gap-2"><span className="w-20 text-gray-500">SANs</span><span className="font-mono">{sslStatus.sans.join(", ")}</span></div>
+          )}
+          {sslStatus.not_after && sslStatus.days_until_expiry !== null && (
+            <div className="flex gap-2 items-center">
+              <span className="w-20 text-gray-500">Expires</span>
+              <span>{new Date(sslStatus.not_after).toLocaleDateString()}</span>
+              <ExpiryBadge days={sslStatus.days_until_expiry} />
+            </div>
+          )}
+          <div className="pt-2">
+            {!showRemoveConfirm ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setShowRemoveConfirm(true)}
+                className="px-3 py-1.5 text-sm font-medium rounded-md border border-red-400 text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
+              >
+                Remove SSL
+              </button>
+            ) : (
+              <div className="rounded-lg border border-red-300 bg-red-50 p-3 space-y-2">
+                <p className="text-xs text-red-800">Remove SSL and revert to HTTP? The container will restart.</p>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setShowRemoveConfirm(false)}
+                    className="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors">
+                    Cancel
+                  </button>
+                  <button type="button" onClick={handleRemove}
+                    className="px-3 py-1.5 text-xs font-medium rounded-md bg-red-600 hover:bg-red-700 text-white transition-colors">
+                    Confirm Remove
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Phase: uploading / removing */}
+      {phase.kind === "uploading" && (
+        <div className="flex items-center gap-3 text-sm text-gray-600">
+          <LoadingSpinner />
+          <span>Validating and saving certificate…</span>
+        </div>
+      )}
+      {phase.kind === "removing" && (
+        <div className="flex items-center gap-3 text-sm text-gray-600">
+          <LoadingSpinner />
+          <span>Removing SSL certificate and restarting…</span>
+        </div>
+      )}
+
+      {/* Phase: success */}
+      {phase.kind === "success" && (
+        <div className="rounded-lg border border-green-300 bg-green-50 p-4 space-y-3">
+          <p className="text-sm font-semibold text-green-800">Certificate saved. Container is restarting with HTTPS — navigate to the new URL when ready:</p>
+          <p className="font-mono text-sm text-green-900">
+            https://{domain}:8443
+          </p>
+          {!/^(localhost|127\.0\.0\.1|::1)$/.test(domain.trim()) && (
+            <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <strong>Check network binding:</strong> If this container is bound to localhost only
+              (the default), port 8443 will not be reachable via <code className="font-mono">{domain}</code>.
+              Set <code className="font-mono">BIND_ADDR=0.0.0.0</code> in your <code className="font-mono">.env</code> file
+              and restart the container if needed.
+            </div>
+          )}
+          <div className="flex gap-2">
+            <a
+              href={`https://${domain}:8443`}
+              target="_blank"
+              rel="noreferrer"
+              className="px-3 py-1.5 text-sm font-medium rounded-md bg-green-600 hover:bg-green-700 text-white transition-colors"
+            >
+              Open in new tab
+            </a>
+            <button
+              type="button"
+              onClick={() => { setPhase({ kind: "idle" }); qc.invalidateQueries({ queryKey: ["ssl-status"] }); }}
+              className="px-3 py-1.5 text-sm font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Phase: error */}
+      {phase.kind === "error" && (
+        <div className="rounded-lg border border-red-300 bg-red-50 p-4 space-y-3">
+          <p className="text-sm text-red-800">{phase.message}</p>
+          <button
+            type="button"
+            onClick={() => setPhase({ kind: "idle" })}
+            className="px-3 py-1.5 text-sm font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors"
+          >
+            Back to upload form
+          </button>
+        </div>
+      )}
+
+      {/* Upload form (shown in idle state) */}
+      {phase.kind === "idle" && (
+        <div className="space-y-4">
+          {/* Tab bar */}
+          <div className="flex gap-1 border-b border-gray-200">
+            {(["pfx", "pem_file", "pem_paste"] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setSelectedTab(tab)}
+                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  selectedTab === tab
+                    ? "border-zs-500 text-zs-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                {tab === "pfx" ? "PFX File" : tab === "pem_file" ? "PEM File" : "Paste PEM"}
+              </button>
+            ))}
+          </div>
+
+          {/* Shared domain field */}
+          <FieldRow label="Domain" hint="Hostname in the certificate (no scheme or port).">
+            <TextInput
+              value={domain}
+              onChange={setDomain}
+              placeholder="zs-config.example.com"
+            />
+          </FieldRow>
+
+          {/* PFX tab */}
+          {selectedTab === "pfx" && (
+            <>
+              <FieldRow label="PFX file">
+                <input
+                  ref={pfxRef}
+                  type="file"
+                  accept=".pfx,.p12"
+                  onChange={(e) => setPfxFile(e.target.files?.[0] ?? null)}
+                  className="text-sm text-gray-600 file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:bg-gray-100 file:text-gray-600 hover:file:bg-gray-200"
+                />
+              </FieldRow>
+              <FieldRow label="PFX password">
+                <input
+                  type="password"
+                  value={pfxPassword}
+                  onChange={(e) => setPfxPassword(e.target.value)}
+                  placeholder="Leave blank if no password"
+                  className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+                />
+              </FieldRow>
+            </>
+          )}
+
+          {/* PEM file tab */}
+          {selectedTab === "pem_file" && (
+            <FieldRow label="PEM / CRT file" hint="Must contain full chain + unencrypted private key in a single file.">
+              <input
+                ref={pemFileRef}
+                type="file"
+                accept=".pem,.crt,.cer"
+                onChange={(e) => setPemFile(e.target.files?.[0] ?? null)}
+                className="text-sm text-gray-600 file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:bg-gray-100 file:text-gray-600 hover:file:bg-gray-200"
+              />
+            </FieldRow>
+          )}
+
+          {/* Paste PEM tab */}
+          {selectedTab === "pem_paste" && (
+            <div className="space-y-3">
+              <FieldRow label="Server certificate" hint="Leaf / end-entity certificate only.">
+                <textarea
+                  rows={5}
+                  value={leafCertText}
+                  onChange={(e) => setLeafCertText(e.target.value)}
+                  placeholder={"-----BEGIN CERTIFICATE-----\n(server / leaf certificate)\n-----END CERTIFICATE-----"}
+                  className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-zs-500 resize-y"
+                />
+              </FieldRow>
+              <FieldRow label="CA chain" hint="Intermediate and root CA certificates. Leave blank for self-signed.">
+                <textarea
+                  rows={5}
+                  value={chainCertText}
+                  onChange={(e) => setChainCertText(e.target.value)}
+                  placeholder={"-----BEGIN CERTIFICATE-----\n(intermediate CA)\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\n(root CA, optional)\n-----END CERTIFICATE-----"}
+                  className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-zs-500 resize-y"
+                />
+              </FieldRow>
+              <FieldRow label="Private key" hint="Unencrypted PEM private key.">
+                <textarea
+                  rows={5}
+                  value={privateKeyText}
+                  onChange={(e) => setPrivateKeyText(e.target.value)}
+                  placeholder={"-----BEGIN PRIVATE KEY-----\n(unencrypted private key)\n-----END PRIVATE KEY-----"}
+                  className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-zs-500 resize-y"
+                />
+              </FieldRow>
+            </div>
+          )}
+
+          {showFido2Confirm ? (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 space-y-3">
+              <p className="text-sm font-semibold text-amber-800">Security key re-registration required</p>
+              <p className="text-xs text-amber-700">
+                Enabling HTTPS changes the WebAuthn origin from <code className="font-mono">http://…:8000</code> to{" "}
+                <code className="font-mono">https://…:8443</code>. All existing passkeys and hardware security key
+                registrations will be <strong>permanently invalidated</strong>. Every user must re-register their
+                security keys at next login.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowFido2Confirm(false)}
+                  className="px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowFido2Confirm(false); handleUpload(); }}
+                  className="px-3 py-1.5 text-xs font-medium rounded-md bg-amber-600 hover:bg-amber-700 text-white transition-colors"
+                >
+                  I understand, continue
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowFido2Confirm(true)}
+                disabled={
+                  !domain.trim() ||
+                  (selectedTab === "pfx" && !pfxFile) ||
+                  (selectedTab === "pem_file" && !pemFile) ||
+                  (selectedTab === "pem_paste" && (!leafCertText.trim() || !privateKeyText.trim()))
+                }
+                className="px-4 py-2 text-sm font-medium rounded-md bg-zs-500 hover:bg-zs-600 text-white disabled:opacity-50 transition-colors"
+              >
+                Upload &amp; Enable HTTPS
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </SectionCard>
   );
 }
 
