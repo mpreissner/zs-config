@@ -26,6 +26,17 @@ def _strip_passwords(obj: Any) -> Any:
     return obj
 
 
+def _as_list(val) -> list:
+    """Return val as a list; split comma-separated strings into items."""
+    if not val:
+        return []
+    if isinstance(val, list):
+        return [v for v in val if v]
+    if isinstance(val, str):
+        return [v.strip() for v in val.split(",") if v.strip()]
+    return [val]
+
+
 def _derive_tunnel_mode(raw_fp: Optional[Dict]) -> str:
     """Derive tunnel mode string from forwarding profile raw_config."""
     if not raw_fp:
@@ -114,39 +125,39 @@ def _build_traffic_profile(
         "ziaPacFileName": zia_pac_file_name,
     }
 
-    # Port bypasses
+    # Port bypasses — sourcePortBasedBypasses is a list of objects
     port_bypasses = []
-    for pb in (pe.get("sourcePortBasedBypasses") or []):
+    for pb in _as_list(pe.get("sourcePortBasedBypasses")):
         if isinstance(pb, dict):
             port_bypasses.append({
                 "port": str(pb.get("port", "")),
                 "protocol": str(pb.get("protocol", pb.get("proto", ""))),
             })
 
-    # VPN gateway bypasses
+    # VPN gateway bypasses — vpnGateways may be a comma-separated string
     vpn_bypasses = []
-    for gw in (pe.get("vpnGateways") or []):
+    for gw in _as_list(pe.get("vpnGateways")):
         if isinstance(gw, str):
             vpn_bypasses.append({"gateway": gw})
         elif isinstance(gw, dict):
             vpn_bypasses.append({"gateway": gw.get("gateway") or gw.get("domain") or str(gw)})
 
-    # Tunnel routes (IPv4 + IPv6)
+    # Tunnel routes — ZCC stores these as comma-separated strings, not arrays
     tunnel_routes = []
-    for cidr in (pe.get("packetTunnelIncludeList") or []):
+    for cidr in _as_list(pe.get("packetTunnelIncludeList")):
         tunnel_routes.append({"cidr": cidr, "direction": "include", "ipVersion": "ipv4"})
-    for cidr in (pe.get("packetTunnelExcludeList") or []):
+    for cidr in _as_list(pe.get("packetTunnelExcludeList")):
         tunnel_routes.append({"cidr": cidr, "direction": "exclude", "ipVersion": "ipv4"})
-    for cidr in (pe.get("packetTunnelIncludeListForIPv6") or []):
+    for cidr in _as_list(pe.get("packetTunnelIncludeListForIPv6")):
         tunnel_routes.append({"cidr": cidr, "direction": "include", "ipVersion": "ipv6"})
-    for cidr in (pe.get("packetTunnelExcludeListForIPv6") or []):
+    for cidr in _as_list(pe.get("packetTunnelExcludeListForIPv6")):
         tunnel_routes.append({"cidr": cidr, "direction": "exclude", "ipVersion": "ipv6"})
 
-    # DNS routes
+    # DNS routes — also comma-separated strings
     dns_routes = []
-    for suffix in (pe.get("packetTunnelDnsIncludeList") or []):
+    for suffix in _as_list(pe.get("packetTunnelDnsIncludeList")):
         dns_routes.append({"suffix": suffix, "direction": "include"})
-    for suffix in (pe.get("packetTunnelDnsExcludeList") or []):
+    for suffix in _as_list(pe.get("packetTunnelDnsExcludeList")):
         dns_routes.append({"suffix": suffix, "direction": "exclude"})
 
     # Process bypasses extracted from platform sub-policies
@@ -225,8 +236,12 @@ def list_devices(
     page_size: int = 500,
     user: AuthUser = Depends(require_auth),
 ):
-    svc = _get_service(tenant, user)
-    return svc.list_devices(username=username, os_type=os_type, page_size=page_size)
+    rows = _db_resources(tenant, user, "device")
+    if username:
+        rows = [r for r in rows if (r.get("user") or "").lower().startswith(username.lower())]
+    if os_type is not None:
+        rows = [r for r in rows if r.get("type") == os_type]
+    return rows[:page_size]
 
 
 @router.delete("/{tenant}/devices/remove")

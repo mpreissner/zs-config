@@ -4957,10 +4957,10 @@ function ZdxUserLookupSection({ tenantName, isOpen }: { tenantName: string; isOp
 // ── ZCC sections ──────────────────────────────────────────────────────────────
 
 const OS_TYPE_LABELS: Record<number, string> = {
-  1: "Windows",
-  2: "macOS",
-  3: "iOS",
-  4: "Android",
+  1: "iOS",
+  2: "Android",
+  3: "Windows",
+  4: "macOS",
   5: "Linux",
   6: "ChromeOS",
 };
