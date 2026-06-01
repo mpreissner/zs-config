@@ -9,7 +9,18 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
-from api.schemas.zpa import CertificateRotateRequest
+from api.schemas.zpa import (
+    ApplicationEnabledPatch,
+    CertificateRotateRequest,
+    ConnectorEnabledPatch,
+    ConnectorGroupCreate,
+    ConnectorGroupEnabledPatch,
+    ConnectorNamePatch,
+    PRAConsoleEnabledPatch,
+    PRAPortalCreate,
+    PRAPortalEnabledPatch,
+    ServiceEdgeEnabledPatch,
+)
 from api.dependencies import require_auth, AuthUser
 
 router = APIRouter()
@@ -37,6 +48,21 @@ def _get_service(tenant_name: str, user: AuthUser):
     )
     client = ZPAClient(auth, tenant.zpa_customer_id, tenant.oneapi_base_url)
     return ZPAService(client, tenant_id=tenant.id)
+
+
+def _get_db_context(tenant_name: str, user: AuthUser):
+    """Returns the tenant object for DB-only read endpoints.
+
+    Validates tenant exists and user has access. No ZPAClient needed.
+    """
+    from services.config_service import get_tenant
+    from api.dependencies import check_tenant_access
+
+    tenant = get_tenant(tenant_name)
+    if not tenant:
+        raise HTTPException(status_code=404, detail=f"Tenant '{tenant_name}' not found")
+    check_tenant_access(tenant.id, user)
+    return tenant
 
 
 # ------------------------------------------------------------------
@@ -67,6 +93,9 @@ def rotate_certificate(tenant: str, req: CertificateRotateRequest, user: AuthUse
 
 # ------------------------------------------------------------------
 # Applications
+# NOTE: These endpoints remain live-API calls (not DB-first) because
+# the web UI uses them as part of a create/edit form flow that requires
+# real-time data. Candidates for DB-first migration in a future branch.
 # ------------------------------------------------------------------
 
 @router.get("/{tenant}/applications")
@@ -95,10 +124,6 @@ def delete_application(tenant: str, app_id: str, user: AuthUser = Depends(requir
     return {"deleted": success}
 
 
-class ApplicationEnabledPatch(BaseModel):
-    enabled: bool
-
-
 @router.patch("/{tenant}/applications/{app_id}/enabled")
 def patch_application_enabled(
     tenant: str,
@@ -110,7 +135,7 @@ def patch_application_enabled(
 
 
 # ------------------------------------------------------------------
-# Reference data (for create/edit form dropdowns)
+# Reference data (DB-first — for create/edit form dropdowns)
 # ------------------------------------------------------------------
 
 @router.get("/{tenant}/segment-groups")
@@ -123,20 +148,258 @@ def list_server_groups(tenant: str, user: AuthUser = Depends(require_auth)):
     return _get_service(tenant, user).list_server_groups()
 
 
+# ------------------------------------------------------------------
+# App Connectors (DB-first list + mutations)
+# ------------------------------------------------------------------
+
 @router.get("/{tenant}/app-connectors")
 def list_app_connectors(tenant: str, user: AuthUser = Depends(require_auth)):
-    return _get_service(tenant, user).list_app_connectors()
+    """List all app connectors (DB-first). Run Import Config to populate the cache."""
+    return _get_service(tenant, user).list_connectors_from_db()
 
 
-@router.get("/{tenant}/service-edges")
-def list_service_edges(tenant: str, user: AuthUser = Depends(require_auth)):
-    return _get_service(tenant, user).list_service_edges()
+@router.get("/{tenant}/connectors")
+def list_connectors(tenant: str, q: Optional[str] = None, user: AuthUser = Depends(require_auth)):
+    """List all app connectors (DB-first) with optional name search."""
+    return _get_service(tenant, user).list_connectors_from_db(q=q)
+
+
+@router.patch("/{tenant}/connectors/{connector_id}/enabled")
+def patch_connector_enabled(
+    tenant: str,
+    connector_id: str,
+    body: ConnectorEnabledPatch,
+    user: AuthUser = Depends(require_auth),
+):
+    """Enable or disable an app connector."""
+    return _get_service(tenant, user).set_connector_enabled(connector_id, body.enabled)
+
+
+@router.patch("/{tenant}/connectors/{connector_id}/name")
+def patch_connector_name(
+    tenant: str,
+    connector_id: str,
+    body: ConnectorNamePatch,
+    user: AuthUser = Depends(require_auth),
+):
+    """Rename an app connector."""
+    return _get_service(tenant, user).rename_connector(connector_id, body.name)
+
+
+@router.delete("/{tenant}/connectors/{connector_id}")
+def delete_connector(
+    tenant: str,
+    connector_id: str,
+    user: AuthUser = Depends(require_auth),
+):
+    """Delete an app connector."""
+    svc = _get_service(tenant, user)
+    # Resolve name from DB for audit log before deletion
+    rows = svc.list_connectors_from_db()
+    name = next((r.get("name", connector_id) for r in rows if r.get("zpa_id") == connector_id), connector_id)
+    svc.delete_connector(connector_id, name)
+    return {"deleted": True}
 
 
 # ------------------------------------------------------------------
-# PRA Portals
+# Connector Groups
+# ------------------------------------------------------------------
+
+@router.get("/{tenant}/connector-groups")
+def list_connector_groups(tenant: str, q: Optional[str] = None, user: AuthUser = Depends(require_auth)):
+    """List all connector groups (DB-first) with optional name search."""
+    return _get_service(tenant, user).list_connector_groups_from_db(q=q)
+
+
+@router.post("/{tenant}/connector-groups", status_code=201)
+def create_connector_group(
+    tenant: str,
+    body: ConnectorGroupCreate,
+    user: AuthUser = Depends(require_auth),
+):
+    """Create a new connector group."""
+    return _get_service(tenant, user).create_connector_group(body.name, body.description)
+
+
+@router.patch("/{tenant}/connector-groups/{group_id}/enabled")
+def patch_connector_group_enabled(
+    tenant: str,
+    group_id: str,
+    body: ConnectorGroupEnabledPatch,
+    user: AuthUser = Depends(require_auth),
+):
+    """Enable or disable a connector group."""
+    return _get_service(tenant, user).set_connector_group_enabled(group_id, body.enabled)
+
+
+@router.delete("/{tenant}/connector-groups/{group_id}")
+def delete_connector_group(
+    tenant: str,
+    group_id: str,
+    user: AuthUser = Depends(require_auth),
+):
+    """Delete a connector group."""
+    svc = _get_service(tenant, user)
+    rows = svc.list_connector_groups_from_db()
+    name = next((r.get("name", group_id) for r in rows if r.get("zpa_id") == group_id), group_id)
+    svc.delete_connector_group(group_id, name)
+    return {"deleted": True}
+
+
+# ------------------------------------------------------------------
+# Service Edges (DB-first list + enable/disable)
+# ------------------------------------------------------------------
+
+@router.get("/{tenant}/service-edges")
+def list_service_edges(tenant: str, q: Optional[str] = None, user: AuthUser = Depends(require_auth)):
+    """List all service edges (DB-first) with optional name search."""
+    return _get_service(tenant, user).list_service_edges_from_db(q=q)
+
+
+@router.patch("/{tenant}/service-edges/{edge_id}/enabled")
+def patch_service_edge_enabled(
+    tenant: str,
+    edge_id: str,
+    body: ServiceEdgeEnabledPatch,
+    user: AuthUser = Depends(require_auth),
+):
+    """Enable or disable a service edge."""
+    return _get_service(tenant, user).set_service_edge_enabled(edge_id, body.enabled)
+
+
+# ------------------------------------------------------------------
+# PRA Portals (DB-first list + mutations)
 # ------------------------------------------------------------------
 
 @router.get("/{tenant}/pra-portals")
-def list_pra_portals(tenant: str, user: AuthUser = Depends(require_auth)):
-    return _get_service(tenant, user).list_pra_portals()
+def list_pra_portals(tenant: str, q: Optional[str] = None, user: AuthUser = Depends(require_auth)):
+    """List all PRA portals (DB-first) with optional name search."""
+    return _get_service(tenant, user).list_pra_portals_from_db(q=q)
+
+
+@router.post("/{tenant}/pra-portals", status_code=201)
+def create_pra_portal(
+    tenant: str,
+    body: PRAPortalCreate,
+    user: AuthUser = Depends(require_auth),
+):
+    """Create a new PRA portal."""
+    return _get_service(tenant, user).create_pra_portal(
+        name=body.name,
+        domain=body.domain,
+        certificate_id=body.certificate_id,
+        enabled=body.enabled,
+        description=body.description,
+        user_notification_enabled=body.user_notification_enabled,
+        user_notification=body.user_notification,
+    )
+
+
+@router.patch("/{tenant}/pra-portals/{portal_id}/enabled")
+def patch_pra_portal_enabled(
+    tenant: str,
+    portal_id: str,
+    body: PRAPortalEnabledPatch,
+    user: AuthUser = Depends(require_auth),
+):
+    """Enable or disable a PRA portal."""
+    return _get_service(tenant, user).set_pra_portal_enabled(portal_id, body.enabled)
+
+
+@router.delete("/{tenant}/pra-portals/{portal_id}")
+def delete_pra_portal(
+    tenant: str,
+    portal_id: str,
+    user: AuthUser = Depends(require_auth),
+):
+    """Delete a PRA portal."""
+    svc = _get_service(tenant, user)
+    rows = svc.list_pra_portals_from_db()
+    name = next((r.get("name", portal_id) for r in rows if r.get("zpa_id") == portal_id), portal_id)
+    svc.delete_pra_portal(portal_id, name)
+    return {"deleted": True}
+
+
+# ------------------------------------------------------------------
+# PRA Consoles (DB-first list + mutations)
+# ------------------------------------------------------------------
+
+@router.get("/{tenant}/pra-consoles")
+def list_pra_consoles(tenant: str, q: Optional[str] = None, user: AuthUser = Depends(require_auth)):
+    """List all PRA consoles (DB-first) with optional name search."""
+    return _get_service(tenant, user).list_pra_consoles_from_db(q=q)
+
+
+@router.patch("/{tenant}/pra-consoles/{console_id}/enabled")
+def patch_pra_console_enabled(
+    tenant: str,
+    console_id: str,
+    body: PRAConsoleEnabledPatch,
+    user: AuthUser = Depends(require_auth),
+):
+    """Enable or disable a PRA console."""
+    return _get_service(tenant, user).set_pra_console_enabled(console_id, body.enabled)
+
+
+@router.delete("/{tenant}/pra-consoles/{console_id}")
+def delete_pra_console(
+    tenant: str,
+    console_id: str,
+    user: AuthUser = Depends(require_auth),
+):
+    """Delete a PRA console."""
+    svc = _get_service(tenant, user)
+    rows = svc.list_pra_consoles_from_db()
+    name = next((r.get("name", console_id) for r in rows if r.get("zpa_id") == console_id), console_id)
+    svc.delete_pra_console(console_id, name)
+    return {"deleted": True}
+
+
+# ------------------------------------------------------------------
+# Access Policy (DB-first, read-only)
+# ------------------------------------------------------------------
+
+@router.get("/{tenant}/access-policy/rules")
+def list_access_policy_rules(
+    tenant: str,
+    q: Optional[str] = None,
+    user: AuthUser = Depends(require_auth),
+):
+    """List all access policy rules (DB-first), sorted by rule_order."""
+    return _get_service(tenant, user).list_access_policy_rules_from_db(q=q)
+
+
+@router.get("/{tenant}/access-policy/rules/export.csv")
+def export_access_policy_csv(
+    tenant: str,
+    user: AuthUser = Depends(require_auth),
+):
+    """Export access policy rules as CSV (DB-first)."""
+    csv_data = _get_service(tenant, user).export_access_policy_csv()
+    return Response(
+        content=csv_data,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="access_policy_{tenant}.csv"'},
+    )
+
+
+# ------------------------------------------------------------------
+# Identity (DB-first, read-only)
+# ------------------------------------------------------------------
+
+@router.get("/{tenant}/saml-attributes")
+def list_saml_attributes(tenant: str, q: Optional[str] = None, user: AuthUser = Depends(require_auth)):
+    """List SAML attributes (DB-first)."""
+    return _get_service(tenant, user).list_saml_attributes_from_db(q=q)
+
+
+@router.get("/{tenant}/scim-attributes")
+def list_scim_attributes(tenant: str, q: Optional[str] = None, user: AuthUser = Depends(require_auth)):
+    """List SCIM user attributes (DB-first)."""
+    return _get_service(tenant, user).list_scim_attributes_from_db(q=q)
+
+
+@router.get("/{tenant}/scim-groups")
+def list_scim_groups(tenant: str, q: Optional[str] = None, user: AuthUser = Depends(require_auth)):
+    """List SCIM groups (DB-first)."""
+    return _get_service(tenant, user).list_scim_groups_from_db(q=q)
