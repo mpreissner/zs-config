@@ -42,6 +42,14 @@ RESOURCE_DEFINITIONS: List[ResourceDef] = [
     ResourceDef("admin_user",         "list_admin_users",       name_field="username"),
     ResourceDef("web_app_service",    "list_web_app_services",  name_field="app_name"),
     ResourceDef("web_policy",         "list_web_policies",      name_field="name"),
+    # Extended resource types
+    ResourceDef("fail_open_policy",  "list_fail_open_policies"),
+    ResourceDef("web_privacy",       "get_web_privacy_singleton"),  # wrapped to return list
+    ResourceDef("company_info",      "list_company_info"),
+    ResourceDef("admin_role",        "list_admin_roles"),
+    ResourceDef("ip_app_predefined", "list_ip_apps_predefined",  name_field="appName"),
+    ResourceDef("ip_app_custom",     "list_ip_apps_custom",       name_field="appName"),
+    ResourceDef("process_app",       "list_process_apps",         name_field="appName"),
 ]
 
 

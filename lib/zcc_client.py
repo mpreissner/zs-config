@@ -389,6 +389,66 @@ class ZCCClient:
                 all_policies.append(item)
         return all_policies
 
+    # ------------------------------------------------------------------
+    # Fail Open Policy
+    # ------------------------------------------------------------------
+
+    def list_fail_open_policies(self) -> List[Dict]:
+        result, resp, err = self._sdk.zcc.fail_open_policy.list_by_company()
+        return _to_dicts(_unwrap(result, resp, err))
+
+    # ------------------------------------------------------------------
+    # Web Privacy
+    # ------------------------------------------------------------------
+
+    def get_web_privacy(self) -> Dict:
+        result = self._sdk.zcc.web_privacy.get_web_privacy()
+        if result is None:
+            return {}
+        return _to_dict(result)
+
+    def get_web_privacy_singleton(self) -> List[Dict]:
+        """Wraps get_web_privacy() as a list for uniform import service handling."""
+        item = self.get_web_privacy()
+        if not item:
+            return []
+        if "id" not in item:
+            item = dict(item)
+            item["id"] = "1"
+        return [item]
+
+    # ------------------------------------------------------------------
+    # Company Info
+    # ------------------------------------------------------------------
+
+    def list_company_info(self) -> List[Dict]:
+        result, resp, err = self._sdk.zcc.company.get_company_info()
+        return _to_dicts(_unwrap(result, resp, err))
+
+    # ------------------------------------------------------------------
+    # Admin Roles
+    # ------------------------------------------------------------------
+
+    def list_admin_roles(self) -> List[Dict]:
+        result, resp, err = self._sdk.zcc.admin_user.list_admin_roles()
+        return _to_dicts(_unwrap(result, resp, err))
+
+    # ------------------------------------------------------------------
+    # IP-based bypass apps (predefined + custom) and process-based apps
+    # ------------------------------------------------------------------
+
+    def list_ip_apps_predefined(self) -> List[Dict]:
+        data = self._direct_get("predefined-ip-based-apps")
+        return data if isinstance(data, list) else (data.get("list", []) if isinstance(data, dict) else [])
+
+    def list_ip_apps_custom(self) -> List[Dict]:
+        data = self._direct_get("custom-ip-based-apps")
+        return data if isinstance(data, list) else (data.get("list", []) if isinstance(data, dict) else [])
+
+    def list_process_apps(self) -> List[Dict]:
+        data = self._direct_get("process-based-apps")
+        return data if isinstance(data, list) else (data.get("list", []) if isinstance(data, dict) else [])
+
     def edit_web_policy(self, **kwargs) -> Dict:
         result, resp, err = self._sdk.zcc.web_policy.web_policy_edit(**kwargs)
         return _to_dict(_unwrap(result, resp, err))
