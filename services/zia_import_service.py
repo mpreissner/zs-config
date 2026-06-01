@@ -92,9 +92,21 @@ RESOURCE_DEFINITIONS: List[ResourceDef] = [
 ]
 
 
+_META_KEYS = frozenset({"creation_time", "modified_time", "modified_by"})
+
+
+def _strip_meta(obj):
+    """Recursively remove volatile API metadata fields before hashing."""
+    if isinstance(obj, dict):
+        return {k: _strip_meta(v) for k, v in obj.items() if k not in _META_KEYS}
+    if isinstance(obj, list):
+        return [_strip_meta(i) for i in obj]
+    return obj
+
+
 def _hash(obj) -> str:
-    """Return SHA-256 hex digest of a JSON-serialised object."""
-    raw = json.dumps(obj, sort_keys=True, default=str)
+    """Return SHA-256 hex digest of a JSON-serialised object, metadata stripped."""
+    raw = json.dumps(_strip_meta(obj), sort_keys=True, default=str)
     return hashlib.sha256(raw.encode()).hexdigest()
 
 

@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [3.2.0] - 2026-06-01
+
+### Added
+
+- **ZPA config snapshots** — capture named restore points of the current ZPA configuration from the web UI. Snapshots store a full copy of all resource types with field-level diff support.
+- **ZPA snapshot diff** — compare any snapshot against the current live state. The diff view shows added, removed, and modified resources with per-field change detail and per-operation support flags.
+- **ZPA full snapshot restore** — restore a snapshot via a background job that executes dependency-ordered deletes (Phase 1), creates (Phase 2), and updates (Phase 3) across all ZPA resource types. Cross-resource ID references (e.g. `segment_group_id` on applications) are remapped automatically when resources are recreated with new API-assigned IDs.
+- **Post-restore DB sync** — after a restore completes, the affected resource types are re-imported from the API so the local SQLite cache reflects the new state immediately.
+- **ZPA web UI parity** — user portals, certificates, applications, and access policy rules now support full CRUD from the browser. Toggle (enable/disable) and delete actions added to ZPA connector, segment group, server group, and PRA sections.
+- **DB-first reads for ZPA list endpoints** — certificates and applications list endpoints now read from the local SQLite cache rather than hitting the API on every request.
+
+### Fixed
+
+- **Phantom ZPA import updates on back-to-back runs** — `app_connector` and `service_edge` resources were incorrectly detected as changed on every import. Root cause: Zscaler computes relative-time strings (e.g. `last_broker_connect_time_duration: "22h 40m 07s"`) at query time; these change every second regardless of configuration. These telemetry fields are now stripped before hash computation.
+- **Snapshot diff false positives** — snake_case metadata fields (`modified_by`, `modified_time`, `creation_time`, `modified_at`, `created_at`) from the ZPA API were not excluded from field-level diff calculations, causing spurious change entries. Added to `IGNORED_FIELDS` alongside their camelCase equivalents.
+
+---
+
 ## [3.1.0] - 2026-05-21
 
 ### Added

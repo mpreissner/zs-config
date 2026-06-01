@@ -7,12 +7,13 @@ Interactive TUI and browser-based UI for Zscaler OneAPI — manage ZPA, ZIA, ZCC
 
 ---
 
-## What's New — v3.1.0
+## What's New — v3.2.0
 
-> **v3.1.0 is the current release** — SSL/TLS certificate support. See the [changelog](CHANGELOG.md) for details.
+> **v3.2.0 is the current release** — ZPA snapshot restore and full web UI parity. See the [changelog](CHANGELOG.md) for details.
 
-- **HTTPS termination** — upload a certificate bundle via Admin Settings to enable HTTPS on port 8443. TLS 1.2+ enforced; HTTP on port 8000 redirects automatically with a cached 301.
-- **WebAuthn origin auto-update** — enabling SSL updates the stored RP ID and origin to match the HTTPS domain and invalidates existing passkey registrations with a confirmation prompt.
+- **ZPA config snapshots** — capture named restore points of your ZPA configuration from the web UI; diff any snapshot against current state with field-level change detail.
+- **Full snapshot restore** — dependency-ordered creates, updates, and deletes across all ZPA resource types, with cross-resource ID remapping for newly created objects. Local DB is re-synced automatically after restore.
+- **ZPA web UI parity** — user portals, certificates, applications, and access policy now support full CRUD from the browser. DB-first reads across all ZPA list endpoints.
 
 ---
 

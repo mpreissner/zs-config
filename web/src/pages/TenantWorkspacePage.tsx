@@ -83,16 +83,48 @@ import {
 import {
   fetchCertificates,
   fetchApplications,
+  patchApplicationEnabled,
   fetchPraPortals,
-  listAppConnectors,
+  fetchUserPortals,
+  patchUserPortalEnabled,
+  deleteUserPortal,
+  fetchZpaSnapshotDiff,
+  restoreZpaSnapshot,
+  ZpaRestoreResult,
+  listConnectors,
+  patchConnectorEnabled,
+  patchConnectorName,
+  deleteConnector,
+  listConnectorGroups,
+  createConnectorGroup,
+  patchConnectorGroupEnabled,
+  deleteConnectorGroup,
   listServiceEdges,
+  patchServiceEdgeEnabled,
+  patchPraPortalEnabled,
+  deletePraPortal,
+  listPraConsoles,
+  patchPraConsoleEnabled,
+  deletePraConsole,
+  listAccessPolicyRules,
+  exportAccessPolicyCsv,
+  listSamlAttributes,
+  listScimAttributes,
+  listScimGroups,
   listSegmentGroups,
   ZpaCertificate,
   ZpaApplication,
   ZpaPraPortal,
+  ZpaUserPortal,
   ZpaAppConnector,
   ZpaServiceEdge,
   ZpaSegmentGroup,
+  ZpaConnectorGroup,
+  ZpaPraConsole,
+  ZpaAccessPolicyRule,
+  ZpaSamlAttribute,
+  ZpaScimAttribute,
+  ZpaScimGroup,
 } from "../api/zpa";
 import {
   listDevices as listZccDevices,
@@ -463,6 +495,33 @@ function StateToggle({
   return (
     <button
       onClick={() => onToggle(ruleId, enabled ? "DISABLED" : "ENABLED")}
+      disabled={pending}
+      title={enabled ? "Disable" : "Enable"}
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+        enabled ? "bg-green-500" : "bg-gray-300"
+      } disabled:opacity-60`}
+    >
+      <span
+        className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${
+          enabled ? "translate-x-4" : "translate-x-1"
+        }`}
+      />
+    </button>
+  );
+}
+
+function BoolToggle({
+  enabled,
+  onToggle,
+  pending,
+}: {
+  enabled: boolean;
+  onToggle: (next: boolean) => void;
+  pending: boolean;
+}) {
+  return (
+    <button
+      onClick={() => onToggle(!enabled)}
       disabled={pending}
       title={enabled ? "Disable" : "Enable"}
       className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
@@ -2499,12 +2558,12 @@ function CertificatesSection({ tenantName, isOpen }: { tenantName: string; isOpe
           </thead>
           <tbody className="divide-y divide-gray-100 bg-white">
             {data.map((c: ZpaCertificate) => {
-              const expEpoch = c.expireTime ? parseInt(c.expireTime, 10) : null;
+              const expEpoch = c.valid_to_in_epoch_sec ?? null;
               const expired = expEpoch !== null && expEpoch < now;
               return (
                 <tr key={c.id}>
                   <td className="px-3 py-2 text-gray-900">{c.name}</td>
-                  <td className="px-3 py-2 text-gray-600">{c.issuedTo ?? "-"}</td>
+                  <td className="px-3 py-2 text-gray-600">{c.issued_to ?? "-"}</td>
                   <td className="px-3 py-2 text-gray-500 text-xs">
                     {expEpoch ? formatDate(new Date(expEpoch * 1000).toISOString()) : "-"}
                   </td>
@@ -2529,13 +2588,116 @@ function CertificatesSection({ tenantName, isOpen }: { tenantName: string; isOpe
   );
 }
 
+function ApplicationRow({
+  a,
+  onToggle,
+  pending,
+}: {
+  a: ZpaApplication;
+  onToggle: (id: string, next: boolean) => void;
+  pending: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const appId = String(a.id);
+  const domains = a.domain_names ?? a.domainNames ?? [];
+  const serverGroups = (a.server_groups as Array<{ name?: string; id?: string }>) ?? [];
+  const segmentGroupName = a.segment_group_name as string | undefined;
+  const tcpPorts = (a.tcp_port_range as Array<{ from: string; to: string }>) ?? [];
+  const udpPorts = (a.udp_port_range as Array<{ from: string; to: string }>) ?? [];
+  const description = a.description as string | undefined;
+  const shown = domains.slice(0, 3).join(", ");
+  const extra = domains.length > 3 ? ` +${domains.length - 3} more` : "";
+
+  return (
+    <>
+      <tr className="cursor-pointer hover:bg-gray-50" onClick={() => setExpanded((x) => !x)}>
+        <td className="px-3 py-2 text-gray-900 flex items-center gap-1.5">
+          <span className={`transition-transform ${expanded ? "rotate-90" : ""}`}>{CHEVRON}</span>
+          {a.name}
+        </td>
+        <td className="px-3 py-2 text-gray-500">{a.application_type ?? a.applicationType ?? "-"}</td>
+        <td className="px-3 py-2 text-gray-500 font-mono text-xs">{domains.length ? shown + extra : "-"}</td>
+        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+          <BoolToggle
+            enabled={!!a.enabled}
+            onToggle={(next) => onToggle(appId, next)}
+            pending={pending}
+          />
+        </td>
+      </tr>
+      {expanded && (
+        <tr>
+          <td colSpan={4} className="bg-gray-50 px-4 py-3 text-xs space-y-3">
+            {description && (
+              <div>
+                <span className="font-medium text-gray-500 uppercase tracking-wide">Description</span>
+                <p className="mt-0.5 text-gray-700">{description}</p>
+              </div>
+            )}
+            {domains.length > 0 && (
+              <div>
+                <span className="font-medium text-gray-500 uppercase tracking-wide">Domains / IPs</span>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {domains.map((d, i) => (
+                    <span key={i} className="inline-block bg-gray-100 rounded px-2 py-0.5 font-mono">{d}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {(tcpPorts.length > 0 || udpPorts.length > 0) && (
+              <div>
+                <span className="font-medium text-gray-500 uppercase tracking-wide">Ports</span>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {tcpPorts.map((p, i) => (
+                    <span key={`tcp-${i}`} className="inline-block bg-blue-50 text-blue-700 rounded px-2 py-0.5 font-mono">TCP {p.from === p.to ? p.from : `${p.from}–${p.to}`}</span>
+                  ))}
+                  {udpPorts.map((p, i) => (
+                    <span key={`udp-${i}`} className="inline-block bg-purple-50 text-purple-700 rounded px-2 py-0.5 font-mono">UDP {p.from === p.to ? p.from : `${p.from}–${p.to}`}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {serverGroups.length > 0 && (
+              <div>
+                <span className="font-medium text-gray-500 uppercase tracking-wide">Server Groups</span>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {serverGroups.map((g, i) => (
+                    <span key={i} className="inline-block bg-gray-100 rounded px-2 py-0.5 font-mono">{g.name ?? g.id}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {segmentGroupName && (
+              <div>
+                <span className="font-medium text-gray-500 uppercase tracking-wide">Segment Group</span>
+                <p className="mt-0.5 text-gray-700 font-mono">{segmentGroupName}</p>
+              </div>
+            )}
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
 function ApplicationsSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const qc = useQueryClient();
   const [filter, setFilter] = useState("");
+  const [pendingToggleId, setPendingToggleId] = useState<string | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["zpa-applications", tenantName],
     queryFn: () => fetchApplications(tenantName),
     enabled: isOpen,
+  });
+
+  const toggleMut = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      patchApplicationEnabled(tenantName, id, enabled),
+    onSettled: () => {
+      setPendingToggleId(null);
+      qc.invalidateQueries({ queryKey: ["zpa-applications", tenantName] });
+    },
   });
 
   if (isLoading) return <LoadingSpinner />;
@@ -2566,23 +2728,14 @@ function ApplicationsSection({ tenantName, isOpen }: { tenantName: string; isOpe
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 bg-white">
-            {filtered.map((a: ZpaApplication) => {
-              const domains = a.domainNames ?? [];
-              const shown = domains.slice(0, 3).join(", ");
-              const extra = domains.length > 3 ? ` +${domains.length - 3} more` : "";
-              return (
-                <tr key={a.id}>
-                  <td className="px-3 py-2 text-gray-900">{a.name}</td>
-                  <td className="px-3 py-2 text-gray-500">{a.applicationType ?? "-"}</td>
-                  <td className="px-3 py-2 text-gray-500 font-mono text-xs">{domains.length ? shown + extra : "-"}</td>
-                  <td className="px-3 py-2">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${a.enabled ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-500"}`}>
-                      {a.enabled ? "Yes" : "No"}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
+            {filtered.map((a: ZpaApplication) => (
+              <ApplicationRow
+                key={a.id}
+                a={a}
+                onToggle={(id, next) => { setPendingToggleId(id); toggleMut.mutate({ id, enabled: next }); }}
+                pending={pendingToggleId === String(a.id)}
+              />
+            ))}
             {filtered.length === 0 && (
               <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400">No results</td></tr>
             )}
@@ -2593,113 +2746,438 @@ function ApplicationsSection({ tenantName, isOpen }: { tenantName: string; isOpe
   );
 }
 
-function PraPortalsSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+function UserPortalsSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const qc = useQueryClient();
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [pendingToggleId, setPendingToggleId] = useState<string | null>(null);
+
   const { data, isLoading, error } = useQuery({
-    queryKey: ["zpa-pra-portals", tenantName],
-    queryFn: () => fetchPraPortals(tenantName),
+    queryKey: ["zpa-user-portals", tenantName],
+    queryFn: () => fetchUserPortals(tenantName),
     enabled: isOpen,
+    staleTime: 60_000,
+  });
+
+  const toggleMut = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      patchUserPortalEnabled(tenantName, id, enabled),
+    onSettled: () => {
+      setPendingToggleId(null);
+      qc.invalidateQueries({ queryKey: ["zpa-user-portals", tenantName] });
+    },
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => deleteUserPortal(tenantName, id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["zpa-user-portals", tenantName] }),
   });
 
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
   if (!data) return null;
 
+  const portalToDelete = confirmDeleteId ? data.find((p) => p.zpa_id === confirmDeleteId) : null;
+
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200 text-sm">
-        <thead className="bg-gray-50">
-          <tr>
-            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
-            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Certificate</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100 bg-white">
-          {data.map((p: ZpaPraPortal) => (
-            <tr key={p.id}>
-              <td className="px-3 py-2 text-gray-900">{p.name}</td>
-              <td className="px-3 py-2 text-gray-500 font-mono text-xs">{p.domain ?? "-"}</td>
-              <td className="px-3 py-2 text-gray-500">{p.certificateName ?? "-"}</td>
+    <div className="space-y-3">
+      {confirmDeleteId && portalToDelete && (
+        <ConfirmDialog
+          title="Delete User Portal"
+          message={`Delete user portal "${portalToDelete.name}"? This cannot be undone.`}
+          onConfirm={() => { deleteMut.mutate(confirmDeleteId); setConfirmDeleteId(null); }}
+          onCancel={() => setConfirmDeleteId(null)}
+          destructive
+        />
+      )}
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Certificate</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Enabled</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
             </tr>
-          ))}
-          {data.length === 0 && (
-            <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">No PRA portals</td></tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-gray-100 bg-white">
+            {data.map((p: ZpaUserPortal) => (
+              <tr key={p.zpa_id}>
+                <td className="px-3 py-2 text-gray-900">{p.name}</td>
+                <td className="px-3 py-2 text-gray-500 font-mono text-xs">{p.domain ?? "-"}</td>
+                <td className="px-3 py-2 text-gray-500">{p.certificate_name ?? "-"}</td>
+                <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                  <BoolToggle
+                    enabled={p.enabled ?? false}
+                    onToggle={(next) => {
+                      setPendingToggleId(p.zpa_id);
+                      toggleMut.mutate({ id: p.zpa_id, enabled: next });
+                    }}
+                    pending={pendingToggleId === p.zpa_id}
+                  />
+                </td>
+                <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    onClick={() => setConfirmDeleteId(p.zpa_id)}
+                    className="text-xs text-red-500 hover:underline"
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {data.length === 0 && (
+              <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400">No user portals</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function PraPortalsSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const qc = useQueryClient();
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [pendingToggleId, setPendingToggleId] = useState<string | null>(null);
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zpa-pra-portals", tenantName],
+    queryFn: () => fetchPraPortals(tenantName),
+    enabled: isOpen,
+    staleTime: 60_000,
+  });
+
+  const toggleMut = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      patchPraPortalEnabled(tenantName, id, enabled),
+    onSettled: () => {
+      setPendingToggleId(null);
+      qc.invalidateQueries({ queryKey: ["zpa-pra-portals", tenantName] });
+    },
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => deletePraPortal(tenantName, id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["zpa-pra-portals", tenantName] }),
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  const portalToDelete = confirmDeleteId ? data.find((p) => p.zpa_id === confirmDeleteId) : null;
+
+  return (
+    <div className="space-y-3">
+      {confirmDeleteId && portalToDelete && (
+        <ConfirmDialog
+          title="Delete PRA Portal"
+          message={`Delete PRA portal "${portalToDelete.name}"? This cannot be undone.`}
+          onConfirm={() => { deleteMut.mutate(confirmDeleteId); setConfirmDeleteId(null); }}
+          onCancel={() => setConfirmDeleteId(null)}
+          destructive
+        />
+      )}
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Certificate</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Enabled</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 bg-white">
+            {data.map((p: ZpaPraPortal) => (
+              <tr key={p.zpa_id}>
+                <td className="px-3 py-2 text-gray-900">{p.name}</td>
+                <td className="px-3 py-2 text-gray-500 font-mono text-xs">{p.domain ?? "-"}</td>
+                <td className="px-3 py-2 text-gray-500">{p.certificate_name ?? "-"}</td>
+                <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                  <BoolToggle
+                    enabled={p.enabled ?? false}
+                    onToggle={(next) => {
+                      setPendingToggleId(p.zpa_id);
+                      toggleMut.mutate({ id: p.zpa_id, enabled: next });
+                    }}
+                    pending={pendingToggleId === p.zpa_id}
+                  />
+                </td>
+                <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    onClick={() => setConfirmDeleteId(p.zpa_id)}
+                    className="text-xs text-red-500 hover:underline"
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {data.length === 0 && (
+              <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400">No PRA portals</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
 
 function AppConnectorsSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const qc = useQueryClient();
+  const [filter, setFilter] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [pendingToggleId, setPendingToggleId] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+
   const { data, isLoading, error } = useQuery({
-    queryKey: ["zpa-app-connectors", tenantName],
-    queryFn: () => listAppConnectors(tenantName),
+    queryKey: ["zpa-connectors", tenantName],
+    queryFn: () => listConnectors(tenantName),
     enabled: isOpen,
+    staleTime: 60_000,
+  });
+
+  const toggleMut = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      patchConnectorEnabled(tenantName, id, enabled),
+    onSettled: () => {
+      setPendingToggleId(null);
+      qc.invalidateQueries({ queryKey: ["zpa-connectors", tenantName] });
+    },
+  });
+
+  const renameMut = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) =>
+      patchConnectorName(tenantName, id, name),
+    onSuccess: () => {
+      setRenamingId(null);
+      qc.invalidateQueries({ queryKey: ["zpa-connectors", tenantName] });
+    },
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => deleteConnector(tenantName, id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["zpa-connectors", tenantName] }),
   });
 
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
   if (!data) return null;
 
+  const filtered = data.filter((c: ZpaAppConnector) =>
+    c.name.toLowerCase().includes(filter.toLowerCase())
+  );
+  const connectorToDelete = confirmDeleteId
+    ? data.find((c) => (c.zpa_id ?? c.id) === confirmDeleteId)
+    : null;
+
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200 text-sm">
-        <thead className="bg-gray-50">
-          <tr>
-            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
-            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100 bg-white">
-          {data.map((c: ZpaAppConnector) => (
-            <tr key={c.id}>
-              <td className="px-3 py-2 font-mono text-xs text-gray-500">{c.id}</td>
-              <td className="px-3 py-2 text-gray-900">{c.name}</td>
+    <div className="space-y-3">
+      {confirmDeleteId && connectorToDelete && (
+        <ConfirmDialog
+          title="Delete App Connector"
+          message={`Delete connector "${connectorToDelete.name}"? This cannot be undone.`}
+          onConfirm={() => { deleteMut.mutate(confirmDeleteId); setConfirmDeleteId(null); }}
+          onCancel={() => setConfirmDeleteId(null)}
+          destructive
+        />
+      )}
+      <input
+        type="text"
+        placeholder="Filter by name..."
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+        className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+      />
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Enabled</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
             </tr>
-          ))}
-          {data.length === 0 && (
-            <tr><td colSpan={2} className="px-3 py-4 text-center text-gray-400">No app connectors</td></tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-gray-100 bg-white">
+            {filtered.map((c: ZpaAppConnector) => {
+              const rowId = c.zpa_id ?? c.id ?? "";
+              return (
+                <tr key={rowId}>
+                  <td className="px-3 py-2 text-gray-900">
+                    {renamingId === rowId ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          className="border border-gray-300 rounded px-2 py-0.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => renameMut.mutate({ id: rowId, name: renameValue })}
+                          disabled={renameMut.isPending}
+                          className="text-xs text-zs-500 hover:underline disabled:opacity-50"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={() => setRenamingId(null)}
+                          className="text-xs text-gray-500 hover:underline"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      c.name
+                    )}
+                  </td>
+                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                    <BoolToggle
+                      enabled={c.enabled ?? false}
+                      onToggle={(next) => {
+                        setPendingToggleId(rowId);
+                        toggleMut.mutate({ id: rowId, enabled: next });
+                      }}
+                      pending={pendingToggleId === rowId}
+                    />
+                  </td>
+                  <td className="px-3 py-2 space-x-3" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => { setRenamingId(rowId); setRenameValue(c.name); }}
+                      className="text-xs text-zs-500 hover:underline"
+                    >
+                      Rename
+                    </button>
+                    <button
+                      onClick={() => setConfirmDeleteId(rowId)}
+                      className="text-xs text-red-500 hover:underline"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+            {filtered.length === 0 && (
+              <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">No app connectors</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
 
 function ServiceEdgesSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const qc = useQueryClient();
+  const [filter, setFilter] = useState("");
+  const [pendingToggleId, setPendingToggleId] = useState<string | null>(null);
+
   const { data, isLoading, error } = useQuery({
     queryKey: ["zpa-service-edges", tenantName],
     queryFn: () => listServiceEdges(tenantName),
     enabled: isOpen,
+    staleTime: 60_000,
+  });
+
+  const toggleMut = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      patchServiceEdgeEnabled(tenantName, id, enabled),
+    onSettled: () => {
+      setPendingToggleId(null);
+      qc.invalidateQueries({ queryKey: ["zpa-service-edges", tenantName] });
+    },
   });
 
   if (isLoading) return <LoadingSpinner />;
   if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
   if (!data) return null;
 
+  const filtered = data.filter((e: ZpaServiceEdge) =>
+    e.name.toLowerCase().includes(filter.toLowerCase())
+  );
+
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full divide-y divide-gray-200 text-sm">
-        <thead className="bg-gray-50">
-          <tr>
-            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
-            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100 bg-white">
-          {data.map((e: ZpaServiceEdge) => (
-            <tr key={e.id}>
-              <td className="px-3 py-2 font-mono text-xs text-gray-500">{e.id}</td>
-              <td className="px-3 py-2 text-gray-900">{e.name}</td>
+    <div className="space-y-3">
+      <input
+        type="text"
+        placeholder="Filter by name..."
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+        className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+      />
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Enabled</th>
             </tr>
-          ))}
-          {data.length === 0 && (
-            <tr><td colSpan={2} className="px-3 py-4 text-center text-gray-400">No service edges</td></tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-gray-100 bg-white">
+            {filtered.map((e: ZpaServiceEdge) => {
+              const rowId = e.zpa_id ?? e.id ?? "";
+              return (
+                <tr key={rowId}>
+                  <td className="px-3 py-2 text-gray-900">{e.name}</td>
+                  <td className="px-3 py-2" onClick={(ev) => ev.stopPropagation()}>
+                    <BoolToggle
+                      enabled={e.enabled ?? false}
+                      onToggle={(next) => {
+                        setPendingToggleId(rowId);
+                        toggleMut.mutate({ id: rowId, enabled: next });
+                      }}
+                      pending={pendingToggleId === rowId}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+            {filtered.length === 0 && (
+              <tr><td colSpan={2} className="px-3 py-4 text-center text-gray-400">No service edges</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
+  );
+}
+
+function SegmentGroupRow({ g }: { g: ZpaSegmentGroup }) {
+  const [expanded, setExpanded] = useState(false);
+  const apps = (g.applications as Array<{ id: string; name: string }>) ?? [];
+  return (
+    <>
+      <tr className="cursor-pointer hover:bg-gray-50" onClick={() => setExpanded((x) => !x)}>
+        <td className="px-3 py-2 font-mono text-xs text-gray-500">{g.id}</td>
+        <td className="px-3 py-2 text-gray-900 flex items-center gap-1.5">
+          <span className={`transition-transform ${expanded ? "rotate-90" : ""}`}>{CHEVRON}</span>
+          {g.name}
+        </td>
+      </tr>
+      {expanded && (
+        <tr>
+          <td colSpan={2} className="bg-gray-50 px-4 py-3">
+            {apps.length === 0 ? (
+              <p className="text-xs text-gray-400">No application segments.</p>
+            ) : (
+              <div className="text-xs text-gray-700">
+                <div className="font-medium text-gray-500 uppercase tracking-wide mb-1">Application Segments</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {apps.map((app) => (
+                    <span key={app.id} className="inline-block bg-gray-100 rounded px-2 py-0.5 font-mono">{app.name}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 
@@ -2725,16 +3203,623 @@ function SegmentGroupsSection({ tenantName, isOpen }: { tenantName: string; isOp
         </thead>
         <tbody className="divide-y divide-gray-100 bg-white">
           {data.map((g: ZpaSegmentGroup) => (
-            <tr key={g.id}>
-              <td className="px-3 py-2 font-mono text-xs text-gray-500">{g.id}</td>
-              <td className="px-3 py-2 text-gray-900">{g.name}</td>
-            </tr>
+            <SegmentGroupRow key={g.id} g={g} />
           ))}
           {data.length === 0 && (
             <tr><td colSpan={2} className="px-3 py-4 text-center text-gray-400">No segment groups</td></tr>
           )}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function ConnectorGroupsSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const qc = useQueryClient();
+  const [filter, setFilter] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [pendingToggleId, setPendingToggleId] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newDesc, setNewDesc] = useState("");
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zpa-connector-groups", tenantName],
+    queryFn: () => listConnectorGroups(tenantName),
+    enabled: isOpen,
+    staleTime: 60_000,
+  });
+
+  const toggleMut = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      patchConnectorGroupEnabled(tenantName, id, enabled),
+    onSettled: () => {
+      setPendingToggleId(null);
+      qc.invalidateQueries({ queryKey: ["zpa-connector-groups", tenantName] });
+    },
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => deleteConnectorGroup(tenantName, id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["zpa-connector-groups", tenantName] }),
+  });
+
+  const createMut = useMutation({
+    mutationFn: () => createConnectorGroup(tenantName, newName, newDesc || undefined),
+    onSuccess: () => {
+      setShowCreate(false);
+      setNewName("");
+      setNewDesc("");
+      qc.invalidateQueries({ queryKey: ["zpa-connector-groups", tenantName] });
+    },
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  const filtered = data.filter((g: ZpaConnectorGroup) =>
+    g.name.toLowerCase().includes(filter.toLowerCase())
+  );
+  const groupToDelete = confirmDeleteId
+    ? data.find((g) => (g.zpa_id ?? g.id) === confirmDeleteId)
+    : null;
+
+  return (
+    <div className="space-y-3">
+      {confirmDeleteId && groupToDelete && (
+        <ConfirmDialog
+          title="Delete Connector Group"
+          message={`Delete connector group "${groupToDelete.name}"? This cannot be undone.`}
+          onConfirm={() => { deleteMut.mutate(confirmDeleteId); setConfirmDeleteId(null); }}
+          onCancel={() => setConfirmDeleteId(null)}
+          destructive
+        />
+      )}
+      <div className="flex items-center gap-3">
+        <input
+          type="text"
+          placeholder="Filter by name..."
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          className="flex-1 border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+        />
+        <button
+          onClick={() => setShowCreate((v) => !v)}
+          className="px-3 py-1.5 text-sm bg-zs-500 text-white rounded-md hover:bg-zs-600 transition-colors"
+        >
+          Create Group
+        </button>
+      </div>
+      {showCreate && (
+        <div className="border border-gray-200 rounded-md p-3 bg-gray-50 space-y-2">
+          <h4 className="text-sm font-semibold text-gray-700">New Connector Group</h4>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
+              <input
+                type="text"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Description (optional)</label>
+              <input
+                type="text"
+                value={newDesc}
+                onChange={(e) => setNewDesc(e.target.value)}
+                className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={() => createMut.mutate()}
+              disabled={!newName.trim() || createMut.isPending}
+              className="px-3 py-1.5 text-xs bg-zs-500 text-white rounded hover:bg-zs-600 disabled:opacity-50 transition-colors"
+            >
+              {createMut.isPending ? "Creating..." : "Create"}
+            </button>
+            <button
+              onClick={() => { setShowCreate(false); setNewName(""); setNewDesc(""); }}
+              className="px-3 py-1.5 text-xs border border-gray-300 text-gray-700 rounded hover:bg-gray-100 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+          {createMut.isError && (
+            <p className="text-xs text-red-500">
+              {createMut.error instanceof Error ? createMut.error.message : "Create failed"}
+            </p>
+          )}
+        </div>
+      )}
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Enabled</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 bg-white">
+            {filtered.map((g: ZpaConnectorGroup) => {
+              const rowId = g.zpa_id ?? g.id ?? "";
+              return (
+                <tr key={rowId}>
+                  <td className="px-3 py-2 text-gray-900">{g.name}</td>
+                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                    <BoolToggle
+                      enabled={g.enabled ?? false}
+                      onToggle={(next) => {
+                        setPendingToggleId(rowId);
+                        toggleMut.mutate({ id: rowId, enabled: next });
+                      }}
+                      pending={pendingToggleId === rowId}
+                    />
+                  </td>
+                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => setConfirmDeleteId(rowId)}
+                      className="text-xs text-red-500 hover:underline"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+            {filtered.length === 0 && (
+              <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">No connector groups</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function PraConsolesSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const qc = useQueryClient();
+  const [filter, setFilter] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [pendingToggleId, setPendingToggleId] = useState<string | null>(null);
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zpa-pra-consoles", tenantName],
+    queryFn: () => listPraConsoles(tenantName),
+    enabled: isOpen,
+    staleTime: 60_000,
+  });
+
+  const toggleMut = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      patchPraConsoleEnabled(tenantName, id, enabled),
+    onSettled: () => {
+      setPendingToggleId(null);
+      qc.invalidateQueries({ queryKey: ["zpa-pra-consoles", tenantName] });
+    },
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => deletePraConsole(tenantName, id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["zpa-pra-consoles", tenantName] }),
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  const filtered = data.filter((c: ZpaPraConsole) =>
+    c.name.toLowerCase().includes(filter.toLowerCase())
+  );
+  const consoleToDelete = confirmDeleteId
+    ? data.find((c) => (c.zpa_id ?? c.id) === confirmDeleteId)
+    : null;
+
+  return (
+    <div className="space-y-3">
+      {confirmDeleteId && consoleToDelete && (
+        <ConfirmDialog
+          title="Delete PRA Console"
+          message={`Delete PRA console "${consoleToDelete.name}"? This cannot be undone.`}
+          onConfirm={() => { deleteMut.mutate(confirmDeleteId); setConfirmDeleteId(null); }}
+          onCancel={() => setConfirmDeleteId(null)}
+          destructive
+        />
+      )}
+      <input
+        type="text"
+        placeholder="Filter by name..."
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+        className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+      />
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Enabled</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 bg-white">
+            {filtered.map((c: ZpaPraConsole) => {
+              const rowId = c.zpa_id ?? c.id ?? "";
+              return (
+                <tr key={rowId}>
+                  <td className="px-3 py-2 text-gray-900">{c.name}</td>
+                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                    <BoolToggle
+                      enabled={c.enabled ?? false}
+                      onToggle={(next) => {
+                        setPendingToggleId(rowId);
+                        toggleMut.mutate({ id: rowId, enabled: next });
+                      }}
+                      pending={pendingToggleId === rowId}
+                    />
+                  </td>
+                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => setConfirmDeleteId(rowId)}
+                      className="text-xs text-red-500 hover:underline"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+            {filtered.length === 0 && (
+              <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">No PRA consoles</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function AccessPolicyRuleRow({ r }: { r: ZpaAccessPolicyRule }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const conditions = (r.conditions as Array<{ operator?: string; operands?: Array<{ object_type?: string; entry_values?: Array<{ lhs: string; rhs: string }>; values?: Array<{ lhs: string; rhs: string }> }> }>) ?? [];
+  const connectorGroups = (r.app_connector_groups as Array<{ name?: string; id?: string }>) ?? [];
+  const serverGroups = (r.app_server_groups as Array<{ name?: string; id?: string }>) ?? [];
+  const serviceEdgeGroups = (r.service_edge_groups as Array<{ name?: string; id?: string }>) ?? [];
+
+  return (
+    <>
+      <tr className="cursor-pointer hover:bg-gray-50" onClick={() => setExpanded((x) => !x)}>
+        <td className="px-3 py-2 text-gray-500">{r.rule_order ?? "-"}</td>
+        <td className="px-3 py-2 text-gray-900 flex items-center gap-1.5">
+          <span className={`transition-transform ${expanded ? "rotate-90" : ""}`}>{CHEVRON}</span>
+          {r.name}
+        </td>
+        <td className="px-3 py-2">
+          {r.action ? (
+            <span
+              className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                r.action === "ALLOW" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+              }`}
+            >
+              {r.action}
+            </span>
+          ) : (
+            <span className="text-gray-400">-</span>
+          )}
+        </td>
+      </tr>
+      {expanded && (
+        <tr>
+          <td colSpan={3} className="bg-gray-50 px-4 py-3 text-xs space-y-3">
+            {!!r.description && (
+              <div>
+                <span className="font-medium text-gray-500 uppercase tracking-wide">Description</span>
+                <p className="mt-0.5 text-gray-700">{String(r.description)}</p>
+              </div>
+            )}
+            {conditions.length > 0 && (
+              <div>
+                <span className="font-medium text-gray-500 uppercase tracking-wide">
+                  Conditions {r.operator ? `(${String(r.operator)})` : ""}
+                </span>
+                <div className="mt-1 space-y-1">
+                  {conditions.map((cond, ci) => {
+                    const operands = cond.operands ?? [];
+                    return operands.map((op, oi) => {
+                      const entries = (op.entry_values ?? op.values ?? []).slice(0, 6);
+                      const label = op.object_type ?? "UNKNOWN";
+                      return (
+                        <div key={`${ci}-${oi}`} className="flex items-start gap-2">
+                          <span className="inline-block bg-blue-50 text-blue-700 rounded px-1.5 py-0.5 font-mono uppercase flex-shrink-0">{label}</span>
+                          <span className="text-gray-600">
+                            {entries.map((e) => e.rhs ?? e.lhs).join(", ") || "(any)"}
+                          </span>
+                        </div>
+                      );
+                    });
+                  })}
+                </div>
+              </div>
+            )}
+            {connectorGroups.length > 0 && (
+              <div>
+                <span className="font-medium text-gray-500 uppercase tracking-wide">Connector Groups</span>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {connectorGroups.map((g, i) => (
+                    <span key={i} className="inline-block bg-gray-100 rounded px-2 py-0.5 font-mono">{g.name ?? g.id}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {serverGroups.length > 0 && (
+              <div>
+                <span className="font-medium text-gray-500 uppercase tracking-wide">Server Groups</span>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {serverGroups.map((g, i) => (
+                    <span key={i} className="inline-block bg-gray-100 rounded px-2 py-0.5 font-mono">{g.name ?? g.id}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {serviceEdgeGroups.length > 0 && (
+              <div>
+                <span className="font-medium text-gray-500 uppercase tracking-wide">Service Edge Groups</span>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {serviceEdgeGroups.map((g, i) => (
+                    <span key={i} className="inline-block bg-gray-100 rounded px-2 py-0.5 font-mono">{g.name ?? g.id}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {!r.description && conditions.length === 0 && connectorGroups.length === 0 && serverGroups.length === 0 && serviceEdgeGroups.length === 0 && (
+              <p className="text-gray-400">No additional details.</p>
+            )}
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function AccessPolicySection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const [filter, setFilter] = useState("");
+  const [exporting, setExporting] = useState(false);
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zpa-access-policy", tenantName],
+    queryFn: () => listAccessPolicyRules(tenantName),
+    enabled: isOpen,
+    staleTime: 60_000,
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  const filtered = data.filter((r: ZpaAccessPolicyRule) =>
+    r.name.toLowerCase().includes(filter.toLowerCase())
+  );
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      await exportAccessPolicyCsv(tenantName, tenantName);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3">
+        <input
+          type="text"
+          placeholder="Filter by name..."
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          className="flex-1 border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+        />
+        <button
+          onClick={handleExport}
+          disabled={exporting}
+          className="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 disabled:opacity-50 transition-colors"
+        >
+          {exporting ? "Exporting..." : "Export to CSV"}
+        </button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Order</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 bg-white">
+            {filtered.map((r: ZpaAccessPolicyRule) => {
+              const rowId = r.zpa_id ?? r.id ?? r.name;
+              return <AccessPolicyRuleRow key={rowId} r={r} />;
+            })}
+            {filtered.length === 0 && (
+              <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">No access policy rules</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function IdentitySection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const [samlFilter, setSamlFilter] = useState("");
+  const [scimAttrFilter, setScimAttrFilter] = useState("");
+  const [scimGroupFilter, setScimGroupFilter] = useState("");
+
+  const { data: samlData, isLoading: samlLoading, error: samlError } = useQuery({
+    queryKey: ["zpa-saml-attrs", tenantName],
+    queryFn: () => listSamlAttributes(tenantName),
+    enabled: isOpen,
+    staleTime: 60_000,
+  });
+
+  const { data: scimAttrData, isLoading: scimAttrLoading, error: scimAttrError } = useQuery({
+    queryKey: ["zpa-scim-attrs", tenantName],
+    queryFn: () => listScimAttributes(tenantName),
+    enabled: isOpen,
+    staleTime: 60_000,
+  });
+
+  const { data: scimGroupData, isLoading: scimGroupLoading, error: scimGroupError } = useQuery({
+    queryKey: ["zpa-scim-groups", tenantName],
+    queryFn: () => listScimGroups(tenantName),
+    enabled: isOpen,
+    staleTime: 60_000,
+  });
+
+  const filteredSaml = (samlData ?? []).filter((a: ZpaSamlAttribute) =>
+    a.name.toLowerCase().includes(samlFilter.toLowerCase())
+  );
+  const filteredScimAttrs = (scimAttrData ?? []).filter((a: ZpaScimAttribute) =>
+    a.name.toLowerCase().includes(scimAttrFilter.toLowerCase())
+  );
+  const filteredScimGroups = (scimGroupData ?? []).filter((g: ZpaScimGroup) =>
+    g.name.toLowerCase().includes(scimGroupFilter.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-6">
+      {/* SAML Attributes */}
+      <div className="space-y-2">
+        <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">SAML Attributes</h4>
+        <input
+          type="text"
+          placeholder="Filter SAML attributes..."
+          value={samlFilter}
+          onChange={(e) => setSamlFilter(e.target.value)}
+          className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+        />
+        {samlLoading ? (
+          <LoadingSpinner />
+        ) : samlError ? (
+          <ErrorMessage message={samlError instanceof Error ? samlError.message : "Failed to load"} />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200 text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">IdP</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 bg-white">
+                {filteredSaml.map((a: ZpaSamlAttribute) => {
+                  const rowId = a.zpa_id ?? a.id ?? a.name;
+                  return (
+                    <tr key={rowId}>
+                      <td className="px-3 py-2 text-gray-900">{a.name}</td>
+                      <td className="px-3 py-2 text-gray-500">{(a.idpName as string) ?? (a.idp_name as string) ?? "-"}</td>
+                    </tr>
+                  );
+                })}
+                {filteredSaml.length === 0 && (
+                  <tr><td colSpan={2} className="px-3 py-4 text-center text-gray-400">No SAML attributes</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* SCIM Attributes */}
+      <div className="space-y-2">
+        <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">SCIM Attributes</h4>
+        <input
+          type="text"
+          placeholder="Filter SCIM attributes..."
+          value={scimAttrFilter}
+          onChange={(e) => setScimAttrFilter(e.target.value)}
+          className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+        />
+        {scimAttrLoading ? (
+          <LoadingSpinner />
+        ) : scimAttrError ? (
+          <ErrorMessage message={scimAttrError instanceof Error ? scimAttrError.message : "Failed to load"} />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200 text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Data Type</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 bg-white">
+                {filteredScimAttrs.map((a: ZpaScimAttribute) => {
+                  const rowId = a.zpa_id ?? a.id ?? a.name;
+                  return (
+                    <tr key={rowId}>
+                      <td className="px-3 py-2 text-gray-900">{a.name}</td>
+                      <td className="px-3 py-2 text-gray-500">{(a.dataType as string) ?? (a.data_type as string) ?? "-"}</td>
+                    </tr>
+                  );
+                })}
+                {filteredScimAttrs.length === 0 && (
+                  <tr><td colSpan={2} className="px-3 py-4 text-center text-gray-400">No SCIM attributes</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* SCIM Groups */}
+      <div className="space-y-2">
+        <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">SCIM Groups</h4>
+        <input
+          type="text"
+          placeholder="Filter SCIM groups..."
+          value={scimGroupFilter}
+          onChange={(e) => setScimGroupFilter(e.target.value)}
+          className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+        />
+        {scimGroupLoading ? (
+          <LoadingSpinner />
+        ) : scimGroupError ? (
+          <ErrorMessage message={scimGroupError instanceof Error ? scimGroupError.message : "Failed to load"} />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200 text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">IdP</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 bg-white">
+                {filteredScimGroups.map((g: ZpaScimGroup) => {
+                  const rowId = g.zpa_id ?? g.id ?? g.name;
+                  return (
+                    <tr key={rowId}>
+                      <td className="px-3 py-2 text-gray-900">{g.name}</td>
+                      <td className="px-3 py-2 text-gray-500">{(g.idpName as string) ?? (g.idp_name as string) ?? "-"}</td>
+                    </tr>
+                  );
+                })}
+                {filteredScimGroups.length === 0 && (
+                  <tr><td colSpan={2} className="px-3 py-4 text-center text-gray-400">No SCIM groups</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -4101,6 +5186,292 @@ function ZiaTab({ tenant }: { tenant: Tenant }) {
   );
 }
 
+// ── ZpaRestoreModal ────────────────────────────────────────────────────────────
+
+function ZpaRestoreModal({
+  tenant,
+  snapshot,
+  onClose,
+}: {
+  tenant: Tenant;
+  snapshot: ConfigSnapshot;
+  onClose: () => void;
+}) {
+  const [restoreJobId, setRestoreJobId] = useState<string | null>(null);
+  const [mutErr, setMutErr] = useState<string | null>(null);
+
+  const diffQuery = useQuery({
+    queryKey: ["zpa-snapshot-diff", tenant.name, snapshot.id],
+    queryFn: () => fetchZpaSnapshotDiff(tenant.name, snapshot.id),
+    staleTime: 30_000,
+  });
+
+  const restoreMut = useMutation({
+    mutationFn: () => restoreZpaSnapshot(tenant.name, snapshot.id),
+    onSuccess: (data) => { setRestoreJobId(data.job_id); setMutErr(null); },
+    onError: (e: Error) => setMutErr(e.message),
+  });
+
+  const {
+    latestByPhase: restoreProgress,
+    jobStatus: restoreJobStatus,
+    result: restoreResult,
+    streamError: restoreStreamError,
+  } = useJobStream<ZpaRestoreResult>(restoreJobId);
+
+  const isRestoreRunning = restoreMut.isPending || restoreJobStatus === "running";
+  const restoreDone = restoreJobStatus === "done";
+  const diff = diffQuery.data;
+  const err = mutErr ?? restoreStreamError ?? null;
+
+  const ACTION_COLORS: Record<string, string> = {
+    create: "text-green-700 bg-green-50",
+    update: "text-blue-700 bg-blue-50",
+    delete: "text-red-700 bg-red-50",
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-gray-200 flex items-start justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Restore ZPA Snapshot</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {snapshot.label || formatDateTime(snapshot.created_at)} · {snapshot.resource_count} resources
+            </p>
+          </div>
+          {!isRestoreRunning && (
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 ml-4">
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          {err && <p className="text-xs text-red-600">{err}</p>}
+
+          {/* Restore result */}
+          {restoreDone && restoreResult && (
+            <div className="space-y-3">
+              <div className={`p-3 rounded-md text-sm ${restoreResult.failed > 0 ? "bg-amber-50 text-amber-800" : "bg-green-50 text-green-800"}`}>
+                <p className="font-medium">Restore complete</p>
+                <p className="text-xs mt-1">
+                  {restoreResult.applied} applied · {restoreResult.skipped} skipped
+                  {restoreResult.failed > 0 && ` · ${restoreResult.failed} failed`}
+                </p>
+              </div>
+              {restoreResult.items.filter(i => i.status === "manual").length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-amber-700 mb-1">Manual action required:</p>
+                  <div className="max-h-32 overflow-y-auto border border-amber-200 rounded-md divide-y divide-amber-100 text-xs">
+                    {restoreResult.items.filter(i => i.status === "manual").map((item, i) => (
+                      <div key={i} className="px-3 py-1.5 bg-white">
+                        <span className="font-mono text-gray-500">{item.resource_type}</span> · {item.name}
+                        <p className="text-amber-700 mt-0.5">{item.reason}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {restoreResult.items.filter(i => i.status === "failed").length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-red-700 mb-1">Failed:</p>
+                  <div className="max-h-32 overflow-y-auto border border-red-200 rounded-md divide-y divide-red-100 text-xs">
+                    {restoreResult.items.filter(i => i.status === "failed").map((item, i) => (
+                      <div key={i} className="px-3 py-1.5 bg-white">
+                        <span className="font-mono text-gray-500">{item.resource_type}</span> · {item.name}
+                        <p className="text-red-700 font-mono break-all mt-0.5">{item.reason}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <button onClick={onClose} className="text-xs text-zs-600 hover:underline">Close</button>
+            </div>
+          )}
+
+          {/* Restore running */}
+          {isRestoreRunning && (
+            <div className="space-y-1.5">
+              <p className="text-xs text-gray-500">
+                {restoreProgress["restore"]
+                  ? `${(restoreProgress["restore"] as any).action ?? ""} ${restoreProgress["restore"].resource_type}: ${restoreProgress["restore"].name ?? ""} (${restoreProgress["restore"].done}/${restoreProgress["restore"].total})`
+                  : "Applying changes…"}
+              </p>
+              <ImportProgressBar active />
+            </div>
+          )}
+
+          {/* Diff preview + confirm */}
+          {!restoreDone && !isRestoreRunning && (
+            <>
+              {diffQuery.isLoading && <LoadingSpinner />}
+              {diffQuery.error && <ErrorMessage message={diffQuery.error instanceof Error ? diffQuery.error.message : "Failed to load diff"} />}
+              {diff && (
+                <div className="space-y-3">
+                  <div className="flex gap-4 text-xs">
+                    <span className="text-green-700 font-medium">{diff.creates} to create</span>
+                    <span className="text-blue-700 font-medium">{diff.updates} to update</span>
+                    <span className="text-red-700 font-medium">{diff.deletes} to delete</span>
+                  </div>
+
+                  {diff.creates + diff.updates + diff.deletes === 0 ? (
+                    <p className="text-sm text-gray-500">Current state already matches this snapshot.</p>
+                  ) : (
+                    <>
+                      <div className="max-h-56 overflow-y-auto border border-gray-200 rounded-md divide-y divide-gray-100 text-xs">
+                        {diff.items.map((item, i) => (
+                          <div key={i} className="flex items-center justify-between px-3 py-1.5 bg-white">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className={`shrink-0 px-1.5 py-0.5 rounded text-xs font-medium ${ACTION_COLORS[item.action] ?? ""}`}>
+                                {item.action}
+                              </span>
+                              <span className="font-mono text-gray-400 shrink-0">{item.resource_type}</span>
+                              <span className="text-gray-700 truncate">{item.name}</span>
+                            </div>
+                            {!item.supported && (
+                              <span className="shrink-0 text-amber-600 ml-2">manual</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-gray-400">
+                        Items marked "manual" (creates, complex config updates) must be applied outside the web UI.
+                        Only supported operations (enable/disable, delete) will be executed automatically.
+                      </p>
+                      <button
+                        onClick={() => restoreMut.mutate()}
+                        disabled={restoreMut.isPending}
+                        className="w-full px-3 py-2 text-sm rounded-md bg-zs-500 hover:bg-zs-600 text-white disabled:opacity-60"
+                      >
+                        Apply Restore
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ZpaSnapshotsSection({ tenant, isOpen }: { tenant: Tenant; isOpen: boolean }) {
+  const qc = useQueryClient();
+  const [labelInput, setLabelInput] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<ConfigSnapshot | null>(null);
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zpa-snapshots", tenant.name],
+    queryFn: () => fetchSnapshots(tenant.name, "ZPA"),
+    enabled: isOpen,
+  });
+
+  const createMut = useMutation({
+    mutationFn: () => createSnapshot(tenant.name, labelInput.trim() || undefined, "ZPA"),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["zpa-snapshots", tenant.name] });
+      setLabelInput("");
+    },
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => deleteSnapshot(tenant.name, id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["zpa-snapshots", tenant.name] });
+      setDeleteTarget(null);
+    },
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+
+  const snaps = data ?? [];
+
+  return (
+    <div className="space-y-4">
+      {deleteTarget !== null && (
+        <ConfirmDialog
+          title="Delete Snapshot"
+          message="Delete this snapshot? This cannot be undone."
+          onConfirm={() => deleteMut.mutate(deleteTarget)}
+          onCancel={() => setDeleteTarget(null)}
+          destructive
+        />
+      )}
+
+      {restoreTarget && (
+        <ZpaRestoreModal
+          tenant={tenant}
+          snapshot={restoreTarget}
+          onClose={() => setRestoreTarget(null)}
+        />
+      )}
+
+      <div className="flex gap-2 items-end">
+        <div className="flex-1">
+          <label className="block text-xs font-medium text-gray-600 mb-1">Label (optional)</label>
+          <input
+            type="text"
+            value={labelInput}
+            onChange={(e) => setLabelInput(e.target.value)}
+            placeholder="e.g. pre-change baseline"
+            className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+          />
+        </div>
+        <button
+          onClick={() => createMut.mutate()}
+          disabled={createMut.isPending}
+          className="px-3 py-1.5 text-xs rounded-md bg-zs-500 hover:bg-zs-600 text-white disabled:opacity-60"
+        >
+          {createMut.isPending ? "Saving..." : "Save Snapshot"}
+        </button>
+      </div>
+      {createMut.isError && (
+        <ErrorMessage message={createMut.error instanceof Error ? createMut.error.message : "Failed to save"} />
+      )}
+
+      {snaps.length === 0 ? (
+        <p className="text-sm text-gray-400">No snapshots saved yet.</p>
+      ) : (
+        <div className="divide-y divide-gray-100 border border-gray-200 rounded-lg overflow-hidden">
+          {snaps.map((s: ConfigSnapshot) => (
+            <div key={s.id} className="flex items-center justify-between px-4 py-3 bg-white">
+              <div>
+                <p className="text-sm font-medium text-gray-900">{s.label || <span className="italic text-gray-400">Unlabeled</span>}</p>
+                <p className="text-xs text-gray-400">
+                  {formatDateTime(s.created_at)} · {s.resource_count} resources
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setRestoreTarget(s)}
+                  className="text-xs text-zs-600 hover:text-zs-800"
+                >
+                  Restore
+                </button>
+                <button
+                  onClick={() => setDeleteTarget(s.id)}
+                  className="text-xs text-red-500 hover:text-red-700"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ZpaTab({ tenant }: { tenant: Tenant }) {
   const [groups, setGroups] = useState<Record<string, boolean>>({});
   const [open, setOpen] = useState<Record<string, boolean>>({});
@@ -4114,8 +5485,18 @@ function ZpaTab({ tenant }: { tenant: Tenant }) {
         <Accordion title="App Connectors" isOpen={!!open.appConnectors} onToggle={() => toggle("appConnectors")}>
           <AppConnectorsSection tenantName={tenant.name} isOpen={!!open.appConnectors} />
         </Accordion>
+        <Accordion title="Connector Groups" isOpen={!!open.connectorGroups} onToggle={() => toggle("connectorGroups")}>
+          <ConnectorGroupsSection tenantName={tenant.name} isOpen={!!open.connectorGroups} />
+        </Accordion>
         <Accordion title="Service Edges" isOpen={!!open.serviceEdges} onToggle={() => toggle("serviceEdges")}>
           <ServiceEdgesSection tenantName={tenant.name} isOpen={!!open.serviceEdges} />
+        </Accordion>
+      </SectionGroup>
+
+      {/* Access Policy */}
+      <SectionGroup title="Access Policy" isOpen={!!groups.accessPolicy} onToggle={() => toggleGroup("accessPolicy")}>
+        <Accordion title="Access Policy Rules" isOpen={!!open.accessPolicyRules} onToggle={() => toggle("accessPolicyRules")}>
+          <AccessPolicySection tenantName={tenant.name} isOpen={!!open.accessPolicyRules} />
         </Accordion>
       </SectionGroup>
 
@@ -4129,6 +5510,13 @@ function ZpaTab({ tenant }: { tenant: Tenant }) {
         </Accordion>
       </SectionGroup>
 
+      {/* Identity */}
+      <SectionGroup title="Identity" isOpen={!!groups.identity} onToggle={() => toggleGroup("identity")}>
+        <Accordion title="SAML / SCIM" isOpen={!!open.identity} onToggle={() => toggle("identity")}>
+          <IdentitySection tenantName={tenant.name} isOpen={!!open.identity} />
+        </Accordion>
+      </SectionGroup>
+
       {/* Certificates */}
       <SectionGroup title="Certificates" isOpen={!!groups.certs} onToggle={() => toggleGroup("certs")}>
         <Accordion title="Browser Access Certificates" isOpen={!!open.certificates} onToggle={() => toggle("certificates")}>
@@ -4136,10 +5524,27 @@ function ZpaTab({ tenant }: { tenant: Tenant }) {
         </Accordion>
       </SectionGroup>
 
+      {/* User Portals */}
+      <SectionGroup title="User Portals" isOpen={!!groups.userPortals} onToggle={() => toggleGroup("userPortals")}>
+        <Accordion title="User Portals" isOpen={!!open.userPortals} onToggle={() => toggle("userPortals")}>
+          <UserPortalsSection tenantName={tenant.name} isOpen={!!open.userPortals} />
+        </Accordion>
+      </SectionGroup>
+
       {/* PRA */}
       <SectionGroup title="Privileged Remote Access (PRA)" isOpen={!!groups.pra} onToggle={() => toggleGroup("pra")}>
         <Accordion title="PRA Portals" isOpen={!!open.praPortals} onToggle={() => toggle("praPortals")}>
           <PraPortalsSection tenantName={tenant.name} isOpen={!!open.praPortals} />
+        </Accordion>
+        <Accordion title="PRA Consoles" isOpen={!!open.praConsoles} onToggle={() => toggle("praConsoles")}>
+          <PraConsolesSection tenantName={tenant.name} isOpen={!!open.praConsoles} />
+        </Accordion>
+      </SectionGroup>
+
+      {/* Config Snapshots */}
+      <SectionGroup title="Config Snapshots" isOpen={!!groups.snapshots} onToggle={() => toggleGroup("snapshots")}>
+        <Accordion title="Snapshots" isOpen={!!open.snapshots} onToggle={() => toggle("snapshots")}>
+          <ZpaSnapshotsSection tenant={tenant} isOpen={!!open.snapshots} />
         </Accordion>
       </SectionGroup>
     </div>

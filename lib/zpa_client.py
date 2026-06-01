@@ -170,6 +170,32 @@ class ZPAClient:
         return True
 
     # ------------------------------------------------------------------
+    # User Portals
+    # ------------------------------------------------------------------
+
+    def list_user_portals(self) -> List[Dict]:
+        result, resp, err = self._sdk.zpa.user_portal_controller.list_user_portals()
+        return _to_dicts(_unwrap(result, resp, err))
+
+    def get_user_portal(self, portal_id: str) -> Dict:
+        result, resp, err = self._sdk.zpa.user_portal_controller.get_user_portal(portal_id)
+        return _to_dict(_unwrap(result, resp, err))
+
+    def create_user_portal(self, **kwargs) -> Dict:
+        result, resp, err = self._sdk.zpa.user_portal_controller.add_user_portal(**kwargs)
+        return _to_dict(_unwrap(result, resp, err))
+
+    def update_user_portal(self, portal_id: str, config: Dict) -> bool:
+        result, resp, err = self._sdk.zpa.user_portal_controller.update_user_portal(portal_id, **config)
+        _unwrap(result, resp, err)
+        return True
+
+    def delete_user_portal(self, portal_id: str) -> bool:
+        result, resp, err = self._sdk.zpa.user_portal_controller.delete_user_portal(portal_id)
+        _unwrap(result, resp, err)
+        return True
+
+    # ------------------------------------------------------------------
     # Privileged Credentials
     # ------------------------------------------------------------------
 
@@ -189,6 +215,20 @@ class ZPAClient:
         result, resp, err = self._sdk.zpa.segment_groups.add_group(name=name, enabled=enabled)
         return _to_dict(_unwrap(result, resp, err))
 
+    def create_segment_group_full(self, **kwargs) -> Dict:
+        result, resp, err = self._sdk.zpa.segment_groups.add_group(**kwargs)
+        return _to_dict(_unwrap(result, resp, err))
+
+    def update_segment_group(self, group_id: str, config: Dict) -> bool:
+        result, resp, err = self._sdk.zpa.segment_groups.update_group(group_id, **config)
+        _unwrap(result, resp, err)
+        return True
+
+    def delete_segment_group(self, group_id: str) -> bool:
+        result, resp, err = self._sdk.zpa.segment_groups.delete_group(group_id)
+        _unwrap(result, resp, err)
+        return True
+
     # ------------------------------------------------------------------
     # Server Groups
     # ------------------------------------------------------------------
@@ -200,6 +240,20 @@ class ZPAClient:
     def create_server_group(self, name: str, enabled: bool = True) -> Dict:
         result, resp, err = self._sdk.zpa.server_groups.add_group(name=name, enabled=enabled)
         return _to_dict(_unwrap(result, resp, err))
+
+    def create_server_group_full(self, **kwargs) -> Dict:
+        result, resp, err = self._sdk.zpa.server_groups.add_group(**kwargs)
+        return _to_dict(_unwrap(result, resp, err))
+
+    def update_server_group(self, group_id: str, config: Dict) -> bool:
+        result, resp, err = self._sdk.zpa.server_groups.update_group(group_id, **config)
+        _unwrap(result, resp, err)
+        return True
+
+    def delete_server_group(self, group_id: str) -> bool:
+        result, resp, err = self._sdk.zpa.server_groups.delete_group(group_id)
+        _unwrap(result, resp, err)
+        return True
 
     # ------------------------------------------------------------------
     # App Connectors & Connector Groups
@@ -323,6 +377,11 @@ class ZPAClient:
         _, _, err = self._sdk.zpa.policies.bulk_reorder_rules("access", rule_ids)
         if err:
             raise RuntimeError(str(err))
+
+    def delete_policy_rule(self, policy_type: str, rule_id: str) -> bool:
+        result, resp, err = self._sdk.zpa.policies.delete_rule(policy_type, rule_id)
+        _unwrap(result, resp, err)
+        return True
 
     # ------------------------------------------------------------------
     # PRA Consoles

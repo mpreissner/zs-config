@@ -43,6 +43,7 @@ RESOURCE_DEFINITIONS: List[ResourceDef] = [
     ResourceDef("app_connector_group",  "list_connector_groups"),
     ResourceDef("app_connector",        "list_connectors"),
     ResourceDef("pra_portal",           "list_pra_portals"),
+    ResourceDef("user_portal",          "list_user_portals"),
     ResourceDef("pra_credential",       "list_credentials"),
     ResourceDef("idp",                  "list_idp"),
     ResourceDef("saml_attribute",       "list_saml_attributes"),
@@ -67,9 +68,27 @@ RESOURCE_DEFINITIONS: List[ResourceDef] = [
 ]
 
 
+_META_KEYS = frozenset({
+    "creation_time", "modified_time", "modified_by",
+    # Connector/edge connection telemetry — computed per-call, not configuration
+    "last_broker_connect_time", "last_broker_connect_time_duration",
+    "last_broker_disconnect_time", "last_broker_disconnect_time_duration",
+    "application_start_time",
+})
+
+
+def _strip_meta(obj):
+    """Recursively remove volatile API metadata fields before hashing."""
+    if isinstance(obj, dict):
+        return {k: _strip_meta(v) for k, v in obj.items() if k not in _META_KEYS}
+    if isinstance(obj, list):
+        return [_strip_meta(i) for i in obj]
+    return obj
+
+
 def _hash(obj) -> str:
-    """Return SHA-256 hex digest of a JSON-serialised object."""
-    raw = json.dumps(obj, sort_keys=True, default=str)
+    """Return SHA-256 hex digest of a JSON-serialised object, metadata stripped."""
+    raw = json.dumps(_strip_meta(obj), sort_keys=True, default=str)
     return hashlib.sha256(raw.encode()).hexdigest()
 
 

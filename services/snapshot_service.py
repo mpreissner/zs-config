@@ -19,6 +19,8 @@ from db.models import RestorePoint, ZIAResource, ZPAResource
 IGNORED_FIELDS = frozenset({
     "modifiedBy", "modifiedTime", "creationTime", "modifiedAt",
     "createdAt", "lastModifiedTime", "modifiedByUser", "createdByUser",
+    # snake_case equivalents from ZPA API
+    "modified_by", "modified_time", "creation_time", "modified_at", "created_at",
 })
 
 
