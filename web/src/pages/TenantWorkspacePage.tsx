@@ -2866,7 +2866,8 @@ function PacFileRow({
         <td className="px-3 py-2 text-gray-900">{pac.name}</td>
         <td className="px-3 py-2 text-gray-500">{pac.description ?? "-"}</td>
         <td className="px-3 py-2 text-gray-500">{pac.domain ?? "-"}</td>
-        <td className="px-3 py-2 text-xs text-gray-400 font-mono break-all">{(pac as unknown as Record<string, unknown>)["pac_url"] as string ?? "-"}</td>
+        <td className="px-3 py-2 text-xs text-gray-500 font-mono">{pac.pacVersion ?? "-"}</td>
+        <td className="px-3 py-2 text-xs text-gray-400 font-mono break-all">{pac.pacUrl ?? "-"}</td>
         <td className="px-3 py-2 text-xs text-gray-400">
           {pac.lastModifiedTime ? new Date(pac.lastModifiedTime * 1000).toLocaleDateString() : "-"}
         </td>
@@ -2966,6 +2967,7 @@ function PacFilesSection({ tenantName, isOpen }: { tenantName: string; isOpen: b
               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Version</th>
               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">PAC URL</th>
               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Last Modified</th>
               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
@@ -2982,7 +2984,7 @@ function PacFilesSection({ tenantName, isOpen }: { tenantName: string; isOpen: b
               />
             ))}
             {(data ?? []).length === 0 && (
-              <tr><td colSpan={7} className="px-3 py-4 text-center text-gray-400">No PAC files</td></tr>
+              <tr><td colSpan={8} className="px-3 py-4 text-center text-gray-400">No PAC files</td></tr>
             )}
           </tbody>
         </table>
@@ -6082,14 +6084,21 @@ function ZiaTab({ tenant }: { tenant: Tenant }) {
         <Accordion title="Tenancy Restrictions" isOpen={!!open.tenancyRestrictions} onToggle={() => toggle("tenancyRestrictions")}>
           <TenancyRestrictionsSection tenantName={tenant.name} isOpen={!!open.tenancyRestrictions} />
         </Accordion>
-        <Accordion title="PAC Files" isOpen={!!open.pacFiles} onToggle={() => toggle("pacFiles")}>
-          <PacFilesSection tenantName={tenant.name} isOpen={!!open.pacFiles} />
-        </Accordion>
         <Accordion title="Cloud App Rules" isOpen={!!open.cloudAppRules} onToggle={() => toggle("cloudAppRules")}>
           <CloudAppRulesSection tenantName={tenant.name} isOpen={!!open.cloudAppRules} />
         </Accordion>
         <Accordion title="URL & Cloud App Control Advanced Settings" isOpen={!!open.cloudAppAdvanced} onToggle={() => toggle("cloudAppAdvanced")}>
           <CloudAppAdvancedSettingsSection tenantName={tenant.name} isOpen={!!open.cloudAppAdvanced} />
+        </Accordion>
+      </SectionGroup>
+
+      {/* Traffic Forwarding */}
+      <SectionGroup title="Traffic Forwarding" isOpen={!!groups.trafficFwd} onToggle={() => toggleGroup("trafficFwd")}>
+        <Accordion title="Forwarding Rules" isOpen={!!open.forwarding} onToggle={() => toggle("forwarding")}>
+          <ForwardingRulesSection tenantName={tenant.name} isOpen={!!open.forwarding} />
+        </Accordion>
+        <Accordion title="PAC Files" isOpen={!!open.pacFiles} onToggle={() => toggle("pacFiles")}>
+          <PacFilesSection tenantName={tenant.name} isOpen={!!open.pacFiles} />
         </Accordion>
       </SectionGroup>
 
@@ -6103,9 +6112,6 @@ function ZiaTab({ tenant }: { tenant: Tenant }) {
         </Accordion>
         <Accordion title="SSL Inspection" isOpen={!!open.ssl} onToggle={() => toggle("ssl")}>
           <SslInspectionSection tenantName={tenant.name} isOpen={!!open.ssl} />
-        </Accordion>
-        <Accordion title="Traffic Forwarding" isOpen={!!open.forwarding} onToggle={() => toggle("forwarding")}>
-          <ForwardingRulesSection tenantName={tenant.name} isOpen={!!open.forwarding} />
         </Accordion>
         <Accordion title="DNS Filter Rules" isOpen={!!open.dnsFilter} onToggle={() => toggle("dnsFilter")}>
           <FirewallDnsRulesSection tenantName={tenant.name} isOpen={!!open.dnsFilter} />

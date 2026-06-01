@@ -691,6 +691,8 @@ export interface PacFile {
   domain?: string;
   pacUrl?: string;
   pacSubURL?: string;
+  pacVersion?: number;
+  pacVersionStatus?: string;
   editable?: boolean;
   lastModifiedTime?: number;
 }
