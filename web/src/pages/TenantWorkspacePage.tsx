@@ -6586,21 +6586,93 @@ function AppProfileVisualizer({
   policyName: string;
   onClose: () => void;
 }) {
+  const [activeSection, setActiveSection] = useState<string>("tunnel");
+  const [hovered, setHovered] = useState<string | null>(null);
+
   const { data, isLoading, error } = useQuery<TrafficProfile>({
     queryKey: ["traffic-profile", tenantName, policyId],
     queryFn: () => fetchTrafficProfile(tenantName, policyId),
   });
 
-  const tunnelBadgeColor: Record<TunnelMode, string> = {
-    "Z-Tunnel 2.0": "bg-green-100 text-green-800",
-    "Z-Tunnel 1.0": "bg-blue-100 text-blue-800",
-    "Proxy":        "bg-yellow-100 text-yellow-800",
-    "Unknown":      "bg-gray-100 text-gray-600",
+  // Auto-select the first populated section when data arrives
+  useEffect(() => {
+    if (!data) return;
+    const candidates: Array<[string, number | boolean]> = [
+      ["tunnel",  data.tunnelRoutes.length],
+      ["dns",     data.dnsRoutes.length],
+      ["process", data.processBypasses.length],
+      ["port",    data.portBypasses.length],
+      ["vpn",     data.vpnGatewayBypasses.length],
+      ["trusted", data.trustedNetworks.length],
+      ["pac",     data.pac.enablePac || !!data.pac.url],
+    ];
+    const first = candidates.find(([, v]) => Boolean(v));
+    if (first) setActiveSection(first[0]);
+  }, [data]);
+
+  const TUNNEL_STROKE: Record<TunnelMode, string> = {
+    "Z-Tunnel 2.0": "#22c55e",
+    "Z-Tunnel 1.0": "#3b82f6",
+    "Proxy":        "#eab308",
+    "Unknown":      "#9ca3af",
   };
+
+  const tc = data ? (TUNNEL_STROKE[data.tunnelMode] ?? "#9ca3af") : "#9ca3af";
+  const bypassCount = data
+    ? data.processBypasses.length + data.portBypasses.length + data.vpnGatewayBypasses.length
+    : 0;
+
+  const tunnelActive = ["tunnel", "dns", "pac"].includes(activeSection);
+  const bypassActive = ["process", "port", "vpn"].includes(activeSection);
+  const trustedActive = activeSection === "trusted";
+
+  const tabs: Array<{ key: string; label: string; count: number | null; group: string }> = [];
+  if (data) {
+    if (data.tunnelRoutes.length > 0)       tabs.push({ key: "tunnel",  label: "Tunnel Routes",    count: data.tunnelRoutes.length,       group: "tunnel"  });
+    if (data.dnsRoutes.length > 0)          tabs.push({ key: "dns",     label: "DNS Routes",        count: data.dnsRoutes.length,          group: "tunnel"  });
+    if (data.processBypasses.length > 0)    tabs.push({ key: "process", label: "Process Bypasses",  count: data.processBypasses.length,    group: "bypass"  });
+    if (data.portBypasses.length > 0)       tabs.push({ key: "port",    label: "Port Bypasses",     count: data.portBypasses.length,       group: "bypass"  });
+    if (data.vpnGatewayBypasses.length > 0) tabs.push({ key: "vpn",     label: "VPN Gateways",      count: data.vpnGatewayBypasses.length, group: "bypass"  });
+    if (data.trustedNetworks.length > 0)    tabs.push({ key: "trusted", label: "Trusted Networks",  count: data.trustedNetworks.length,    group: "trusted" });
+    if (data.pac.enablePac || data.pac.url) tabs.push({ key: "pac",     label: "PAC Config",        count: null,                          group: "tunnel"  });
+  }
+
+  const tabBtnClass = (key: string, group: string) => {
+    const active = activeSection === key;
+    const base = "px-3 py-1 rounded-full text-xs font-medium transition-colors cursor-pointer";
+    if (!active) return `${base} bg-gray-100 text-gray-600 hover:bg-gray-200`;
+    if (group === "tunnel")  return `${base} bg-green-100 text-green-800 ring-1 ring-green-300`;
+    if (group === "bypass")  return `${base} bg-orange-100 text-orange-800 ring-1 ring-orange-300`;
+    return `${base} bg-purple-100 text-purple-800 ring-1 ring-purple-300`;
+  };
+
+  // ── SVG node map constants ──────────────────────────────────────────────────
+  // Layout (viewBox 0 0 700 196):
+  //  Device       (8, 76)  w=108 h=44   center=(62, 98)
+  //  ZCC Agent   (150, 66) w=172 h=64   center=(236, 98)  right-mid=(322, 98)
+  //  ZIA Cloud   (488, 22) w=184 h=48   center=(580, 46)  left=(488, 46)
+  //  Internet    (488, 122) w=184 h=48  center=(580, 146) left=(488, 146)
+  //  Trusted     (488, 148) w=184 h=36  (shown only when trustedNetworks > 0 AND no Internet)
+
+  const hasBypasses = bypassCount > 0;
+  const hasTrusted  = data ? data.trustedNetworks.length > 0 : false;
+
+  // When there are no bypass rules, Internet node isn't shown and trusted moves up
+  const ziaY      = hasBypasses ? 22  : 60;
+  const internetY = 122;
+  const trustedY  = hasBypasses ? 148 : 122;
+
+  // Right-side edges originate from the ZCC Agent right edge, split vertically
+  const agentRightY_tunnel  = hasBypasses ? 88  : 98;
+  const agentRightY_bypass  = 108;
+  const ziaEdgeEndY    = ziaY + 24;      // mid-height of ZIA node
+  const internetEdgeEndY = internetY + 24;
+  const trustedEdgeEndY  = trustedY + 18;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b">
           <div>
@@ -6615,177 +6687,376 @@ function AppProfileVisualizer({
         </div>
 
         {/* Body */}
-        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-5">
+        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
           {isLoading && <LoadingSpinner />}
           {error && <ErrorMessage message={error instanceof Error ? error.message : "Failed to load traffic profile"} />}
+
           {data && (
             <>
-              {/* Summary row */}
-              <div className="flex flex-wrap gap-3 items-center">
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${tunnelBadgeColor[data.tunnelMode] ?? tunnelBadgeColor["Unknown"]}`}>
-                  {data.tunnelMode}
-                </span>
-                {data.active ? (
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">Active</span>
-                ) : (
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">Inactive</span>
-                )}
-                {data.forwardingProfileName && (
-                  <span className="text-xs text-gray-500">Forwarding: <span className="font-medium text-gray-700">{data.forwardingProfileName}</span></span>
-                )}
-                {data.tunnelZappTraffic && (
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">Tunnel ZApp Traffic</span>
-                )}
+              {/* ── Node-map diagram ────────────────────────────────────── */}
+              <div className="rounded-xl border border-gray-200 bg-gradient-to-br from-gray-50 to-white overflow-hidden select-none">
+                <svg
+                  viewBox="0 0 700 196"
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="w-full"
+                  style={{ height: 196, display: "block" }}
+                >
+                  <defs>
+                    <marker id="tp-arr-gray"    markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3z" fill="#d1d5db"/></marker>
+                    <marker id="tp-arr-tunnel"  markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3z" fill={tc}/></marker>
+                    <marker id="tp-arr-bypass"  markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3z" fill="#f97316"/></marker>
+                    <marker id="tp-arr-trusted" markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3z" fill="#8b5cf6"/></marker>
+                    <filter id="tp-shadow"><feDropShadow dx="0" dy="1" stdDeviation="2" floodOpacity="0.08"/></filter>
+                  </defs>
+
+                  {/* ── Edge: Device → ZCC Agent ─────────────────── */}
+                  <line x1="116" y1="98" x2="150" y2="98" stroke="#d1d5db" strokeWidth="2" markerEnd="url(#tp-arr-gray)"/>
+
+                  {/* ── Edge: ZCC Agent → ZIA Cloud ──────────────── */}
+                  {/* Wide invisible hit-area */}
+                  <path
+                    d={`M 322 ${agentRightY_tunnel} C 400 ${agentRightY_tunnel}, 440 ${ziaEdgeEndY}, 488 ${ziaEdgeEndY}`}
+                    fill="none" stroke="transparent" strokeWidth="16"
+                    className="cursor-pointer"
+                    onClick={() => setActiveSection(tabs.find(t => t.group === "tunnel")?.key ?? "tunnel")}
+                  />
+                  <path
+                    d={`M 322 ${agentRightY_tunnel} C 400 ${agentRightY_tunnel}, 440 ${ziaEdgeEndY}, 488 ${ziaEdgeEndY}`}
+                    fill="none"
+                    stroke={tunnelActive || hovered === "zia-edge" ? tc : "#e5e7eb"}
+                    strokeWidth={tunnelActive ? 3 : 2}
+                    strokeDasharray={data.tunnelMode === "Unknown" ? "7,4" : undefined}
+                    markerEnd="url(#tp-arr-tunnel)"
+                    className="cursor-pointer pointer-events-none"
+                  />
+                  {/* Edge label */}
+                  <text
+                    x="405" y={agentRightY_tunnel - 8}
+                    fontSize="9" textAnchor="middle" fill={tunnelActive ? tc : "#9ca3af"}
+                    className="pointer-events-none"
+                  >
+                    {data.tunnelRoutes.filter(r => r.direction === "include").length > 0
+                      ? `${data.tunnelRoutes.filter(r => r.direction === "include").length} tunneled`
+                      : data.tunnelMode !== "Unknown" ? data.tunnelMode : "tunnel"}
+                  </text>
+
+                  {/* ── Edge: ZCC Agent → Direct Internet ────────── */}
+                  {hasBypasses && (
+                    <>
+                      <path
+                        d={`M 322 ${agentRightY_bypass} C 400 ${agentRightY_bypass}, 440 ${internetEdgeEndY}, 488 ${internetEdgeEndY}`}
+                        fill="none" stroke="transparent" strokeWidth="16"
+                        className="cursor-pointer"
+                        onClick={() => setActiveSection(tabs.find(t => t.group === "bypass")?.key ?? "process")}
+                      />
+                      <path
+                        d={`M 322 ${agentRightY_bypass} C 400 ${agentRightY_bypass}, 440 ${internetEdgeEndY}, 488 ${internetEdgeEndY}`}
+                        fill="none"
+                        stroke={bypassActive || hovered === "bypass-edge" ? "#f97316" : "#e5e7eb"}
+                        strokeWidth={bypassActive ? 3 : 2}
+                        strokeDasharray="7,4"
+                        markerEnd="url(#tp-arr-bypass)"
+                        className="cursor-pointer pointer-events-none"
+                      />
+                      <text
+                        x="405" y={agentRightY_bypass + 16}
+                        fontSize="9" textAnchor="middle" fill={bypassActive ? "#f97316" : "#9ca3af"}
+                        className="pointer-events-none"
+                      >
+                        {bypassCount} bypass{bypassCount !== 1 ? "es" : ""}
+                      </text>
+                    </>
+                  )}
+
+                  {/* ── Edge: ZCC Agent → Trusted Networks ───────── */}
+                  {hasTrusted && (
+                    <>
+                      <path
+                        d={`M 322 ${hasBypasses ? agentRightY_bypass + 6 : agentRightY_tunnel + 6} C 410 ${hasBypasses ? agentRightY_bypass + 6 : agentRightY_tunnel + 6}, 450 ${trustedEdgeEndY}, 488 ${trustedEdgeEndY}`}
+                        fill="none" stroke="transparent" strokeWidth="14"
+                        className="cursor-pointer"
+                        onClick={() => setActiveSection("trusted")}
+                      />
+                      <path
+                        d={`M 322 ${hasBypasses ? agentRightY_bypass + 6 : agentRightY_tunnel + 6} C 410 ${hasBypasses ? agentRightY_bypass + 6 : agentRightY_tunnel + 6}, 450 ${trustedEdgeEndY}, 488 ${trustedEdgeEndY}`}
+                        fill="none"
+                        stroke={trustedActive ? "#8b5cf6" : "#e5e7eb"}
+                        strokeWidth={trustedActive ? 2.5 : 1.5}
+                        strokeDasharray="4,4"
+                        markerEnd="url(#tp-arr-trusted)"
+                        className="pointer-events-none"
+                      />
+                    </>
+                  )}
+
+                  {/* ── Node: Device ─────────────────────────────── */}
+                  <g filter="url(#tp-shadow)">
+                    <rect x="8" y="76" width="108" height="44" rx="8" fill="white" stroke="#e5e7eb" strokeWidth="1.5"/>
+                  </g>
+                  {/* monitor icon */}
+                  <rect x="18" y="86" width="18" height="12" rx="1.5" fill="none" stroke="#9ca3af" strokeWidth="1.3"/>
+                  <line x1="15" y1="99" x2="39" y2="99" stroke="#9ca3af" strokeWidth="1.3"/>
+                  <line x1="25" y1="100" x2="29" y2="103" stroke="#9ca3af" strokeWidth="1.3"/>
+                  <text x="44" y="92" fontSize="11" fontWeight="600" fill="#374151">Device</text>
+                  <text x="44" y="106" fontSize="9" fill="#9ca3af">Endpoint</text>
+
+                  {/* ── Node: ZCC Agent ───────────────────────────── */}
+                  <g filter="url(#tp-shadow)">
+                    <rect x="150" y="66" width="172" height="64" rx="8" fill="white" stroke="#93c5fd" strokeWidth="1.5"/>
+                  </g>
+                  {/* shield icon */}
+                  <path d="M162 96 L162 83 L172 80 L182 83 L182 96 C182 101 172 104 172 104 C172 104 162 101 162 96Z" fill="none" stroke="#3b82f6" strokeWidth="1.4"/>
+                  <text x="190" y="82" fontSize="11" fontWeight="600" fill="#1d4ed8">ZCC Agent</text>
+                  <text x="190" y="96" fontSize="9.5" fill="#6b7280">{data.tunnelMode}</text>
+                  {data.forwardingProfileName && (
+                    <text x="190" y="110" fontSize="8.5" fill="#9ca3af">
+                      {data.forwardingProfileName.length > 22 ? data.forwardingProfileName.slice(0, 22) + "…" : data.forwardingProfileName}
+                    </text>
+                  )}
+                  {/* active status dot */}
+                  <circle cx="309" cy="74" r="5" fill={data.active ? "#22c55e" : "#d1d5db"}/>
+                  <title>{data.active ? "Policy active" : "Policy inactive"}</title>
+                  {/* ZApp badge */}
+                  {data.tunnelZappTraffic && (
+                    <>
+                      <rect x="288" y="118" width="34" height="14" rx="4" fill="#ede9fe" stroke="#c4b5fd" strokeWidth="1"/>
+                      <text x="305" y="128" fontSize="7.5" fontWeight="600" fill="#6d28d9" textAnchor="middle">ZApp</text>
+                    </>
+                  )}
+
+                  {/* ── Node: ZIA Cloud ───────────────────────────── */}
+                  <g
+                    filter="url(#tp-shadow)"
+                    className="cursor-pointer"
+                    onClick={() => setActiveSection(tabs.find(t => t.group === "tunnel")?.key ?? "tunnel")}
+                    onMouseEnter={() => setHovered("zia")}
+                    onMouseLeave={() => setHovered(null)}
+                  >
+                    <rect
+                      x="488" y={ziaY} width="184" height="48" rx="8"
+                      fill={tunnelActive || hovered === "zia" ? "#f0fdf4" : "white"}
+                      stroke={tunnelActive ? tc : "#86efac"}
+                      strokeWidth={tunnelActive ? 2 : 1.5}
+                    />
+                  </g>
+                  {/* cloud icon */}
+                  <path
+                    d={`M498 ${ziaY+38} C495 ${ziaY+38} 494 ${ziaY+34} 496 ${ziaY+31} C494 ${ziaY+29} 495 ${ziaY+25} 499 ${ziaY+24} C499 ${ziaY+20} 504 ${ziaY+17} 509 ${ziaY+19} C510 ${ziaY+16} 516 ${ziaY+15} 519 ${ziaY+18} C524 ${ziaY+16} 530 ${ziaY+20} 528 ${ziaY+25} C531 ${ziaY+25} 533 ${ziaY+28} 531 ${ziaY+31} C532 ${ziaY+34} 530 ${ziaY+37} 527 ${ziaY+38}Z`}
+                    fill="none" stroke="#22c55e" strokeWidth="1.2"
+                    className="pointer-events-none"
+                  />
+                  <text x="537" y={ziaY + 22} fontSize="11" fontWeight="600" fill="#15803d" className="pointer-events-none">ZIA Cloud</text>
+                  <text x="537" y={ziaY + 37} fontSize="9" fill="#6b7280" className="pointer-events-none">
+                    {data.tunnelRoutes.filter(r => r.direction === "include").length} in · {data.tunnelRoutes.filter(r => r.direction === "exclude").length} ex · {data.dnsRoutes.length} DNS
+                  </text>
+
+                  {/* ── Node: Direct Internet ─────────────────────── */}
+                  {hasBypasses && (
+                    <g
+                      filter="url(#tp-shadow)"
+                      className="cursor-pointer"
+                      onClick={() => setActiveSection(tabs.find(t => t.group === "bypass")?.key ?? "process")}
+                      onMouseEnter={() => setHovered("internet")}
+                      onMouseLeave={() => setHovered(null)}
+                    >
+                      <rect
+                        x="488" y={internetY} width="184" height="48" rx="8"
+                        fill={bypassActive || hovered === "internet" ? "#fff7ed" : "white"}
+                        stroke={bypassActive ? "#f97316" : "#fdba74"}
+                        strokeWidth={bypassActive ? 2 : 1.5}
+                        strokeDasharray="5,3"
+                      />
+                      {/* globe icon */}
+                      <circle cx="504" cy={internetY + 24} r="10" fill="none" stroke="#f97316" strokeWidth="1.3"/>
+                      <ellipse cx="504" cy={internetY + 24} rx="5" ry="10" fill="none" stroke="#f97316" strokeWidth="1"/>
+                      <line x1="494" y1={internetY + 24} x2="514" y2={internetY + 24} stroke="#f97316" strokeWidth="1"/>
+                      <text x="522" y={internetY + 20} fontSize="11" fontWeight="600" fill="#c2410c">Direct Internet</text>
+                      <text x="522" y={internetY + 35} fontSize="9" fill="#6b7280">
+                        {bypassCount} bypass rule{bypassCount !== 1 ? "s" : ""}
+                      </text>
+                    </g>
+                  )}
+
+                  {/* ── Node: Trusted Networks ────────────────────── */}
+                  {hasTrusted && (
+                    <g
+                      filter="url(#tp-shadow)"
+                      className="cursor-pointer"
+                      onClick={() => setActiveSection("trusted")}
+                      onMouseEnter={() => setHovered("trusted")}
+                      onMouseLeave={() => setHovered(null)}
+                    >
+                      <rect
+                        x="488" y={trustedY} width="184" height="34" rx="8"
+                        fill={trustedActive || hovered === "trusted" ? "#faf5ff" : "white"}
+                        stroke={trustedActive ? "#8b5cf6" : "#c4b5fd"}
+                        strokeWidth={trustedActive ? 2 : 1.5}
+                        strokeDasharray="4,3"
+                      />
+                      <text x="580" y={trustedY + 21} fontSize="10" fontWeight="500" fill="#7c3aed" textAnchor="middle">
+                        {data.trustedNetworks.length} Trusted Network{data.trustedNetworks.length !== 1 ? "s" : ""} (agent off)
+                      </text>
+                    </g>
+                  )}
+
+                  {/* PAC badge overlaid on ZIA node top-right */}
+                  {(data.pac.enablePac || data.pac.url) && (
+                    <g className="cursor-pointer" onClick={() => setActiveSection("pac")}>
+                      <rect x="650" y={ziaY} width="38" height="17" rx="4" fill="#fef3c7" stroke="#fbbf24" strokeWidth="1"/>
+                      <text x="669" y={ziaY + 11} fontSize="8" fontWeight="600" fill="#92400e" textAnchor="middle">PAC</text>
+                    </g>
+                  )}
+
+                  {/* Legend */}
+                  <circle cx="12" cy="184" r="4" fill={data.active ? "#22c55e" : "#d1d5db"}/>
+                  <text x="20" y="188" fontSize="8.5" fill="#9ca3af">{data.active ? "Active" : "Inactive"}</text>
+                  <line x1="60" y1="184" x2="74" y2="184" stroke={tc} strokeWidth="2"/>
+                  <text x="78" y="188" fontSize="8.5" fill="#9ca3af">Tunneled</text>
+                  {hasBypasses && (
+                    <>
+                      <line x1="126" y1="184" x2="140" y2="184" stroke="#f97316" strokeWidth="2" strokeDasharray="4,3"/>
+                      <text x="144" y="188" fontSize="8.5" fill="#9ca3af">Bypassed</text>
+                    </>
+                  )}
+                </svg>
               </div>
 
-              {/* PAC */}
-              {(data.pac.enablePac || data.pac.url || data.pac.profilePacUrl || data.pac.ziaPacFileName) && (
-                <section>
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">PAC Configuration</h3>
-                  <div className="bg-gray-50 rounded p-3 text-sm space-y-1">
-                    {data.pac.enablePac && <div><span className="text-gray-500 mr-1">PAC enabled:</span><span className="text-green-700 font-medium">Yes</span></div>}
-                    {data.pac.url && <div><span className="text-gray-500 mr-1">PAC URL:</span><span className="font-mono text-xs text-gray-800">{data.pac.url}</span></div>}
-                    {data.pac.profilePacUrl && <div><span className="text-gray-500 mr-1">Profile PAC URL:</span><span className="font-mono text-xs text-gray-800">{data.pac.profilePacUrl}</span></div>}
-                    {data.pac.ziaPacFileName && <div><span className="text-gray-500 mr-1">ZIA PAC file:</span><span className="text-gray-800">{data.pac.ziaPacFileName}</span></div>}
-                    {data.pac.customPacContent !== null && data.pac.customPacContent !== undefined && (
-                      <div><span className="text-gray-500 mr-1">Custom PAC:</span><span className="text-gray-800">{data.pac.customPacContent} bytes</span></div>
-                    )}
-                  </div>
-                </section>
+              {/* ── Tab bar ──────────────────────────────────────────── */}
+              {tabs.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {tabs.map(tab => (
+                    <button
+                      key={tab.key}
+                      onClick={() => setActiveSection(tab.key)}
+                      className={tabBtnClass(tab.key, tab.group)}
+                    >
+                      {tab.label}{tab.count !== null ? ` (${tab.count})` : ""}
+                    </button>
+                  ))}
+                </div>
               )}
 
-              {/* Tunnel routes */}
-              {data.tunnelRoutes.length > 0 && (
-                <section>
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Tunnel Routes ({data.tunnelRoutes.length})</h3>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">CIDR</th>
-                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Direction</th>
-                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">IP Version</th>
+              {/* ── Detail panel ─────────────────────────────────────── */}
+              {activeSection === "tunnel" && data.tunnelRoutes.length > 0 && (
+                <div className="overflow-x-auto rounded border border-gray-100">
+                  <table className="min-w-full text-sm divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">CIDR</th>
+                        <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Direction</th>
+                        <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">IP Version</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-100">
+                      {data.tunnelRoutes.map((r, i) => (
+                        <tr key={i}>
+                          <td className="px-3 py-1.5 font-mono text-xs">{r.cidr}</td>
+                          <td className="px-3 py-1.5">
+                            <span className={`px-1.5 py-0.5 rounded text-xs ${r.direction === "include" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+                              {r.direction}
+                            </span>
+                          </td>
+                          <td className="px-3 py-1.5 text-gray-600 text-xs">{r.ipVersion}</td>
                         </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-100">
-                        {data.tunnelRoutes.map((r, i) => (
-                          <tr key={i}>
-                            <td className="px-3 py-1.5 font-mono text-xs">{r.cidr}</td>
-                            <td className="px-3 py-1.5">
-                              <span className={`px-1.5 py-0.5 rounded text-xs ${r.direction === "include" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
-                                {r.direction}
-                              </span>
-                            </td>
-                            <td className="px-3 py-1.5 text-gray-600 text-xs">{r.ipVersion}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
 
-              {/* DNS routes */}
-              {data.dnsRoutes.length > 0 && (
-                <section>
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">DNS Routes ({data.dnsRoutes.length})</h3>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Suffix</th>
-                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Direction</th>
+              {activeSection === "dns" && data.dnsRoutes.length > 0 && (
+                <div className="overflow-x-auto rounded border border-gray-100">
+                  <table className="min-w-full text-sm divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Suffix</th>
+                        <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Direction</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-100">
+                      {data.dnsRoutes.map((r, i) => (
+                        <tr key={i}>
+                          <td className="px-3 py-1.5 font-mono text-xs">{r.suffix}</td>
+                          <td className="px-3 py-1.5">
+                            <span className={`px-1.5 py-0.5 rounded text-xs ${r.direction === "include" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+                              {r.direction}
+                            </span>
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-100">
-                        {data.dnsRoutes.map((r, i) => (
-                          <tr key={i}>
-                            <td className="px-3 py-1.5 font-mono text-xs">{r.suffix}</td>
-                            <td className="px-3 py-1.5">
-                              <span className={`px-1.5 py-0.5 rounded text-xs ${r.direction === "include" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
-                                {r.direction}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
 
-              {/* Port bypasses */}
-              {data.portBypasses.length > 0 && (
-                <section>
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Port Bypasses ({data.portBypasses.length})</h3>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Port</th>
-                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Protocol</th>
+              {activeSection === "process" && data.processBypasses.length > 0 && (
+                <div className="overflow-x-auto rounded border border-gray-100">
+                  <table className="min-w-full text-sm divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Process</th>
+                        <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Platform</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-100">
+                      {data.processBypasses.map((pb, i) => (
+                        <tr key={i}>
+                          <td className="px-3 py-1.5 font-mono text-xs">{pb.processName}</td>
+                          <td className="px-3 py-1.5 text-gray-600 text-xs capitalize">{pb.platform}</td>
                         </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-100">
-                        {data.portBypasses.map((pb, i) => (
-                          <tr key={i}>
-                            <td className="px-3 py-1.5 font-mono text-xs">{pb.port}</td>
-                            <td className="px-3 py-1.5 text-gray-600 text-xs">{pb.protocol}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
 
-              {/* Process bypasses */}
-              {data.processBypasses.length > 0 && (
-                <section>
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Process Bypasses ({data.processBypasses.length})</h3>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Process</th>
-                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Platform</th>
+              {activeSection === "port" && data.portBypasses.length > 0 && (
+                <div className="overflow-x-auto rounded border border-gray-100">
+                  <table className="min-w-full text-sm divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Port</th>
+                        <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Protocol</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-100">
+                      {data.portBypasses.map((pb, i) => (
+                        <tr key={i}>
+                          <td className="px-3 py-1.5 font-mono text-xs">{pb.port}</td>
+                          <td className="px-3 py-1.5 text-gray-600 text-xs">{pb.protocol}</td>
                         </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-100">
-                        {data.processBypasses.map((pb, i) => (
-                          <tr key={i}>
-                            <td className="px-3 py-1.5 font-mono text-xs">{pb.processName}</td>
-                            <td className="px-3 py-1.5 text-gray-600 text-xs capitalize">{pb.platform}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
 
-              {/* VPN gateway bypasses */}
-              {data.vpnGatewayBypasses.length > 0 && (
-                <section>
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">VPN Gateway Bypasses ({data.vpnGatewayBypasses.length})</h3>
-                  <ul className="list-disc list-inside text-sm text-gray-700 space-y-0.5">
-                    {data.vpnGatewayBypasses.map((g, i) => (
-                      <li key={i} className="font-mono text-xs">{g.gateway}</li>
-                    ))}
-                  </ul>
-                </section>
+              {activeSection === "vpn" && data.vpnGatewayBypasses.length > 0 && (
+                <ul className="list-disc list-inside space-y-0.5">
+                  {data.vpnGatewayBypasses.map((g, i) => (
+                    <li key={i} className="font-mono text-xs text-gray-700">{g.gateway}</li>
+                  ))}
+                </ul>
               )}
 
-              {/* Trusted networks */}
-              {data.trustedNetworks.length > 0 && (
-                <section>
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Trusted Networks ({data.trustedNetworks.length})</h3>
-                  <ul className="list-disc list-inside text-sm text-gray-700 space-y-0.5">
-                    {data.trustedNetworks.map((n, i) => (
-                      <li key={i} className="text-xs">{typeof n === "string" ? n : JSON.stringify(n)}</li>
-                    ))}
-                  </ul>
-                </section>
+              {activeSection === "trusted" && data.trustedNetworks.length > 0 && (
+                <ul className="list-disc list-inside space-y-0.5">
+                  {data.trustedNetworks.map((n, i) => (
+                    <li key={i} className="text-xs text-gray-700">{typeof n === "string" ? n : JSON.stringify(n)}</li>
+                  ))}
+                </ul>
+              )}
+
+              {activeSection === "pac" && (
+                <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm space-y-1.5">
+                  {data.pac.enablePac && <div><span className="text-gray-500 mr-1">PAC enabled:</span><span className="text-green-700 font-medium">Yes</span></div>}
+                  {data.pac.url && <div><span className="text-gray-500 mr-1">PAC URL:</span><span className="font-mono text-xs text-gray-800">{data.pac.url}</span></div>}
+                  {data.pac.profilePacUrl && <div><span className="text-gray-500 mr-1">Profile PAC URL:</span><span className="font-mono text-xs text-gray-800">{data.pac.profilePacUrl}</span></div>}
+                  {data.pac.ziaPacFileName && <div><span className="text-gray-500 mr-1">ZIA PAC file:</span><span className="text-gray-800">{data.pac.ziaPacFileName}</span></div>}
+                  {data.pac.customPacContent !== null && data.pac.customPacContent !== undefined && (
+                    <div><span className="text-gray-500 mr-1">Custom PAC:</span><span className="text-gray-800">{data.pac.customPacContent} bytes</span></div>
+                  )}
+                </div>
               )}
             </>
           )}
