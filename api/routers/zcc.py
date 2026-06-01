@@ -258,31 +258,97 @@ def get_device_otp(
 
 
 # ------------------------------------------------------------------
-# Configuration resources
+# Configuration resources — DB-first reads
 # ------------------------------------------------------------------
+
+def _db_resources(tenant_name: str, user: AuthUser, resource_type: str) -> List[Dict]:
+    """Return raw_config dicts from ZCCResource for the given resource_type."""
+    from db.database import get_session
+    from db.models import ZCCResource
+    from api.dependencies import check_tenant_access
+    from services.config_service import get_tenant as _get_tenant
+
+    t = _get_tenant(tenant_name)
+    if not t:
+        raise HTTPException(status_code=404, detail=f"Tenant '{tenant_name}' not found")
+    check_tenant_access(t.id, user)
+
+    with get_session() as session:
+        rows = (
+            session.query(ZCCResource)
+            .filter_by(tenant_id=t.id, resource_type=resource_type, is_deleted=False)
+            .order_by(ZCCResource.name)
+            .all()
+        )
+        return [row.raw_config for row in rows if row.raw_config]
+
+
+def _normalize_name(record: Dict, *candidate_keys: str) -> Dict:
+    """Add a 'name' key from the first non-empty candidate field, if not already present."""
+    if record.get("name"):
+        return record
+    for key in candidate_keys:
+        val = record.get(key)
+        if val:
+            return {**record, "name": val}
+    return record
+
 
 @router.get("/{tenant}/trusted-networks")
 def list_trusted_networks(tenant: str, user: AuthUser = Depends(require_auth)):
-    svc = _get_service(tenant, user)
-    return svc.list_trusted_networks()
+    rows = _db_resources(tenant, user, "trusted_network")
+    return [_normalize_name(r, "networkName") for r in rows]
 
 
 @router.get("/{tenant}/forwarding-profiles")
 def list_forwarding_profiles(tenant: str, user: AuthUser = Depends(require_auth)):
-    svc = _get_service(tenant, user)
-    return svc.list_forwarding_profiles()
+    return _db_resources(tenant, user, "forwarding_profile")
 
 
 @router.get("/{tenant}/web-policies")
 def list_web_policies(tenant: str, user: AuthUser = Depends(require_auth)):
-    svc = _get_service(tenant, user)
-    return svc.list_web_policies()
+    return _db_resources(tenant, user, "web_policy")
 
 
 @router.get("/{tenant}/web-app-services")
 def list_web_app_services(tenant: str, user: AuthUser = Depends(require_auth)):
-    svc = _get_service(tenant, user)
-    return svc.list_web_app_services()
+    rows = _db_resources(tenant, user, "web_app_service")
+    return [_normalize_name(r, "appName") for r in rows]
+
+
+@router.get("/{tenant}/admin-roles")
+def list_admin_roles(tenant: str, user: AuthUser = Depends(require_auth)):
+    rows = _db_resources(tenant, user, "admin_role")
+    return [_normalize_name(r, "roleName") for r in rows]
+
+
+@router.get("/{tenant}/fail-open-policies")
+def list_fail_open_policies(tenant: str, user: AuthUser = Depends(require_auth)):
+    return _db_resources(tenant, user, "fail_open_policy")
+
+
+@router.get("/{tenant}/web-privacy")
+def get_web_privacy(tenant: str, user: AuthUser = Depends(require_auth)):
+    rows = _db_resources(tenant, user, "web_privacy")
+    return rows[0] if rows else {}
+
+
+@router.get("/{tenant}/ip-apps/predefined")
+def list_ip_apps_predefined(tenant: str, user: AuthUser = Depends(require_auth)):
+    rows = _db_resources(tenant, user, "ip_app_predefined")
+    return [_normalize_name(r, "appName") for r in rows]
+
+
+@router.get("/{tenant}/ip-apps/custom")
+def list_ip_apps_custom(tenant: str, user: AuthUser = Depends(require_auth)):
+    rows = _db_resources(tenant, user, "ip_app_custom")
+    return [_normalize_name(r, "appName") for r in rows]
+
+
+@router.get("/{tenant}/process-apps")
+def list_process_apps(tenant: str, user: AuthUser = Depends(require_auth)):
+    rows = _db_resources(tenant, user, "process_app")
+    return [_normalize_name(r, "appName") for r in rows]
 
 
 # ------------------------------------------------------------------

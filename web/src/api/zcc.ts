@@ -2,18 +2,19 @@ import { apiFetch } from "./client";
 
 export interface ZccDevice {
   udid: string;
-  hostname?: string;
-  username?: string;
-  os_type?: number;
-  os_version?: string;
-  registration_state?: string;
-  owner?: string;
+  machineHostname?: string;
+  userName?: string;
+  user_name?: string;
+  osType?: number;
+  osVersion?: string;
+  registrationState?: string;
   [key: string]: unknown;
 }
 
 export interface ZccTrustedNetwork {
   id?: string;
   name?: string;
+  networkName?: string;
   [key: string]: unknown;
 }
 
@@ -32,6 +33,50 @@ export interface ZccWebPolicy {
 export interface ZccWebAppService {
   id?: string;
   name?: string;
+  appName?: string;
+  [key: string]: unknown;
+}
+
+export interface ZccAdminRole {
+  id?: string;
+  name?: string;
+  roleName?: string;
+  [key: string]: unknown;
+}
+
+export interface ZccFailOpenPolicy {
+  id?: string;
+  name?: string;
+  enableFailOpen?: boolean;
+  active?: boolean;
+  [key: string]: unknown;
+}
+
+export interface ZccWebPrivacy {
+  id?: string;
+  name?: string;
+  collectUserInfo?: boolean;
+  collectMachineHostname?: boolean;
+  enablePacketCapture?: boolean;
+  [key: string]: unknown;
+}
+
+export interface ZccIpApp {
+  id?: string;
+  name?: string;
+  appName?: string;
+  appDataBlob?: string[];
+  appDataBlobV6?: string[];
+  active?: string;
+  [key: string]: unknown;
+}
+
+export interface ZccProcessApp {
+  id?: string;
+  name?: string;
+  appName?: string;
+  processNames?: string[];
+  active?: string;
   [key: string]: unknown;
 }
 
@@ -88,6 +133,24 @@ export const listWebPolicies = (tenant: string): Promise<ZccWebPolicy[]> =>
 
 export const listWebAppServices = (tenant: string): Promise<ZccWebAppService[]> =>
   apiFetch<ZccWebAppService[]>(`${base(tenant)}/web-app-services`);
+
+export const listAdminRoles = (tenant: string): Promise<ZccAdminRole[]> =>
+  apiFetch<ZccAdminRole[]>(`${base(tenant)}/admin-roles`);
+
+export const listFailOpenPolicies = (tenant: string): Promise<ZccFailOpenPolicy[]> =>
+  apiFetch<ZccFailOpenPolicy[]>(`${base(tenant)}/fail-open-policies`);
+
+export const getWebPrivacy = (tenant: string): Promise<ZccWebPrivacy> =>
+  apiFetch<ZccWebPrivacy>(`${base(tenant)}/web-privacy`);
+
+export const listIpAppsPredefined = (tenant: string): Promise<ZccIpApp[]> =>
+  apiFetch<ZccIpApp[]>(`${base(tenant)}/ip-apps/predefined`);
+
+export const listIpAppsCustom = (tenant: string): Promise<ZccIpApp[]> =>
+  apiFetch<ZccIpApp[]>(`${base(tenant)}/ip-apps/custom`);
+
+export const listProcessApps = (tenant: string): Promise<ZccProcessApp[]> =>
+  apiFetch<ZccProcessApp[]>(`${base(tenant)}/process-apps`);
 
 // ── Traffic Profile types and fetch ─────────────────────────────────────────
 

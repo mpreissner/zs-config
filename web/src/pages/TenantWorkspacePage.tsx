@@ -145,6 +145,12 @@ import {
   listForwardingProfiles,
   listWebPolicies,
   listWebAppServices,
+  listAdminRoles,
+  listFailOpenPolicies,
+  getWebPrivacy,
+  listIpAppsPredefined,
+  listIpAppsCustom,
+  listProcessApps,
   getDeviceOtp,
   fetchTrafficProfile,
   ZccDevice,
@@ -152,6 +158,11 @@ import {
   ZccForwardingProfile,
   ZccWebPolicy,
   ZccWebAppService,
+  ZccAdminRole,
+  ZccFailOpenPolicy,
+  ZccWebPrivacy,
+  ZccIpApp,
+  ZccProcessApp,
   TrafficProfile,
   TunnelMode,
 } from "../api/zcc";
@@ -4965,7 +4976,7 @@ function OtpModal({ tenantName, device, onClose }: { tenantName: string; device:
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4">
         <div className="px-6 py-5">
-          <h3 className="text-base font-semibold text-gray-900 mb-1">OTP for {device.hostname ?? device.udid}</h3>
+          <h3 className="text-base font-semibold text-gray-900 mb-1">OTP for {device.machineHostname ?? device.udid}</h3>
           {isLoading && <LoadingSpinner />}
           {error && <ErrorMessage message={error instanceof Error ? error.message : "Failed to get OTP"} />}
           {data && (
@@ -5050,12 +5061,12 @@ function ZccDevicesSection({ tenantName, isOpen }: { tenantName: string; isOpen:
           <tbody className="divide-y divide-gray-100 bg-white">
             {data.map((d: ZccDevice) => (
               <tr key={d.udid}>
-                <td className="px-3 py-2 text-gray-900">{d.hostname ?? "-"}</td>
-                <td className="px-3 py-2 text-gray-600">{d.username ?? d.owner ?? "-"}</td>
+                <td className="px-3 py-2 text-gray-900">{d.machineHostname ?? "-"}</td>
+                <td className="px-3 py-2 text-gray-600">{d.userName ?? (d.user_name as string) ?? "-"}</td>
                 <td className="px-3 py-2 text-gray-500">
-                  {d.os_type ? OS_TYPE_LABELS[d.os_type] ?? String(d.os_type) : "-"}
+                  {d.osType ? OS_TYPE_LABELS[d.osType as number] ?? String(d.osType) : "-"}
                 </td>
-                <td className="px-3 py-2 text-gray-500">{d.registration_state ?? "-"}</td>
+                <td className="px-3 py-2 text-gray-500">{d.registrationState ?? "-"}</td>
                 <td className="px-3 py-2">
                   <button
                     onClick={() => setOtpDevice(d)}
@@ -6915,7 +6926,120 @@ function ZccTab({
             emptyMessage="No bypass app services"
           />
         </Accordion>
+        <Accordion title="Predefined IP Apps" isOpen={!!open.ipAppsPredefined} onToggle={() => toggle("ipAppsPredefined")}>
+          <ZccReadOnlySection<ZccIpApp>
+            queryKey={["zcc-ip-apps-predefined", tenant.name]}
+            queryFn={() => listIpAppsPredefined(tenant.name)}
+            isOpen={!!open.ipAppsPredefined}
+            emptyMessage="No predefined IP apps"
+          />
+        </Accordion>
+        <Accordion title="Custom IP Apps" isOpen={!!open.ipAppsCustom} onToggle={() => toggle("ipAppsCustom")}>
+          <ZccReadOnlySection<ZccIpApp>
+            queryKey={["zcc-ip-apps-custom", tenant.name]}
+            queryFn={() => listIpAppsCustom(tenant.name)}
+            isOpen={!!open.ipAppsCustom}
+            emptyMessage="No custom IP apps"
+          />
+        </Accordion>
+        <Accordion title="Process Apps" isOpen={!!open.processApps} onToggle={() => toggle("processApps")}>
+          <ZccReadOnlySection<ZccProcessApp>
+            queryKey={["zcc-process-apps", tenant.name]}
+            queryFn={() => listProcessApps(tenant.name)}
+            isOpen={!!open.processApps}
+            emptyMessage="No process apps"
+          />
+        </Accordion>
       </SectionGroup>
+
+      {/* Configuration */}
+      <SectionGroup title="Configuration" isOpen={!!groups.configuration} onToggle={() => toggleGroup("configuration")}>
+        <Accordion title="Admin Roles" isOpen={!!open.adminRoles} onToggle={() => toggle("adminRoles")}>
+          <ZccReadOnlySection<ZccAdminRole>
+            queryKey={["zcc-admin-roles", tenant.name]}
+            queryFn={() => listAdminRoles(tenant.name)}
+            isOpen={!!open.adminRoles}
+            emptyMessage="No admin roles"
+          />
+        </Accordion>
+        <Accordion title="Fail Open Policy" isOpen={!!open.failOpenPolicy} onToggle={() => toggle("failOpenPolicy")}>
+          <ZccFailOpenPolicySection tenantName={tenant.name} isOpen={!!open.failOpenPolicy} />
+        </Accordion>
+        <Accordion title="Web Privacy" isOpen={!!open.webPrivacy} onToggle={() => toggle("webPrivacy")}>
+          <ZccWebPrivacySection tenantName={tenant.name} isOpen={!!open.webPrivacy} />
+        </Accordion>
+      </SectionGroup>
+    </div>
+  );
+}
+
+function ZccFailOpenPolicySection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const { data, isLoading, error } = useQuery<ZccFailOpenPolicy[]>({
+    queryKey: ["zcc-fail-open-policies", tenantName],
+    queryFn: () => listFailOpenPolicies(tenantName),
+    enabled: isOpen,
+  });
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data || data.length === 0) return <p className="text-sm text-gray-400 px-3 py-4">No fail open policy configured</p>;
+  const p = data[0];
+  const rows: [string, string][] = [
+    ["Fail Open Enabled", p.enableFailOpen ? "Yes" : "No"],
+    ["Active", p.active ? "Yes" : "No"],
+    ...(Object.entries(p)
+      .filter(([k]) => !["id", "name", "enableFailOpen", "active"].includes(k))
+      .map(([k, v]): [string, string] => [k, String(v ?? "-")])),
+  ];
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Setting</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Value</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100 bg-white">
+          {rows.map(([k, v]) => (
+            <tr key={k}>
+              <td className="px-3 py-2 text-gray-600 font-medium">{k}</td>
+              <td className="px-3 py-2 text-gray-900">{v}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ZccWebPrivacySection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const { data, isLoading, error } = useQuery<ZccWebPrivacy>({
+    queryKey: ["zcc-web-privacy", tenantName],
+    queryFn: () => getWebPrivacy(tenantName),
+    enabled: isOpen,
+  });
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data || Object.keys(data).length === 0) return <p className="text-sm text-gray-400 px-3 py-4">No web privacy settings imported</p>;
+  const rows = Object.entries(data).filter(([k]) => k !== "id" && k !== "name");
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Setting</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Value</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100 bg-white">
+          {rows.map(([k, v]) => (
+            <tr key={k}>
+              <td className="px-3 py-2 text-gray-600 font-medium">{k}</td>
+              <td className="px-3 py-2 text-gray-900">{String(v ?? "-")}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
