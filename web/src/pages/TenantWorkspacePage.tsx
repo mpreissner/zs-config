@@ -83,6 +83,7 @@ import {
 import {
   fetchCertificates,
   fetchApplications,
+  patchApplicationEnabled,
   fetchPraPortals,
   listConnectors,
   patchConnectorEnabled,
@@ -2581,12 +2582,23 @@ function CertificatesSection({ tenantName, isOpen }: { tenantName: string; isOpe
 }
 
 function ApplicationsSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const qc = useQueryClient();
   const [filter, setFilter] = useState("");
+  const [pendingToggleId, setPendingToggleId] = useState<string | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["zpa-applications", tenantName],
     queryFn: () => fetchApplications(tenantName),
     enabled: isOpen,
+  });
+
+  const toggleMut = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+      patchApplicationEnabled(tenantName, id, enabled),
+    onSettled: () => {
+      setPendingToggleId(null);
+      qc.invalidateQueries({ queryKey: ["zpa-applications", tenantName] });
+    },
   });
 
   if (isLoading) return <LoadingSpinner />;
@@ -2621,15 +2633,18 @@ function ApplicationsSection({ tenantName, isOpen }: { tenantName: string; isOpe
               const domains = a.domainNames ?? [];
               const shown = domains.slice(0, 3).join(", ");
               const extra = domains.length > 3 ? ` +${domains.length - 3} more` : "";
+              const appId = String(a.id);
               return (
                 <tr key={a.id}>
                   <td className="px-3 py-2 text-gray-900">{a.name}</td>
                   <td className="px-3 py-2 text-gray-500">{a.applicationType ?? "-"}</td>
                   <td className="px-3 py-2 text-gray-500 font-mono text-xs">{domains.length ? shown + extra : "-"}</td>
-                  <td className="px-3 py-2">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${a.enabled ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-500"}`}>
-                      {a.enabled ? "Yes" : "No"}
-                    </span>
+                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                    <BoolToggle
+                      enabled={!!a.enabled}
+                      onToggle={(next) => { setPendingToggleId(appId); toggleMut.mutate({ id: appId, enabled: next }); }}
+                      pending={pendingToggleId === appId}
+                    />
                   </td>
                 </tr>
               );
@@ -2955,6 +2970,40 @@ function ServiceEdgesSection({ tenantName, isOpen }: { tenantName: string; isOpe
   );
 }
 
+function SegmentGroupRow({ g }: { g: ZpaSegmentGroup }) {
+  const [expanded, setExpanded] = useState(false);
+  const apps = (g.applications as Array<{ id: string; name: string }>) ?? [];
+  return (
+    <>
+      <tr className="cursor-pointer hover:bg-gray-50" onClick={() => setExpanded((x) => !x)}>
+        <td className="px-3 py-2 font-mono text-xs text-gray-500">{g.id}</td>
+        <td className="px-3 py-2 text-gray-900 flex items-center gap-1.5">
+          <span className={`transition-transform ${expanded ? "rotate-90" : ""}`}>{CHEVRON}</span>
+          {g.name}
+        </td>
+      </tr>
+      {expanded && (
+        <tr>
+          <td colSpan={2} className="bg-gray-50 px-4 py-3">
+            {apps.length === 0 ? (
+              <p className="text-xs text-gray-400">No application segments.</p>
+            ) : (
+              <div className="text-xs text-gray-700">
+                <div className="font-medium text-gray-500 uppercase tracking-wide mb-1">Application Segments</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {apps.map((app) => (
+                    <span key={app.id} className="inline-block bg-gray-100 rounded px-2 py-0.5 font-mono">{app.name}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
 function SegmentGroupsSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
   const { data, isLoading, error } = useQuery({
     queryKey: ["zpa-segment-groups", tenantName],
@@ -2977,10 +3026,7 @@ function SegmentGroupsSection({ tenantName, isOpen }: { tenantName: string; isOp
         </thead>
         <tbody className="divide-y divide-gray-100 bg-white">
           {data.map((g: ZpaSegmentGroup) => (
-            <tr key={g.id}>
-              <td className="px-3 py-2 font-mono text-xs text-gray-500">{g.id}</td>
-              <td className="px-3 py-2 text-gray-900">{g.name}</td>
-            </tr>
+            <SegmentGroupRow key={g.id} g={g} />
           ))}
           {data.length === 0 && (
             <tr><td colSpan={2} className="px-3 py-4 text-center text-gray-400">No segment groups</td></tr>
@@ -3261,6 +3307,43 @@ function PraConsolesSection({ tenantName, isOpen }: { tenantName: string; isOpen
   );
 }
 
+const ACCESS_POLICY_SKIP = new Set(["id", "zpa_id", "name", "action", "rule_order"]);
+
+function AccessPolicyRuleRow({ r }: { r: ZpaAccessPolicyRule }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <>
+      <tr className="cursor-pointer hover:bg-gray-50" onClick={() => setExpanded((x) => !x)}>
+        <td className="px-3 py-2 text-gray-500">{r.rule_order ?? "-"}</td>
+        <td className="px-3 py-2 text-gray-900 flex items-center gap-1.5">
+          <span className={`transition-transform ${expanded ? "rotate-90" : ""}`}>{CHEVRON}</span>
+          {r.name}
+        </td>
+        <td className="px-3 py-2">
+          {r.action ? (
+            <span
+              className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                r.action === "ALLOW" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+              }`}
+            >
+              {r.action}
+            </span>
+          ) : (
+            <span className="text-gray-400">-</span>
+          )}
+        </td>
+      </tr>
+      {expanded && (
+        <tr>
+          <td colSpan={3} className="bg-gray-50 px-4 py-3">
+            <RuleDetailGrid rule={r as unknown as Record<string, unknown>} skipKeys={ACCESS_POLICY_SKIP} />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
 function AccessPolicySection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
   const [filter, setFilter] = useState("");
   const [exporting, setExporting] = useState(false);
@@ -3319,27 +3402,7 @@ function AccessPolicySection({ tenantName, isOpen }: { tenantName: string; isOpe
           <tbody className="divide-y divide-gray-100 bg-white">
             {filtered.map((r: ZpaAccessPolicyRule) => {
               const rowId = r.zpa_id ?? r.id ?? r.name;
-              return (
-                <tr key={rowId}>
-                  <td className="px-3 py-2 text-gray-500">{r.rule_order ?? "-"}</td>
-                  <td className="px-3 py-2 text-gray-900">{r.name}</td>
-                  <td className="px-3 py-2">
-                    {r.action ? (
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                          r.action === "ALLOW"
-                            ? "bg-green-100 text-green-800"
-                            : "bg-red-100 text-red-800"
-                        }`}
-                      >
-                        {r.action}
-                      </span>
-                    ) : (
-                      <span className="text-gray-400">-</span>
-                    )}
-                  </td>
-                </tr>
-              );
+              return <AccessPolicyRuleRow key={rowId} r={r} />;
             })}
             {filtered.length === 0 && (
               <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">No access policy rules</td></tr>
