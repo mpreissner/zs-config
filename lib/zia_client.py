@@ -1529,33 +1529,26 @@ class ZIAClient:
         return data if isinstance(data, list) else []
 
     def validate_pac_file_content(self, pac_content: str) -> Dict:
-        """POST raw PAC script for syntax validation.
+        """POST raw PAC script for syntax validation via the SDK.
 
-        Sends Content-Type: text/plain — the ZIA validate endpoint does not accept JSON.
+        The ZIA validate endpoint requires no Content-Type header; the SDK handles
+        this correctly by stripping Content-Type for /pacFiles/validate requests.
         Returns validation result dict with keys: success, message, severity,
-        warning_count, error_count, messages.
+        warningCount, errorCount, messages.
         """
-        import requests as _req
-        import time
-        url = f"{self._oneapi_base_url}/zia/api/v1/pacFiles/validate"
-        max_attempts = 4
-        resp = None
-        for attempt in range(max_attempts):
-            token = self.auth.get_token()
-            headers = {
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "text/plain",
-            }
-            resp = _req.post(url, data=pac_content.encode(), headers=headers, timeout=30)
-            if resp.status_code != 429 or attempt == max_attempts - 1:
-                break
-            try:
-                delay = float(resp.headers.get("Retry-After", ""))
-            except (ValueError, TypeError):
-                delay = 2 ** (attempt + 1)
-            time.sleep(delay)
-        self._raise_for_status(resp)
-        return resp.json()
+        result, _resp, err = self._sdk.zia.pac_files.validate_pac_file(pac_content)
+        if err:
+            raise RuntimeError(str(err))
+        raw = _to_dict(result)
+        # Normalise snake_case SDK fields to the camelCase the frontend expects.
+        return {
+            "success": raw.get("success"),
+            "message": raw.get("message"),
+            "severity": raw.get("severity"),
+            "errorCount": raw.get("error_count", raw.get("errorCount")),
+            "warningCount": raw.get("warning_count", raw.get("warningCount")),
+            "messages": raw.get("messages", []),
+        }
 
     def create_pac_file(self, config: Dict) -> Dict:
         """Create a new PAC file.
@@ -1565,7 +1558,8 @@ class ZIAClient:
         config must include: name, pac_content, pac_version_status,
         pac_verification_status, pac_commit_message.
         """
-        return self.zia_post("/zia/api/v1/pacFiles", config)
+        from zscaler.helpers import convert_keys_to_camel_case
+        return self.zia_post("/zia/api/v1/pacFiles", convert_keys_to_camel_case(config))
 
     def update_pac_file_content(self, pac_id: int, pac_version: int, config: Dict) -> Dict:
         """Push a new version of a PAC file (clone operation).
@@ -1575,20 +1569,21 @@ class ZIAClient:
         10 versions, appends ?deleteVersion=<oldest-non-LKG-version> to the URL.
         Raises RuntimeError if all 10 versions are marked Last Known Good.
         """
+        from zscaler.helpers import convert_keys_to_camel_case
         versions = self.get_pac_file_versions(pac_id)
         path = f"/zia/api/v1/pacFiles/{pac_id}/version/{pac_version}"
         if len(versions) >= 10:
             candidates = sorted(
-                [v for v in versions if v.get("pac_version_status") != "LKG"],
-                key=lambda v: v.get("pac_version", 0),
+                [v for v in versions if v.get("pacVersionStatus") != "LKG"],
+                key=lambda v: v.get("pacVersion", 0),
             )
             if not candidates:
                 raise RuntimeError(
                     "PAC file has 10 versions and all are marked Last Known Good. "
                     "Remove an LKG designation in the ZIA portal before adding a new version."
                 )
-            path += f"?deleteVersion={candidates[0]['pac_version']}"
-        return self.zia_post(path, config)
+            path += f"?deleteVersion={candidates[0]['pacVersion']}"
+        return self.zia_post(path, convert_keys_to_camel_case(config))
 
     def delete_pac_file(self, pac_id: int) -> None:
         """Delete a PAC file and all its versions."""

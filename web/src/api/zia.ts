@@ -716,7 +716,8 @@ export interface PacFileValidationResult {
 
 export interface PacFileCreatePayload {
   name: string;
-  description?: string;
+  description: string;
+  pac_commit_message: string;
   domain?: string;
   pac_content: string;
   pac_verification_status?: string;
@@ -725,7 +726,8 @@ export interface PacFileCreatePayload {
 
 export interface PacFileUpdatePayload {
   name: string;
-  description?: string;
+  description: string;
+  pac_commit_message: string;
   pac_content: string;
   pac_verification_status?: string;
   pac_version_status?: string;

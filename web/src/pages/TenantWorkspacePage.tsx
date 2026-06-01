@@ -2152,6 +2152,96 @@ function generatePac(cfg: PacBuilderConfig): string {
   return lines.join("\n");
 }
 
+function maskToCidr(net: string, mask: string): string {
+  const parts = mask.split(".").map(Number);
+  const n = ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
+  let prefix = 0;
+  let b = n;
+  while (b & 0x80000000) { prefix++; b = (b << 1) >>> 0; }
+  return `${net}/${prefix}`;
+}
+
+function defaultGatewayConfig(): GatewayConfig {
+  return {
+    varType: "GATEWAY", customAddress: "", lbMode: "none", lbIndex: 0,
+    port: "9400", useSubcloud: false, subcloudName: "", subcloudCloud: "zscaler",
+    includeSecondary: true, fallbackDirect: true,
+  };
+}
+
+function parsePac(content: string): PacBuilderConfig {
+  const lines = content.split("\n").map(l => l.trim()).filter(Boolean);
+  const bypassPlainHostnames = lines.some(l => l.includes("isPlainHostName(host)"));
+  const bypassLocalhost = lines.some(l => l.includes('host === "localhost"'));
+
+  const directSubnets: string[] = [];
+  const directDomains: string[] = [];
+
+  for (const line of lines) {
+    const subnetM = line.match(/isInNet\(ipAddr,\s*"([^"]+)",\s*"([^"]+)"\)/);
+    if (subnetM) { directSubnets.push(maskToCidr(subnetM[1], subnetM[2])); continue; }
+
+    // .domain → dnsDomainIs (no host === prefix)
+    const dotM = line.match(/^if \(dnsDomainIs\(host, "(\.[^"]+)"\)\) return "DIRECT";$/);
+    if (dotM) { directDomains.push(dotM[1]); continue; }
+
+    // wildcard → shExpMatch
+    const wcM = line.match(/^if \(shExpMatch\(host, "([^"]+)"\)\) return "DIRECT";$/);
+    if (wcM) { directDomains.push(wcM[1]); continue; }
+
+    // exact domain → host === "x" || dnsDomainIs
+    const exactM = line.match(/^if \(host === "([^"]+)" \|\| dnsDomainIs/);
+    if (exactM) { directDomains.push(exactM[1]); continue; }
+  }
+
+  const returnLine = lines.find(l => /^return "/.test(l));
+  if (!returnLine || !returnLine.includes("PROXY")) {
+    return { gateway: defaultGatewayConfig(), bypassPlainHostnames, bypassLocalhost, directSubnets, directDomains, defaultAction: "DIRECT" };
+  }
+
+  const proxyStr = returnLine.match(/^return "([^"]+)";$/)?.[1] ?? "";
+  const tokens = proxyStr.split(";").map(t => t.trim());
+  const primaryTok = tokens.find(t => t.startsWith("PROXY") && !t.includes("SECONDARY"));
+  const fallbackDirect = tokens.includes("DIRECT");
+  const includeSecondary = tokens.some(t => t.includes("SECONDARY"));
+
+  const gw = defaultGatewayConfig();
+  gw.fallbackDirect = fallbackDirect;
+  gw.includeSecondary = includeSecondary;
+
+  if (primaryTok) {
+    const addrFull = primaryTok.replace(/^PROXY\s+/, "");
+    const colonIdx = addrFull.lastIndexOf(":");
+    const hostPart = colonIdx > -1 ? addrFull.slice(0, colonIdx) : addrFull;
+    gw.port = colonIdx > -1 ? addrFull.slice(colonIdx + 1) : "9400";
+
+    if (hostPart.startsWith("${") && hostPart.endsWith("}")) {
+      const inner = hostPart.slice(2, -1);
+      // Subcloud: GATEWAY.name.cloud.net or GATEWAY.name.cloud.net_FX / _F0
+      const subM = inner.match(/^GATEWAY\.([^.]+)\.([^.]+)\.net(_FX|_F[0-7])?$/);
+      if (subM) {
+        gw.useSubcloud = true;
+        gw.subcloudName = subM[1];
+        gw.subcloudCloud = subM[2];
+        if (subM[3] === "_FX") { gw.lbMode = "dynamic"; }
+        else if (subM[3]) { gw.lbMode = "index"; gw.lbIndex = parseInt(subM[3][2]); }
+      } else {
+        // Strip lb suffix first, then check for _HOST
+        const lbM = inner.match(/(_FX|_F[0-7])$/);
+        const base = lbM ? inner.slice(0, -lbM[0].length) : inner;
+        gw.varType = base === "GATEWAY_HOST" ? "GATEWAY_HOST" : "GATEWAY";
+        if (lbM?.[0] === "_FX") { gw.lbMode = "dynamic"; }
+        else if (lbM) { gw.lbMode = "index"; gw.lbIndex = parseInt(lbM[0][2]); }
+      }
+    } else {
+      gw.varType = "custom";
+      gw.customAddress = hostPart;
+    }
+  }
+
+  return { gateway: gw, bypassPlainHostnames, bypassLocalhost, directSubnets, directDomains, defaultAction: "PROXY" };
+}
+
 function TagInput({
   label, placeholder, items, onChange, disabled, hint,
 }: {
@@ -2220,22 +2310,12 @@ function PacFileModal({
   // Metadata fields
   const [name, setName] = useState(pac?.name ?? "");
   const [description, setDescription] = useState(pac?.description ?? "");
+  const [commitMessage, setCommitMessage] = useState("");
   const [domain, setDomain] = useState(pac?.domain ?? "");
 
   // PAC builder state
   const [builder, setBuilder] = useState<PacBuilderConfig>({
-    gateway: {
-      varType: "GATEWAY",
-      customAddress: "",
-      lbMode: "none",
-      lbIndex: 0,
-      port: "9400",
-      useSubcloud: false,
-      subcloudName: "",
-      subcloudCloud: "zscaler",
-      includeSecondary: true,
-      fallbackDirect: true,
-    },
+    gateway: defaultGatewayConfig(),
     bypassPlainHostnames: true,
     bypassLocalhost: true,
     directSubnets: [],
@@ -2290,6 +2370,13 @@ function PacFileModal({
     queryFn: () => fetchPacFileVersions(tenantName, pac!.id),
     enabled: !isCreate,
   });
+  useEffect(() => {
+    if (isCreate || !versionsQuery.data) return;
+    const deployed = versionsQuery.data.find((v: PacFileVersion) => v.pacVersionStatus === "DEPLOYED");
+    if (!deployed?.pacContent) return;
+    setBuilder(parsePac(deployed.pacContent));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [versionsQuery.data]);
 
   const createMut = useMutation({
     mutationFn: (payload: PacFileCreatePayload) => createPacFile(tenantName, payload),
@@ -2309,36 +2396,38 @@ function PacFileModal({
     try {
       const result = await validatePacFileContent(tenantName, generatedPac);
       setValidation(result);
-    } catch {
-      setValidation({ success: false, message: "Validation request failed" });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Validation request failed";
+      setValidation({ success: false, message: msg });
     } finally {
       setValidating(false);
     }
   }
 
   function handleSubmit() {
-    if (!name.trim()) return;
+    if (!name.trim() || !description.trim() || !commitMessage.trim()) return;
     setMutErr(null);
     const verifyStatus = validation?.success ? "VERIFY_NOERR" : "NOVERIFY";
     if (isCreate) {
       const payload: PacFileCreatePayload = {
         name: name.trim(),
+        description: description.trim(),
+        pac_commit_message: commitMessage.trim(),
         pac_content: generatedPac,
         pac_verification_status: verifyStatus,
         pac_version_status: "DEPLOYED",
       };
-      if (description.trim()) payload.description = description.trim();
       if (domain) payload.domain = domain;
       createMut.mutate(payload);
     } else {
-      const payload: PacFileUpdatePayload = {
+      updateMut.mutate({
         name: name.trim(),
+        description: description.trim(),
+        pac_commit_message: commitMessage.trim(),
         pac_content: generatedPac,
         pac_verification_status: verifyStatus,
         pac_version_status: "DEPLOYED",
-      };
-      if (description.trim()) payload.description = description.trim();
-      updateMut.mutate(payload);
+      });
     }
   }
 
@@ -2413,9 +2502,22 @@ function PacFileModal({
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Description <span className="text-red-500">*</span>
+              </label>
               <input
                 type="text" value={description} onChange={(e) => setDescription(e.target.value)}
+                disabled={isPending}
+                className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500 disabled:opacity-60"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Commit message <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text" value={commitMessage} onChange={(e) => setCommitMessage(e.target.value)}
+                placeholder="e.g. Initial version"
                 disabled={isPending}
                 className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500 disabled:opacity-60"
               />

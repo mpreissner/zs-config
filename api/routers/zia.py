@@ -868,19 +868,19 @@ def get_org_domains(tenant: str, user: AuthUser = Depends(require_auth)):
 
 class PacFileCreateRequest(BaseModel):
     name: str
-    description: Optional[str] = None
+    description: str
+    pac_commit_message: str
     domain: Optional[str] = None
     pac_content: str
-    pac_commit_message: Optional[str] = None
     pac_verification_status: str = "VERIFY_NOERR"
     pac_version_status: str = "DEPLOYED"
 
 
 class PacFileUpdateRequest(BaseModel):
     name: str
-    description: Optional[str] = None
+    description: str
+    pac_commit_message: str
     pac_content: str
-    pac_commit_message: Optional[str] = None
     pac_verification_status: str = "VERIFY_NOERR"
     pac_version_status: str = "DEPLOYED"
 
@@ -907,9 +907,11 @@ def get_pac_file_versions(tenant: str, pac_id: int, user: AuthUser = Depends(req
 @router.post("/{tenant}/pac-files/validate")
 def validate_pac_file(tenant: str, body: PacFileValidateRequest, user: AuthUser = Depends(require_auth)):
     """Validate PAC file content syntax. Does not write to DB or require activation."""
+    import logging as _logging
     try:
         return _get_service(tenant, user).validate_pac_file_content(body.pac_content)
     except Exception as e:
+        _logging.getLogger(__name__).error("PAC validate error: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -945,12 +947,12 @@ def update_pac_file(tenant: str, pac_id: int, body: PacFileUpdateRequest, user: 
         if not versions:
             raise HTTPException(status_code=404, detail=f"PAC file {pac_id} has no versions")
         deployed = next(
-            (v for v in versions if v.get("pac_version_status") == "DEPLOYED"),
+            (v for v in versions if v.get("pacVersionStatus") == "DEPLOYED"),
             None,
         )
         if deployed is None:
-            deployed = max(versions, key=lambda v: v.get("pac_version", 0))
-        current_version = deployed["pac_version"]
+            deployed = max(versions, key=lambda v: v.get("pacVersion", 0))
+        current_version = deployed["pacVersion"]
         config = body.model_dump(exclude_none=True)
         return svc.update_pac_file_content(pac_id, current_version, config)
     except HTTPException:

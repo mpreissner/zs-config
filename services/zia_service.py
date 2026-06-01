@@ -203,6 +203,48 @@ class ZIAService:
         except Exception:
             pass  # best-effort; don't let reimport failure mask the successful mutation
 
+    def _reimport_pac_file_versions(self, pac_id: int) -> None:
+        """Fetch all versions for a PAC file from the live API and store in DB."""
+        if not self.tenant_id:
+            return
+        try:
+            versions = self.client.get_pac_file_versions(pac_id)
+        except Exception:
+            return
+        if not versions:
+            return
+        import hashlib, json
+        from db.database import get_session
+        from db.models import ZIAResource
+        from datetime import datetime
+        try:
+            with get_session() as session:
+                session.query(ZIAResource).filter(
+                    ZIAResource.tenant_id == self.tenant_id,
+                    ZIAResource.resource_type == "pac_file_version",
+                    ZIAResource.zia_id.like(f"{pac_id}_%"),
+                ).delete(synchronize_session=False)
+                now = datetime.utcnow()
+                for v in versions:
+                    ver_num = v.get("pacVersion")
+                    if ver_num is None:
+                        continue
+                    new_hash = hashlib.sha256(
+                        json.dumps(v, sort_keys=True, default=str).encode()
+                    ).hexdigest()
+                    session.add(ZIAResource(
+                        tenant_id=self.tenant_id,
+                        resource_type="pac_file_version",
+                        zia_id=f"{pac_id}_{ver_num}",
+                        name=v.get("pacName", f"pac_{pac_id}_v{ver_num}"),
+                        raw_config=v,
+                        config_hash=new_hash,
+                        synced_at=now,
+                        is_deleted=False,
+                    ))
+        except Exception:
+            pass
+
     def _upsert_one(self, resource_type: str, zia_id: str, record: dict, name_field: str = "name") -> None:
         """Write a single resource record into the DB without fetching the full list."""
         if not self.tenant_id or not record:
@@ -1398,12 +1440,34 @@ class ZIAService:
         return result
 
     def get_pac_file_versions(self, pac_id: int) -> List[Dict]:
+        if self.tenant_id:
+            from db.database import get_session
+            from db.models import ZIAResource
+            from sqlalchemy import select
+            with get_session() as session:
+                rows = session.execute(
+                    select(ZIAResource).where(
+                        ZIAResource.tenant_id == self.tenant_id,
+                        ZIAResource.resource_type == "pac_file_version",
+                        ZIAResource.zia_id.like(f"{pac_id}_%"),
+                        ZIAResource.is_deleted == False,
+                    )
+                ).scalars().all()
+                if rows:
+                    result = [row.raw_config for row in rows]
+                    audit_service.log(
+                        product="ZIA", operation="get_pac_file_versions", action="READ",
+                        status="SUCCESS", tenant_id=self.tenant_id, resource_type="pac_file",
+                        resource_id=str(pac_id),
+                        details={"version_count": len(result), "source": "db"},
+                    )
+                    return result
         result = self.client.get_pac_file_versions(pac_id)
         audit_service.log(
             product="ZIA", operation="get_pac_file_versions", action="READ", status="SUCCESS",
             tenant_id=self.tenant_id, resource_type="pac_file",
             resource_id=str(pac_id),
-            details={"version_count": len(result)},
+            details={"version_count": len(result), "source": "api"},
         )
         return result
 
@@ -1429,6 +1493,9 @@ class ZIAService:
         if auto_activate:
             self.activate()
         self._reimport(["pac_file"])
+        new_id = result.get("id")
+        if new_id:
+            self._reimport_pac_file_versions(int(new_id))
         return result
 
     def update_pac_file_content(
@@ -1451,6 +1518,7 @@ class ZIAService:
         if auto_activate:
             self.activate()
         self._reimport(["pac_file"])
+        self._reimport_pac_file_versions(pac_id)
         return result
 
     def delete_pac_file(self, pac_id: int, pac_name: str, auto_activate: bool = True) -> None:
