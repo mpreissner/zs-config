@@ -30,14 +30,16 @@ def _derive_tunnel_mode(raw_fp: Optional[Dict]) -> str:
     """Derive tunnel mode string from forwarding profile raw_config."""
     if not raw_fp:
         return "Unknown"
-    actions = raw_fp.get("forwardingProfileActions") or []
+    actions = raw_fp.get("forwarding_profile_actions") or []
     if not actions:
         return "Unknown"
     first = actions[0] if isinstance(actions[0], dict) else {}
-    if first.get("enablePacketTunnel") is True or first.get("enablePacketTunnel") == "true":
+    if first.get("enable_packet_tunnel"):
         return "Z-Tunnel 2.0"
-    primary = first.get("primaryTransport", "")
-    if primary == "PROXY" or first.get("systemProxy") is True:
+    if first.get("system_proxy"):
+        return "Proxy"
+    spd = first.get("system_proxy_data") or {}
+    if spd.get("enable_proxy_server"):
         return "Proxy"
     return "Z-Tunnel 1.0"
 
@@ -93,13 +95,13 @@ def _build_traffic_profile(
     enable_pac = False
     custom_pac_len = None
     if raw_fp:
-        actions = raw_fp.get("forwardingProfileActions") or []
+        actions = raw_fp.get("forwarding_profile_actions") or []
         if actions and isinstance(actions[0], dict):
             first = actions[0]
-            spd = first.get("systemProxyData") or {}
-            fp_pac_url = spd.get("pacURL") or None
-            enable_pac = bool(spd.get("enablePAC"))
-            custom_pac = first.get("customPac")
+            spd = first.get("system_proxy_data") or {}
+            fp_pac_url = spd.get("pac_u_r_l") or spd.get("pac_url") or None
+            enable_pac = bool(spd.get("enable_p_a_c") or spd.get("enable_pac"))
+            custom_pac = first.get("custom_pac")
             if custom_pac:
                 custom_pac_len = len(str(custom_pac))
 
@@ -150,10 +152,10 @@ def _build_traffic_profile(
     # Process bypasses extracted from platform sub-policies
     process_bypasses = _extract_process_bypasses(raw_policy)
 
-    # Trusted networks from forwarding profile
+    # Trusted networks from forwarding profile (snake_case keys from as_dict())
     trusted_networks: List[str] = []
     if raw_fp:
-        trusted_networks = raw_fp.get("trustedNetworks") or []
+        trusted_networks = raw_fp.get("trusted_networks") or []
 
     # Strip password fields from rawPolicySnippet
     raw_snippet = _strip_passwords(pe)
@@ -297,7 +299,7 @@ def _normalize_name(record: Dict, *candidate_keys: str) -> Dict:
 @router.get("/{tenant}/trusted-networks")
 def list_trusted_networks(tenant: str, user: AuthUser = Depends(require_auth)):
     rows = _db_resources(tenant, user, "trusted_network")
-    return [_normalize_name(r, "networkName") for r in rows]
+    return [_normalize_name(r, "network_name") for r in rows]
 
 
 @router.get("/{tenant}/forwarding-profiles")
@@ -313,13 +315,13 @@ def list_web_policies(tenant: str, user: AuthUser = Depends(require_auth)):
 @router.get("/{tenant}/web-app-services")
 def list_web_app_services(tenant: str, user: AuthUser = Depends(require_auth)):
     rows = _db_resources(tenant, user, "web_app_service")
-    return [_normalize_name(r, "appName") for r in rows]
+    return [_normalize_name(r, "app_name") for r in rows]
 
 
 @router.get("/{tenant}/admin-roles")
 def list_admin_roles(tenant: str, user: AuthUser = Depends(require_auth)):
     rows = _db_resources(tenant, user, "admin_role")
-    return [_normalize_name(r, "roleName") for r in rows]
+    return [_normalize_name(r, "role_name") for r in rows]
 
 
 @router.get("/{tenant}/fail-open-policies")
@@ -372,10 +374,20 @@ def get_traffic_profile(
     check_tenant_access(t.id, user)
 
     with get_session() as session:
+        # Policy IDs from _to_camel_dict may be stored as floats ("217591.0") because
+        # JSON numbers without a fractional part still become Python floats via the SDK.
+        # The frontend coerces them to integers, so try both forms.
+        policy_id_candidates = [policy_id]
+        if not policy_id.endswith(".0"):
+            policy_id_candidates.append(policy_id + ".0")
         policy_row = (
             session.query(ZCCResource)
-            .filter_by(tenant_id=t.id, resource_type="web_policy",
-                       zcc_id=policy_id, is_deleted=False)
+            .filter(
+                ZCCResource.tenant_id == t.id,
+                ZCCResource.resource_type == "web_policy",
+                ZCCResource.zcc_id.in_(policy_id_candidates),
+                ZCCResource.is_deleted == False,  # noqa: E712
+            )
             .first()
         )
         if not policy_row:
@@ -460,7 +472,7 @@ def get_traffic_profile(
             )
             for row in svc_rows:
                 rc = row.raw_config or {}
-                proc_names = rc.get("processNames") or rc.get("appProcessNames") or []
+                proc_names = rc.get("process_names") or rc.get("processNames") or rc.get("app_process_names") or []
                 app_service_bypasses.append({
                     "id": row.zcc_id,
                     "appName": rc.get("appName") or row.name or row.zcc_id,

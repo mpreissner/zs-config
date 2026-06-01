@@ -2,12 +2,11 @@ import { apiFetch } from "./client";
 
 export interface ZccDevice {
   udid: string;
-  machineHostname?: string;
-  userName?: string;
-  user_name?: string;
-  osType?: number;
-  osVersion?: string;
-  registrationState?: string;
+  machine_hostname?: string;
+  user?: string;
+  type?: number;
+  os_version?: string;
+  registration_state?: string;
   [key: string]: unknown;
 }
 

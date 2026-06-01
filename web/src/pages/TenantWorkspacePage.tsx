@@ -4976,7 +4976,7 @@ function OtpModal({ tenantName, device, onClose }: { tenantName: string; device:
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4">
         <div className="px-6 py-5">
-          <h3 className="text-base font-semibold text-gray-900 mb-1">OTP for {device.machineHostname ?? device.udid}</h3>
+          <h3 className="text-base font-semibold text-gray-900 mb-1">OTP for {device.machine_hostname as string ?? device.udid}</h3>
           {isLoading && <LoadingSpinner />}
           {error && <ErrorMessage message={error instanceof Error ? error.message : "Failed to get OTP"} />}
           {data && (
@@ -5061,12 +5061,12 @@ function ZccDevicesSection({ tenantName, isOpen }: { tenantName: string; isOpen:
           <tbody className="divide-y divide-gray-100 bg-white">
             {data.map((d: ZccDevice) => (
               <tr key={d.udid}>
-                <td className="px-3 py-2 text-gray-900">{d.machineHostname ?? "-"}</td>
-                <td className="px-3 py-2 text-gray-600">{d.userName ?? (d.user_name as string) ?? "-"}</td>
+                <td className="px-3 py-2 text-gray-900">{d.machine_hostname as string ?? "-"}</td>
+                <td className="px-3 py-2 text-gray-600">{d.user as string ?? "-"}</td>
                 <td className="px-3 py-2 text-gray-500">
-                  {d.osType ? OS_TYPE_LABELS[d.osType as number] ?? String(d.osType) : "-"}
+                  {(d.type as number) ? OS_TYPE_LABELS[d.type as number] ?? String(d.type) : "-"}
                 </td>
-                <td className="px-3 py-2 text-gray-500">{d.registrationState ?? "-"}</td>
+                <td className="px-3 py-2 text-gray-500">{d.registration_state as string ?? "-"}</td>
                 <td className="px-3 py-2">
                   <button
                     onClick={() => setOtpDevice(d)}
@@ -6984,10 +6984,10 @@ function ZccFailOpenPolicySection({ tenantName, isOpen }: { tenantName: string; 
   if (!data || data.length === 0) return <p className="text-sm text-gray-400 px-3 py-4">No fail open policy configured</p>;
   const p = data[0];
   const rows: [string, string][] = [
-    ["Fail Open Enabled", p.enableFailOpen ? "Yes" : "No"],
+    ["Fail Open Enabled", (p as Record<string, unknown>)["enable_fail_open"] ? "Yes" : "No"],
     ["Active", p.active ? "Yes" : "No"],
     ...(Object.entries(p)
-      .filter(([k]) => !["id", "name", "enableFailOpen", "active"].includes(k))
+      .filter(([k]) => !["id", "name", "enable_fail_open", "active"].includes(k))
       .map(([k, v]): [string, string] => [k, String(v ?? "-")])),
   ];
   return (

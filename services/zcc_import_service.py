@@ -36,17 +36,18 @@ class ResourceDef:
 
 # All resource types we import.  Order doesn't matter.
 RESOURCE_DEFINITIONS: List[ResourceDef] = [
-    ResourceDef("device",             "list_devices",           id_field="udid",  name_field="machineHostname"),
-    ResourceDef("trusted_network",    "list_trusted_networks",  name_field="networkName"),
+    # SDK-based: as_dict() returns snake_case keys
+    ResourceDef("device",             "list_devices",           id_field="udid",  name_field="machine_hostname"),
+    ResourceDef("trusted_network",    "list_trusted_networks",  name_field="network_name"),
     ResourceDef("forwarding_profile", "list_forwarding_profiles"),
-    ResourceDef("admin_user",         "list_admin_users",       name_field="userName"),
-    ResourceDef("web_app_service",    "list_web_app_services",  name_field="appName"),
+    ResourceDef("admin_user",         "list_admin_users",       name_field="user_name"),
+    ResourceDef("web_app_service",    "list_web_app_services",  name_field="app_name"),
     ResourceDef("web_policy",         "list_web_policies",      name_field="name"),
-    # Extended resource types
     ResourceDef("fail_open_policy",  "list_fail_open_policies"),
     ResourceDef("web_privacy",       "get_web_privacy_singleton"),
     ResourceDef("company_info",      "list_company_info"),
-    ResourceDef("admin_role",        "list_admin_roles",        name_field="roleName"),
+    ResourceDef("admin_role",        "list_admin_roles",        name_field="role_name"),
+    # _direct_get: returns raw JSON (camelCase keys)
     ResourceDef("ip_app_predefined", "list_ip_apps_predefined", name_field="appName"),
     ResourceDef("ip_app_custom",     "list_ip_apps_custom",     name_field="appName"),
     ResourceDef("process_app",       "list_process_apps",       name_field="appName"),
