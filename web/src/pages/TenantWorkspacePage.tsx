@@ -7,6 +7,7 @@ import {
   fetchTenants,
   importZIA,
   importZPA,
+  importZCC,
   previewApplySnapshot,
   applySnapshot,
   Tenant,
@@ -145,11 +146,14 @@ import {
   listWebPolicies,
   listWebAppServices,
   getDeviceOtp,
+  fetchTrafficProfile,
   ZccDevice,
   ZccTrustedNetwork,
   ZccForwardingProfile,
   ZccWebPolicy,
   ZccWebAppService,
+  TrafficProfile,
+  TunnelMode,
 } from "../api/zcc";
 import {
   searchDevices as searchZdxDevices,
@@ -5491,7 +5495,7 @@ function ImportProductModal({
   onClose,
 }: {
   tenant: Tenant;
-  product: "ZIA" | "ZPA";
+  product: "ZIA" | "ZPA" | "ZCC";
   onClose: () => void;
 }) {
   const qc = useQueryClient();
@@ -5499,7 +5503,10 @@ function ImportProductModal({
   const [mutErr, setMutErr] = useState<string | null>(null);
 
   const mut = useMutation({
-    mutationFn: () => (product === "ZIA" ? importZIA(tenant.id) : importZPA(tenant.id)),
+    mutationFn: () =>
+      product === "ZIA" ? importZIA(tenant.id) :
+      product === "ZPA" ? importZPA(tenant.id) :
+      importZCC(tenant.id),
     onSuccess: (data) => setJobId(data.job_id),
     onError: (e: Error) => setMutErr(e.message),
   });
@@ -6555,7 +6562,314 @@ function ZdxTab({ tenant }: { tenant: Tenant }) {
   );
 }
 
-function ZccTab({ tenant }: { tenant: Tenant }) {
+// ── App Profile Visualizer ────────────────────────────────────────────────────
+
+function AppProfileVisualizer({
+  tenantName,
+  policyId,
+  policyName,
+  onClose,
+}: {
+  tenantName: string;
+  policyId: string;
+  policyName: string;
+  onClose: () => void;
+}) {
+  const { data, isLoading, error } = useQuery<TrafficProfile>({
+    queryKey: ["traffic-profile", tenantName, policyId],
+    queryFn: () => fetchTrafficProfile(tenantName, policyId),
+  });
+
+  const tunnelBadgeColor: Record<TunnelMode, string> = {
+    "Z-Tunnel 2.0": "bg-green-100 text-green-800",
+    "Z-Tunnel 1.0": "bg-blue-100 text-blue-800",
+    "Proxy":        "bg-yellow-100 text-yellow-800",
+    "Unknown":      "bg-gray-100 text-gray-600",
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Traffic Profile</h2>
+            <p className="text-xs text-gray-500 mt-0.5">{policyName}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-5">
+          {isLoading && <LoadingSpinner />}
+          {error && <ErrorMessage message={error instanceof Error ? error.message : "Failed to load traffic profile"} />}
+          {data && (
+            <>
+              {/* Summary row */}
+              <div className="flex flex-wrap gap-3 items-center">
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${tunnelBadgeColor[data.tunnelMode] ?? tunnelBadgeColor["Unknown"]}`}>
+                  {data.tunnelMode}
+                </span>
+                {data.active ? (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">Active</span>
+                ) : (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">Inactive</span>
+                )}
+                {data.forwardingProfileName && (
+                  <span className="text-xs text-gray-500">Forwarding: <span className="font-medium text-gray-700">{data.forwardingProfileName}</span></span>
+                )}
+                {data.tunnelZappTraffic && (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">Tunnel ZApp Traffic</span>
+                )}
+              </div>
+
+              {/* PAC */}
+              {(data.pac.enablePac || data.pac.url || data.pac.profilePacUrl || data.pac.ziaPacFileName) && (
+                <section>
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">PAC Configuration</h3>
+                  <div className="bg-gray-50 rounded p-3 text-sm space-y-1">
+                    {data.pac.enablePac && <div><span className="text-gray-500 mr-1">PAC enabled:</span><span className="text-green-700 font-medium">Yes</span></div>}
+                    {data.pac.url && <div><span className="text-gray-500 mr-1">PAC URL:</span><span className="font-mono text-xs text-gray-800">{data.pac.url}</span></div>}
+                    {data.pac.profilePacUrl && <div><span className="text-gray-500 mr-1">Profile PAC URL:</span><span className="font-mono text-xs text-gray-800">{data.pac.profilePacUrl}</span></div>}
+                    {data.pac.ziaPacFileName && <div><span className="text-gray-500 mr-1">ZIA PAC file:</span><span className="text-gray-800">{data.pac.ziaPacFileName}</span></div>}
+                    {data.pac.customPacContent !== null && data.pac.customPacContent !== undefined && (
+                      <div><span className="text-gray-500 mr-1">Custom PAC:</span><span className="text-gray-800">{data.pac.customPacContent} bytes</span></div>
+                    )}
+                  </div>
+                </section>
+              )}
+
+              {/* Tunnel routes */}
+              {data.tunnelRoutes.length > 0 && (
+                <section>
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Tunnel Routes ({data.tunnelRoutes.length})</h3>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">CIDR</th>
+                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Direction</th>
+                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">IP Version</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-100">
+                        {data.tunnelRoutes.map((r, i) => (
+                          <tr key={i}>
+                            <td className="px-3 py-1.5 font-mono text-xs">{r.cidr}</td>
+                            <td className="px-3 py-1.5">
+                              <span className={`px-1.5 py-0.5 rounded text-xs ${r.direction === "include" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+                                {r.direction}
+                              </span>
+                            </td>
+                            <td className="px-3 py-1.5 text-gray-600 text-xs">{r.ipVersion}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+
+              {/* DNS routes */}
+              {data.dnsRoutes.length > 0 && (
+                <section>
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">DNS Routes ({data.dnsRoutes.length})</h3>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Suffix</th>
+                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Direction</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-100">
+                        {data.dnsRoutes.map((r, i) => (
+                          <tr key={i}>
+                            <td className="px-3 py-1.5 font-mono text-xs">{r.suffix}</td>
+                            <td className="px-3 py-1.5">
+                              <span className={`px-1.5 py-0.5 rounded text-xs ${r.direction === "include" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+                                {r.direction}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+
+              {/* Port bypasses */}
+              {data.portBypasses.length > 0 && (
+                <section>
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Port Bypasses ({data.portBypasses.length})</h3>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Port</th>
+                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Protocol</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-100">
+                        {data.portBypasses.map((pb, i) => (
+                          <tr key={i}>
+                            <td className="px-3 py-1.5 font-mono text-xs">{pb.port}</td>
+                            <td className="px-3 py-1.5 text-gray-600 text-xs">{pb.protocol}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+
+              {/* Process bypasses */}
+              {data.processBypasses.length > 0 && (
+                <section>
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Process Bypasses ({data.processBypasses.length})</h3>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Process</th>
+                          <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Platform</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-100">
+                        {data.processBypasses.map((pb, i) => (
+                          <tr key={i}>
+                            <td className="px-3 py-1.5 font-mono text-xs">{pb.processName}</td>
+                            <td className="px-3 py-1.5 text-gray-600 text-xs capitalize">{pb.platform}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+
+              {/* VPN gateway bypasses */}
+              {data.vpnGatewayBypasses.length > 0 && (
+                <section>
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">VPN Gateway Bypasses ({data.vpnGatewayBypasses.length})</h3>
+                  <ul className="list-disc list-inside text-sm text-gray-700 space-y-0.5">
+                    {data.vpnGatewayBypasses.map((g, i) => (
+                      <li key={i} className="font-mono text-xs">{g.gateway}</li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {/* Trusted networks */}
+              {data.trustedNetworks.length > 0 && (
+                <section>
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Trusted Networks ({data.trustedNetworks.length})</h3>
+                  <ul className="list-disc list-inside text-sm text-gray-700 space-y-0.5">
+                    {data.trustedNetworks.map((n, i) => (
+                      <li key={i} className="text-xs">{typeof n === "string" ? n : JSON.stringify(n)}</li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-3 border-t flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-1.5 text-sm rounded-md bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── App Profiles section with traffic profile button ──────────────────────────
+
+function AppProfilesSection({
+  tenantName,
+  isOpen,
+}: {
+  tenantName: string;
+  isOpen: boolean;
+}) {
+  const [visualizerPolicy, setVisualizerPolicy] = useState<{ id: string; name: string } | null>(null);
+
+  const { data, isLoading, error } = useQuery<ZccWebPolicy[]>({
+    queryKey: ["zcc-web-policies", tenantName],
+    queryFn: () => listWebPolicies(tenantName),
+    enabled: isOpen,
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  return (
+    <>
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 bg-white">
+            {data.map((policy: ZccWebPolicy, i: number) => (
+              <tr key={policy.id ?? i}>
+                <td className="px-3 py-2 font-mono text-xs text-gray-500">{policy.id ?? "-"}</td>
+                <td className="px-3 py-2 text-gray-900">{policy.name ?? "-"}</td>
+                <td className="px-3 py-2">
+                  {policy.id && (
+                    <button
+                      onClick={() => setVisualizerPolicy({ id: String(policy.id), name: policy.name ?? String(policy.id) })}
+                      className="text-xs text-zs-600 hover:text-zs-800 underline underline-offset-2 transition-colors"
+                    >
+                      View Traffic Profile
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {data.length === 0 && (
+              <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">No app profiles</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      {visualizerPolicy && (
+        <AppProfileVisualizer
+          tenantName={tenantName}
+          policyId={visualizerPolicy.id}
+          policyName={visualizerPolicy.name}
+          onClose={() => setVisualizerPolicy(null)}
+        />
+      )}
+    </>
+  );
+}
+
+// ── ZCC Tab ───────────────────────────────────────────────────────────────────
+
+function ZccTab({
+  tenant,
+  onImport,
+}: {
+  tenant: Tenant;
+  onImport: () => void;
+}) {
   const [groups, setGroups] = useState<Record<string, boolean>>({});
   const [open, setOpen] = useState<Record<string, boolean>>({});
   function toggleGroup(key: string) { setGroups((prev) => ({ ...prev, [key]: !prev[key] })); }
@@ -6563,6 +6877,19 @@ function ZccTab({ tenant }: { tenant: Tenant }) {
 
   return (
     <div className="space-y-3">
+      {/* Import row */}
+      <div className="flex justify-end">
+        <button
+          onClick={onImport}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md bg-zs-500 hover:bg-zs-600 text-white transition-colors"
+        >
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+          </svg>
+          Import ZCC
+        </button>
+      </div>
+
       {/* Devices */}
       <SectionGroup title="Devices" isOpen={!!groups.devices} onToggle={() => toggleGroup("devices")}>
         <Accordion title="All Devices" isOpen={!!open.devices} onToggle={() => toggle("devices")}>
@@ -6593,12 +6920,7 @@ function ZccTab({ tenant }: { tenant: Tenant }) {
       {/* Policy */}
       <SectionGroup title="Policy" isOpen={!!groups.policy} onToggle={() => toggleGroup("policy")}>
         <Accordion title="App Profiles (Web Policies)" isOpen={!!open.webPolicies} onToggle={() => toggle("webPolicies")}>
-          <ZccReadOnlySection<ZccWebPolicy>
-            queryKey={["zcc-web-policies", tenant.name]}
-            queryFn={() => listWebPolicies(tenant.name)}
-            isOpen={!!open.webPolicies}
-            emptyMessage="No app profiles"
-          />
+          <AppProfilesSection tenantName={tenant.name} isOpen={!!open.webPolicies} />
         </Accordion>
         <Accordion title="Bypass App Services" isOpen={!!open.webAppServices} onToggle={() => toggle("webAppServices")}>
           <ZccReadOnlySection<ZccWebAppService>
@@ -6648,7 +6970,7 @@ export default function TenantWorkspacePage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { setActiveTenantId } = useActiveTenant();
-  const [importModal, setImportModal] = useState<"ZIA" | "ZPA" | null>(null);
+  const [importModal, setImportModal] = useState<"ZIA" | "ZPA" | "ZCC" | null>(null);
 
   // Determine active tab from URL segment
   const pathSegment = location.pathname.split("/").pop() as TabId | undefined;
@@ -6706,8 +7028,14 @@ export default function TenantWorkspacePage() {
     return null;
   }
 
-  const importButtonLabel = activeTab === "zpa" ? "Import ZPA" : "Import ZIA";
-  const importProduct = activeTab === "zpa" ? "ZPA" : "ZIA";
+  const importButtonLabel =
+    activeTab === "zpa" ? "Import ZPA" :
+    activeTab === "zcc" ? "Import ZCC" :
+    "Import ZIA";
+  const importProduct: "ZIA" | "ZPA" | "ZCC" =
+    activeTab === "zpa" ? "ZPA" :
+    activeTab === "zcc" ? "ZCC" :
+    "ZIA";
 
   return (
     <div className="space-y-6">
@@ -6735,7 +7063,7 @@ export default function TenantWorkspacePage() {
             </span>
           )}
         </div>
-        {(activeTab === "zia" || (activeTab === "zpa" && hasZpa)) && (
+        {(activeTab === "zia" || (activeTab === "zpa" && hasZpa) || activeTab === "zcc") && (
           <button
             onClick={() => setImportModal(importProduct)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md bg-zs-500 hover:bg-zs-600 text-white transition-colors"
@@ -6771,7 +7099,7 @@ export default function TenantWorkspacePage() {
       {activeTab === "zia" && <ZiaTab key={tenant.id} tenant={tenant} />}
       {activeTab === "zpa" && tenant.zpa_customer_id && <ZpaTab key={tenant.id} tenant={tenant} />}
       {activeTab === "zdx" && <ZdxTab key={tenant.id} tenant={tenant} />}
-      {activeTab === "zcc" && <ZccTab key={tenant.id} tenant={tenant} />}
+      {activeTab === "zcc" && <ZccTab key={tenant.id} tenant={tenant} onImport={() => setImportModal("ZCC")} />}
       {activeTab === "zid" && <ZidTab key={tenant.id} tenant={tenant} />}
 
       {importModal && (

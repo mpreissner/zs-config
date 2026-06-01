@@ -88,3 +88,66 @@ export const listWebPolicies = (tenant: string): Promise<ZccWebPolicy[]> =>
 
 export const listWebAppServices = (tenant: string): Promise<ZccWebAppService[]> =>
   apiFetch<ZccWebAppService[]>(`${base(tenant)}/web-app-services`);
+
+// ── Traffic Profile types and fetch ─────────────────────────────────────────
+
+export interface PortBypass {
+  port: string;
+  protocol: string;
+}
+
+export interface ProcessBypass {
+  processName: string;
+  platform: string;
+}
+
+export interface VpnGatewayBypass {
+  gateway: string;
+}
+
+export interface TunnelRoute {
+  cidr: string;
+  direction: "include" | "exclude";
+  ipVersion: "ipv4" | "ipv6";
+}
+
+export interface DnsRoute {
+  suffix: string;
+  direction: "include" | "exclude";
+}
+
+export interface PacConfig {
+  url: string | null;
+  profilePacUrl: string | null;
+  customPacContent: number | null;  // length in bytes, not raw content
+  enablePac: boolean;
+  ziaPacFileId: number | null;
+  ziaPacFileName: string | null;
+}
+
+export type TunnelMode = "Z-Tunnel 1.0" | "Z-Tunnel 2.0" | "Proxy" | "Unknown";
+
+export interface TrafficProfile {
+  policyId: string;
+  policyName: string;
+  active: boolean;
+  tunnelMode: TunnelMode;
+  forwardingProfileName: string | null;
+  forwardingProfileId: string | null;
+  pac: PacConfig;
+  processBypasses: ProcessBypass[];
+  portBypasses: PortBypass[];
+  vpnGatewayBypasses: VpnGatewayBypass[];
+  tunnelRoutes: TunnelRoute[];
+  dnsRoutes: DnsRoute[];
+  tunnelZappTraffic: boolean;
+  trustedNetworks: string[];
+  rawPolicySnippet: Record<string, unknown>;
+  rawForwardingSnippet: Record<string, unknown> | null;
+}
+
+export const fetchTrafficProfile = (
+  tenantName: string,
+  policyId: string,
+): Promise<TrafficProfile> =>
+  apiFetch<TrafficProfile>(`/api/v1/zcc/${encodeURIComponent(tenantName)}/traffic-profile/${encodeURIComponent(policyId)}`);

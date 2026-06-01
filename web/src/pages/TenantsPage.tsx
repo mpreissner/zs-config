@@ -10,6 +10,7 @@ import {
   deleteTenant,
   importZIA,
   importZPA,
+  importZCC,
   Tenant,
   TenantCreate,
   TenantUpdate,
@@ -444,6 +445,13 @@ function ImportModal({ tenant, onClose }: { tenant: Tenant; onClose: () => void 
             onDone={invalidate}
           />
         )}
+        <ImportProductRow
+          label="ZCC Import"
+          description="Pulls app profiles, forwarding profiles, trusted networks, and other ZCC config"
+          tenantId={tenant.id}
+          importFn={importZCC}
+          onDone={invalidate}
+        />
       </div>
       <div className="flex justify-end mt-4">
         <button onClick={onClose} className="px-4 py-2 text-sm rounded-md border border-gray-300 hover:bg-gray-50">Close</button>

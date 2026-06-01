@@ -71,6 +71,9 @@ export const importZIA = (id: number): Promise<JobRef> =>
 export const importZPA = (id: number): Promise<JobRef> =>
   apiFetch<JobRef>(`/api/v1/tenants/${id}/import/zpa`, { method: "POST" });
 
+export const importZCC = (id: number): Promise<JobRef> =>
+  apiFetch<JobRef>(`/api/v1/tenants/${id}/import/zcc`, { method: "POST" });
+
 export interface SnapshotDiffItem {
   action: "create" | "update" | "delete";
   resource_type: string;
