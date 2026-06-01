@@ -68,7 +68,13 @@ RESOURCE_DEFINITIONS: List[ResourceDef] = [
 ]
 
 
-_META_KEYS = frozenset({"creation_time", "modified_time", "modified_by"})
+_META_KEYS = frozenset({
+    "creation_time", "modified_time", "modified_by",
+    # Connector/edge connection telemetry — computed per-call, not configuration
+    "last_broker_connect_time", "last_broker_connect_time_duration",
+    "last_broker_disconnect_time", "last_broker_disconnect_time_duration",
+    "application_start_time",
+})
 
 
 def _strip_meta(obj):
