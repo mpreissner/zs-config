@@ -2592,12 +2592,12 @@ function ApplicationRow({
 }) {
   const [expanded, setExpanded] = useState(false);
   const appId = String(a.id);
-  const domains = (a as unknown as Record<string, unknown>).domain_names as string[] ?? a.domainNames ?? [];
-  const serverGroups = ((a as unknown as Record<string, unknown>).server_groups as Array<{ name?: string; id?: string }>) ?? [];
-  const segmentGroupName = (a as unknown as Record<string, unknown>).segment_group_name as string | undefined;
-  const tcpPorts = ((a as unknown as Record<string, unknown>).tcp_port_range as Array<{ from: string; to: string }>) ?? [];
-  const udpPorts = ((a as unknown as Record<string, unknown>).udp_port_range as Array<{ from: string; to: string }>) ?? [];
-  const description = (a as unknown as Record<string, unknown>).description as string | undefined;
+  const domains = a.domain_names ?? a.domainNames ?? [];
+  const serverGroups = (a.server_groups as Array<{ name?: string; id?: string }>) ?? [];
+  const segmentGroupName = a.segment_group_name as string | undefined;
+  const tcpPorts = (a.tcp_port_range as Array<{ from: string; to: string }>) ?? [];
+  const udpPorts = (a.udp_port_range as Array<{ from: string; to: string }>) ?? [];
+  const description = a.description as string | undefined;
   const shown = domains.slice(0, 3).join(", ");
   const extra = domains.length > 3 ? ` +${domains.length - 3} more` : "";
 
@@ -2608,7 +2608,7 @@ function ApplicationRow({
           <span className={`transition-transform ${expanded ? "rotate-90" : ""}`}>{CHEVRON}</span>
           {a.name}
         </td>
-        <td className="px-3 py-2 text-gray-500">{a.applicationType ?? "-"}</td>
+        <td className="px-3 py-2 text-gray-500">{a.application_type ?? a.applicationType ?? "-"}</td>
         <td className="px-3 py-2 text-gray-500 font-mono text-xs">{domains.length ? shown + extra : "-"}</td>
         <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
           <BoolToggle

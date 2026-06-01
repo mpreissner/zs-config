@@ -199,6 +199,15 @@ class ZPAService:
         )
         return result
 
+    def list_certificates_from_db(self, q: Optional[str] = None) -> List[Dict]:
+        result = _db_list(self.tenant_id, "certificate", q)
+        audit_service.log(
+            product="ZPA", operation="list_certificates", action="READ", status="SUCCESS",
+            tenant_id=self.tenant_id, resource_type="certificate",
+            details={"count": len(result), "source": "db"},
+        )
+        return result
+
     def get_certificate(self, cert_id: str) -> Optional[Dict]:
         return self.client.get_certificate(cert_id)
 
@@ -299,6 +308,15 @@ class ZPAService:
             product="ZPA", operation="list_applications", action="READ", status="SUCCESS",
             tenant_id=self.tenant_id, resource_type="application",
             details={"count": len(result), "app_type": app_type},
+        )
+        return result
+
+    def list_applications_from_db(self, q: Optional[str] = None) -> List[Dict]:
+        result = _db_list(self.tenant_id, "application", q)
+        audit_service.log(
+            product="ZPA", operation="list_applications", action="READ", status="SUCCESS",
+            tenant_id=self.tenant_id, resource_type="application",
+            details={"count": len(result), "source": "db"},
         )
         return result
 

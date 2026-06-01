@@ -81,8 +81,8 @@ def _get_db_service(tenant_name: str, user: AuthUser):
 
 @router.get("/{tenant}/certificates")
 def list_certificates(tenant: str, user: AuthUser = Depends(require_auth)):
-    """List all certificates for a ZPA tenant."""
-    return _get_service(tenant, user).list_certificates()
+    """List all certificates for a ZPA tenant (DB-first)."""
+    return _get_db_service(tenant, user).list_certificates_from_db()
 
 
 @router.delete("/{tenant}/certificates/{cert_id}")
@@ -109,8 +109,9 @@ def rotate_certificate(tenant: str, req: CertificateRotateRequest, user: AuthUse
 # ------------------------------------------------------------------
 
 @router.get("/{tenant}/applications")
-def list_applications(tenant: str, app_type: str = "BROWSER_ACCESS", user: AuthUser = Depends(require_auth)):
-    return _get_service(tenant, user).list_applications(app_type)
+def list_applications(tenant: str, q: Optional[str] = None, user: AuthUser = Depends(require_auth)):
+    """List application segments (DB-first). Import Config caches BROWSER_ACCESS type."""
+    return _get_db_service(tenant, user).list_applications_from_db(q=q)
 
 
 @router.get("/{tenant}/applications/{app_id}")

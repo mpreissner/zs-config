@@ -12,10 +12,14 @@ export interface ZpaCertificate {
 
 export interface ZpaApplication {
   id: string;
+  zpa_id?: string;
   name: string;
   enabled: boolean;
+  application_type?: string;
   applicationType?: string;
+  domain_names?: string[];
   domainNames?: string[];
+  [key: string]: unknown;
 }
 
 export interface ZpaPraPortal {
@@ -108,8 +112,8 @@ const base = (tenant: string) => `/api/v1/zpa/${encodeURIComponent(tenant)}`;
 export const fetchCertificates = (tenant: string): Promise<ZpaCertificate[]> =>
   apiFetch<ZpaCertificate[]>(`${base(tenant)}/certificates`);
 
-export const fetchApplications = (tenant: string, appType = "BROWSER_ACCESS"): Promise<ZpaApplication[]> =>
-  apiFetch<ZpaApplication[]>(`${base(tenant)}/applications?app_type=${encodeURIComponent(appType)}`);
+export const fetchApplications = (tenant: string): Promise<ZpaApplication[]> =>
+  apiFetch<ZpaApplication[]>(`${base(tenant)}/applications`);
 
 export const fetchPraPortals = (tenant: string): Promise<ZpaPraPortal[]> =>
   apiFetch<ZpaPraPortal[]>(`${base(tenant)}/pra-portals`);
