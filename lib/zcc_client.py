@@ -334,8 +334,21 @@ class ZCCClient:
     # ------------------------------------------------------------------
 
     def list_admin_users(self) -> List[Dict]:
-        result, resp, err = self._sdk.zcc.admin_user.list_admin_users()
-        return _to_dicts(_unwrap(result, resp, err))
+        # userType is mandatory (1=ZIA, 2=ZPA, 3=ZID, 4=ZDX); fetch all types and deduplicate
+        seen: set = set()
+        merged: List[Dict] = []
+        for user_type in (1, 2, 3, 4):
+            result, resp, err = self._sdk.zcc.admin_user.list_admin_users(
+                query_params={"userType": user_type}
+            )
+            if err:
+                continue
+            for item in _to_dicts(_unwrap(result, resp, err)):
+                uid = item.get("id") or item.get("userId") or str(item)
+                if uid not in seen:
+                    seen.add(uid)
+                    merged.append(item)
+        return merged
 
     # ------------------------------------------------------------------
     # Entitlements
