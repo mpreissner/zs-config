@@ -45,6 +45,9 @@ def zcc_menu():
                 questionary.Choice("Trusted Networks", value="trusted_networks"),
                 questionary.Choice("Forwarding Profiles", value="forwarding_profiles"),
                 questionary.Choice("Admin Users", value="admin_users"),
+                questionary.Choice("Admin Roles", value="admin_roles"),
+                questionary.Choice("Fail Open Policy", value="fail_open_policy"),
+                questionary.Choice("Web Privacy", value="web_privacy"),
                 questionary.Choice("Entitlements", value="entitlements"),
                 questionary.Choice("App Profiles", value="app_profiles"),
                 questionary.Choice("Bypass App Definitions", value="custom_bypasses"),
@@ -73,6 +76,12 @@ def zcc_menu():
             forwarding_profiles_menu(tenant)
         elif choice == "admin_users":
             admin_users_menu(tenant)
+        elif choice == "admin_roles":
+            _admin_roles_menu(tenant)
+        elif choice == "fail_open_policy":
+            _fail_open_policy_menu(tenant)
+        elif choice == "web_privacy":
+            _web_privacy_menu(tenant)
         elif choice == "entitlements":
             entitlements_menu(client, tenant)
         elif choice == "app_profiles":
@@ -1235,6 +1244,7 @@ def _app_profiles_menu(client, tenant):
                 questionary.Choice("List App Profiles", value="list"),
                 questionary.Choice("Search by Name", value="search"),
                 questionary.Choice("View Details", value="details"),
+                questionary.Choice("View Traffic Profile", value="traffic_profile"),
                 questionary.Choice("Manage Custom Bypass Apps", value="bypass"),
                 questionary.Choice("Activate / Deactivate", value="activate"),
                 questionary.Choice("Delete", value="delete"),
@@ -1250,6 +1260,8 @@ def _app_profiles_menu(client, tenant):
             _search_web_policies(tenant)
         elif choice == "details":
             _view_web_policy_details(tenant)
+        elif choice == "traffic_profile":
+            _view_traffic_profile(tenant)
         elif choice == "bypass":
             _select_policy_for_bypass(client, tenant)
         elif choice == "activate":
@@ -1605,3 +1617,378 @@ def _delete_web_policy(client, tenant):
             pass
 
     questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+# ------------------------------------------------------------------
+# View Traffic Profile (reads from DB; requires prior Import Config)
+# ------------------------------------------------------------------
+
+def _view_traffic_profile(tenant):
+    rows = _load_web_policy_rows(tenant)
+    if not rows:
+        console.print("[yellow]No app profiles in local DB. Run Import Config first.[/yellow]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    choices = [
+        questionary.Choice(title=r["name"] or r["zcc_id"], value=r)
+        for r in rows
+    ]
+    choices.append(questionary.Choice("← Back", value="cancel"))
+
+    selected = questionary.select(
+        "Select app profile to view traffic profile:", choices=choices, use_indicator=True
+    ).ask()
+    if selected == "cancel" or selected is None or not isinstance(selected, dict):
+        return
+
+    policy_raw = selected["raw_config"]
+    policy_id = str(policy_raw.get("id") or selected["zcc_id"] or "")
+    fp_id = str(policy_raw.get("forwardingProfileId") or "")
+
+    from db.database import get_session
+    from db.models import ZCCResource, ZIAResource
+
+    with get_session() as session:
+        fp_row = None
+        if fp_id:
+            fp_row = (
+                session.query(ZCCResource)
+                .filter_by(tenant_id=tenant.id, resource_type="forwarding_profile",
+                           zcc_id=fp_id, is_deleted=False)
+                .first()
+            )
+        raw_fp = fp_row.raw_config if fp_row else None
+
+        pac_url = policy_raw.get("pac_url") or policy_raw.get("pacUrl") or ""
+        zia_pac_file_name = None
+        if pac_url:
+            zia_rows = (
+                session.query(ZIAResource)
+                .filter_by(tenant_id=tenant.id, resource_type="pac_file", is_deleted=False)
+                .all()
+            )
+            for pac_row in zia_rows:
+                rc = pac_row.raw_config or {}
+                row_url = rc.get("pac_url") or rc.get("pacUrl") or rc.get("url") or ""
+                if row_url and row_url == pac_url:
+                    zia_pac_file_name = pac_row.name
+                    break
+
+    # Derive tunnel mode
+    tunnel_mode = "Unknown"
+    if raw_fp:
+        actions = raw_fp.get("forwardingProfileActions") or []
+        if actions and isinstance(actions[0], dict):
+            first = actions[0]
+            if first.get("enablePacketTunnel") is True or first.get("enablePacketTunnel") == "true":
+                tunnel_mode = "Z-Tunnel 2.0"
+            elif first.get("primaryTransport") == "PROXY" or first.get("systemProxy") is True:
+                tunnel_mode = "Proxy"
+            else:
+                tunnel_mode = "Z-Tunnel 1.0"
+
+    fp_name = (raw_fp or {}).get("name") or fp_id or "—"
+    active = bool(policy_raw.get("active"))
+
+    lines = [
+        f"[bold]Policy ID:[/bold]          {policy_id}",
+        f"[bold]Active:[/bold]             {'[green]Yes[/green]' if active else '[red]No[/red]'}",
+        f"[bold]Tunnel Mode:[/bold]        [cyan]{tunnel_mode}[/cyan]",
+        f"[bold]Forwarding Profile:[/bold] {fp_name}",
+    ]
+    if pac_url:
+        lines.append(f"[bold]PAC URL:[/bold]            [dim]{pac_url}[/dim]")
+    if zia_pac_file_name:
+        lines.append(f"[bold]ZIA PAC File:[/bold]       {zia_pac_file_name}")
+
+    pe = policy_raw.get("policyExtension") or {}
+    include_routes = pe.get("packetTunnelIncludeList") or []
+    exclude_routes = pe.get("packetTunnelExcludeList") or []
+    dns_include = pe.get("packetTunnelDnsIncludeList") or []
+    dns_exclude = pe.get("packetTunnelDnsExcludeList") or []
+    port_bypasses = pe.get("sourcePortBasedBypasses") or []
+    vpn_gateways = pe.get("vpnGateways") or []
+
+    if include_routes:
+        lines.append(f"[bold]Tunnel Include:[/bold]     {len(include_routes)} route(s)")
+    if exclude_routes:
+        lines.append(f"[bold]Tunnel Exclude:[/bold]     {len(exclude_routes)} route(s)")
+    if dns_include:
+        lines.append(f"[bold]DNS Include:[/bold]        {len(dns_include)} suffix(es)")
+    if dns_exclude:
+        lines.append(f"[bold]DNS Exclude:[/bold]        {len(dns_exclude)} suffix(es)")
+    if port_bypasses:
+        lines.append(f"[bold]Port Bypasses:[/bold]      {len(port_bypasses)}")
+    if vpn_gateways:
+        lines.append(f"[bold]VPN Gateways:[/bold]       {len(vpn_gateways)}")
+    if policy_raw.get("tunnelZappTraffic"):
+        lines.append("[bold]Tunnel ZApp Traffic:[/bold] [green]Yes[/green]")
+
+    policy_name = selected["name"] or policy_id
+    console.print(
+        Panel(
+            "\n".join(lines),
+            title=f"Traffic Profile — {policy_name}",
+            border_style="cyan",
+        )
+    )
+
+    if include_routes or exclude_routes or dns_include or dns_exclude or port_bypasses:
+        show_detail = questionary.confirm("Show route and bypass details?", default=False).ask()
+        if show_detail:
+            table = Table(title="Tunnel Routes & Bypasses", show_lines=False)
+            table.add_column("Type")
+            table.add_column("Value")
+            table.add_column("Direction / Protocol")
+
+            for cidr in include_routes:
+                table.add_row("IPv4 Tunnel", cidr, "[green]include[/green]")
+            for cidr in exclude_routes:
+                table.add_row("IPv4 Tunnel", cidr, "[red]exclude[/red]")
+            for cidr in (pe.get("packetTunnelIncludeListForIPv6") or []):
+                table.add_row("IPv6 Tunnel", cidr, "[green]include[/green]")
+            for cidr in (pe.get("packetTunnelExcludeListForIPv6") or []):
+                table.add_row("IPv6 Tunnel", cidr, "[red]exclude[/red]")
+            for s in dns_include:
+                table.add_row("DNS", s, "[green]include[/green]")
+            for s in dns_exclude:
+                table.add_row("DNS", s, "[red]exclude[/red]")
+            for pb in port_bypasses:
+                if isinstance(pb, dict):
+                    port = str(pb.get("port", ""))
+                    proto = str(pb.get("protocol") or pb.get("proto") or "")
+                    table.add_row("Port Bypass", port, proto)
+            for gw in vpn_gateways:
+                gw_str = gw if isinstance(gw, str) else (gw.get("gateway") or gw.get("domain") or str(gw))
+                table.add_row("VPN Gateway", gw_str, "—")
+
+            from cli.banner import capture_banner
+            from cli.scroll_view import render_rich_to_lines, scroll_view
+            scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
+            return
+
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+# ------------------------------------------------------------------
+# Admin Roles (read-only, from ZCCResource DB cache)
+# ------------------------------------------------------------------
+
+def _admin_roles_menu(tenant):
+    while True:
+        render_banner()
+        choice = questionary.select(
+            "Admin Roles",
+            choices=[
+                questionary.Choice("List Admin Roles", value="list"),
+                questionary.Choice("View Details", value="details"),
+                questionary.Separator(),
+                questionary.Choice("← Back", value="back"),
+            ],
+            use_indicator=True,
+        ).ask()
+
+        if choice == "list":
+            _list_admin_roles(tenant)
+        elif choice == "details":
+            _view_admin_role_details(tenant)
+        elif choice in ("back", None):
+            break
+
+
+def _load_admin_role_rows(tenant, search: str = None) -> list:
+    from db.database import get_session
+    from db.models import ZCCResource
+
+    with get_session() as session:
+        resources = (
+            session.query(ZCCResource)
+            .filter_by(tenant_id=tenant.id, resource_type="admin_role", is_deleted=False)
+            .order_by(ZCCResource.name)
+            .all()
+        )
+        rows = [
+            {"name": r.name, "zcc_id": r.zcc_id, "raw_config": r.raw_config or {}}
+            for r in resources
+        ]
+
+    if search:
+        sl = search.lower()
+        rows = [r for r in rows if sl in (r["name"] or "").lower()]
+
+    return rows
+
+
+def _list_admin_roles(tenant, search: str = None):
+    rows = _load_admin_role_rows(tenant, search)
+
+    if not rows:
+        msg = (
+            f"[yellow]No admin roles matching '{search}'.[/yellow]" if search
+            else "[yellow]No admin roles in local DB. Run Import Config first.[/yellow]"
+        )
+        console.print(msg)
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    table = Table(title=f"ZCC Admin Roles ({len(rows)} found)", show_lines=False)
+    table.add_column("Name", style="cyan")
+    table.add_column("ID")
+    table.add_column("Rank")
+    table.add_column("Is Custom")
+
+    for r in rows:
+        cfg = r["raw_config"]
+        name = r["name"] or cfg.get("name") or "—"
+        rid = str(cfg.get("id") or r["zcc_id"] or "—")
+        rank = str(cfg.get("rank") or "—")
+        is_custom = cfg.get("isCustom") or cfg.get("is_custom")
+        custom_str = "[green]Yes[/green]" if is_custom else "[dim]No[/dim]"
+        table.add_row(name, rid, rank, custom_str)
+
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+    scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
+
+
+def _view_admin_role_details(tenant):
+    rows = _load_admin_role_rows(tenant)
+    if not rows:
+        console.print("[yellow]No admin roles in local DB. Run Import Config first.[/yellow]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    choices = [
+        questionary.Choice(title=r["name"] or r["zcc_id"], value=r)
+        for r in rows
+    ]
+    choices.append(questionary.Choice("← Back", value="cancel"))
+
+    selected = questionary.select(
+        "Select role to view:", choices=choices, use_indicator=True
+    ).ask()
+    if selected == "cancel" or selected is None or not isinstance(selected, dict):
+        return
+
+    import json
+    from rich.syntax import Syntax
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+
+    syntax = Syntax(json.dumps(selected["raw_config"], indent=2, default=str), "json", theme="monokai")
+    scroll_view(render_rich_to_lines(syntax), header_ansi=capture_banner())
+
+
+# ------------------------------------------------------------------
+# Fail Open Policy (read-only, from ZCCResource DB cache)
+# ------------------------------------------------------------------
+
+def _fail_open_policy_menu(tenant):
+    while True:
+        render_banner()
+        choice = questionary.select(
+            "Fail Open Policy",
+            choices=[
+                questionary.Choice("View Policy", value="view"),
+                questionary.Separator(),
+                questionary.Choice("← Back", value="back"),
+            ],
+            use_indicator=True,
+        ).ask()
+
+        if choice == "view":
+            _view_fail_open_policy(tenant)
+        elif choice in ("back", None):
+            break
+
+
+def _view_fail_open_policy(tenant):
+    from db.database import get_session
+    from db.models import ZCCResource
+
+    with get_session() as session:
+        resources = (
+            session.query(ZCCResource)
+            .filter_by(tenant_id=tenant.id, resource_type="fail_open_policy", is_deleted=False)
+            .order_by(ZCCResource.name)
+            .all()
+        )
+        rows = [
+            {"name": r.name, "zcc_id": r.zcc_id, "raw_config": r.raw_config or {}}
+            for r in resources
+        ]
+
+    if not rows:
+        console.print("[yellow]No fail open policy in local DB. Run Import Config first.[/yellow]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    table = Table(title=f"Fail Open Policy ({len(rows)} record(s))", show_lines=False)
+    table.add_column("ID")
+    table.add_column("Name / Description")
+    table.add_column("Fail Open")
+    table.add_column("Enabled")
+
+    for r in rows:
+        cfg = r["raw_config"]
+        rid = str(cfg.get("id") or r["zcc_id"] or "—")
+        name = r["name"] or cfg.get("name") or cfg.get("description") or "—"
+        fail_open = cfg.get("failOpen") or cfg.get("fail_open")
+        enabled = cfg.get("enabled")
+        fo_str = "[green]Yes[/green]" if fail_open else "[red]No[/red]"
+        en_str = "[green]Yes[/green]" if enabled else "[red]No[/red]"
+        table.add_row(rid, name, fo_str, en_str)
+
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+    scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
+
+
+# ------------------------------------------------------------------
+# Web Privacy (singleton, read-only, from ZCCResource DB cache)
+# ------------------------------------------------------------------
+
+def _web_privacy_menu(tenant):
+    while True:
+        render_banner()
+        choice = questionary.select(
+            "Web Privacy",
+            choices=[
+                questionary.Choice("View Settings", value="view"),
+                questionary.Separator(),
+                questionary.Choice("← Back", value="back"),
+            ],
+            use_indicator=True,
+        ).ask()
+
+        if choice == "view":
+            _view_web_privacy(tenant)
+        elif choice in ("back", None):
+            break
+
+
+def _view_web_privacy(tenant):
+    from db.database import get_session
+    from db.models import ZCCResource
+
+    with get_session() as session:
+        row = (
+            session.query(ZCCResource)
+            .filter_by(tenant_id=tenant.id, resource_type="web_privacy", is_deleted=False)
+            .first()
+        )
+        raw_config = row.raw_config if row else None
+
+    if not raw_config:
+        console.print("[yellow]No web privacy settings in local DB. Run Import Config first.[/yellow]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    import json
+    from rich.syntax import Syntax
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+
+    syntax = Syntax(json.dumps(raw_config, indent=2, default=str), "json", theme="monokai")
+    scroll_view(render_rich_to_lines(syntax), header_ansi=capture_banner())
