@@ -2551,12 +2551,12 @@ function CertificatesSection({ tenantName, isOpen }: { tenantName: string; isOpe
           </thead>
           <tbody className="divide-y divide-gray-100 bg-white">
             {data.map((c: ZpaCertificate) => {
-              const expEpoch = c.expireTime ? parseInt(c.expireTime, 10) : null;
+              const expEpoch = c.valid_to_in_epoch_sec ?? null;
               const expired = expEpoch !== null && expEpoch < now;
               return (
                 <tr key={c.id}>
                   <td className="px-3 py-2 text-gray-900">{c.name}</td>
-                  <td className="px-3 py-2 text-gray-600">{c.issuedTo ?? "-"}</td>
+                  <td className="px-3 py-2 text-gray-600">{c.issued_to ?? "-"}</td>
                   <td className="px-3 py-2 text-gray-500 text-xs">
                     {expEpoch ? formatDate(new Date(expEpoch * 1000).toISOString()) : "-"}
                   </td>
@@ -2578,6 +2578,98 @@ function CertificatesSection({ tenantName, isOpen }: { tenantName: string; isOpe
         Certificate rotation is only available via the CLI (<span className="font-mono">zs-config</span>).
       </p>
     </div>
+  );
+}
+
+function ApplicationRow({
+  a,
+  onToggle,
+  pending,
+}: {
+  a: ZpaApplication;
+  onToggle: (id: string, next: boolean) => void;
+  pending: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const appId = String(a.id);
+  const domains = (a as unknown as Record<string, unknown>).domain_names as string[] ?? a.domainNames ?? [];
+  const serverGroups = ((a as unknown as Record<string, unknown>).server_groups as Array<{ name?: string; id?: string }>) ?? [];
+  const segmentGroupName = (a as unknown as Record<string, unknown>).segment_group_name as string | undefined;
+  const tcpPorts = ((a as unknown as Record<string, unknown>).tcp_port_range as Array<{ from: string; to: string }>) ?? [];
+  const udpPorts = ((a as unknown as Record<string, unknown>).udp_port_range as Array<{ from: string; to: string }>) ?? [];
+  const description = (a as unknown as Record<string, unknown>).description as string | undefined;
+  const shown = domains.slice(0, 3).join(", ");
+  const extra = domains.length > 3 ? ` +${domains.length - 3} more` : "";
+
+  return (
+    <>
+      <tr className="cursor-pointer hover:bg-gray-50" onClick={() => setExpanded((x) => !x)}>
+        <td className="px-3 py-2 text-gray-900 flex items-center gap-1.5">
+          <span className={`transition-transform ${expanded ? "rotate-90" : ""}`}>{CHEVRON}</span>
+          {a.name}
+        </td>
+        <td className="px-3 py-2 text-gray-500">{a.applicationType ?? "-"}</td>
+        <td className="px-3 py-2 text-gray-500 font-mono text-xs">{domains.length ? shown + extra : "-"}</td>
+        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+          <BoolToggle
+            enabled={!!a.enabled}
+            onToggle={(next) => onToggle(appId, next)}
+            pending={pending}
+          />
+        </td>
+      </tr>
+      {expanded && (
+        <tr>
+          <td colSpan={4} className="bg-gray-50 px-4 py-3 text-xs space-y-3">
+            {description && (
+              <div>
+                <span className="font-medium text-gray-500 uppercase tracking-wide">Description</span>
+                <p className="mt-0.5 text-gray-700">{description}</p>
+              </div>
+            )}
+            {domains.length > 0 && (
+              <div>
+                <span className="font-medium text-gray-500 uppercase tracking-wide">Domains / IPs</span>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {domains.map((d, i) => (
+                    <span key={i} className="inline-block bg-gray-100 rounded px-2 py-0.5 font-mono">{d}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {(tcpPorts.length > 0 || udpPorts.length > 0) && (
+              <div>
+                <span className="font-medium text-gray-500 uppercase tracking-wide">Ports</span>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {tcpPorts.map((p, i) => (
+                    <span key={`tcp-${i}`} className="inline-block bg-blue-50 text-blue-700 rounded px-2 py-0.5 font-mono">TCP {p.from === p.to ? p.from : `${p.from}–${p.to}`}</span>
+                  ))}
+                  {udpPorts.map((p, i) => (
+                    <span key={`udp-${i}`} className="inline-block bg-purple-50 text-purple-700 rounded px-2 py-0.5 font-mono">UDP {p.from === p.to ? p.from : `${p.from}–${p.to}`}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {serverGroups.length > 0 && (
+              <div>
+                <span className="font-medium text-gray-500 uppercase tracking-wide">Server Groups</span>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {serverGroups.map((g, i) => (
+                    <span key={i} className="inline-block bg-gray-100 rounded px-2 py-0.5 font-mono">{g.name ?? g.id}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {segmentGroupName && (
+              <div>
+                <span className="font-medium text-gray-500 uppercase tracking-wide">Segment Group</span>
+                <p className="mt-0.5 text-gray-700 font-mono">{segmentGroupName}</p>
+              </div>
+            )}
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 
@@ -2629,26 +2721,14 @@ function ApplicationsSection({ tenantName, isOpen }: { tenantName: string; isOpe
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 bg-white">
-            {filtered.map((a: ZpaApplication) => {
-              const domains = a.domainNames ?? [];
-              const shown = domains.slice(0, 3).join(", ");
-              const extra = domains.length > 3 ? ` +${domains.length - 3} more` : "";
-              const appId = String(a.id);
-              return (
-                <tr key={a.id}>
-                  <td className="px-3 py-2 text-gray-900">{a.name}</td>
-                  <td className="px-3 py-2 text-gray-500">{a.applicationType ?? "-"}</td>
-                  <td className="px-3 py-2 text-gray-500 font-mono text-xs">{domains.length ? shown + extra : "-"}</td>
-                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                    <BoolToggle
-                      enabled={!!a.enabled}
-                      onToggle={(next) => { setPendingToggleId(appId); toggleMut.mutate({ id: appId, enabled: next }); }}
-                      pending={pendingToggleId === appId}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
+            {filtered.map((a: ZpaApplication) => (
+              <ApplicationRow
+                key={a.id}
+                a={a}
+                onToggle={(id, next) => { setPendingToggleId(id); toggleMut.mutate({ id, enabled: next }); }}
+                pending={pendingToggleId === String(a.id)}
+              />
+            ))}
             {filtered.length === 0 && (
               <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400">No results</td></tr>
             )}
@@ -2718,7 +2798,7 @@ function PraPortalsSection({ tenantName, isOpen }: { tenantName: string; isOpen:
               <tr key={p.zpa_id}>
                 <td className="px-3 py-2 text-gray-900">{p.name}</td>
                 <td className="px-3 py-2 text-gray-500 font-mono text-xs">{p.domain ?? "-"}</td>
-                <td className="px-3 py-2 text-gray-500">{p.certificateName ?? "-"}</td>
+                <td className="px-3 py-2 text-gray-500">{p.certificate_name ?? "-"}</td>
                 <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                   <BoolToggle
                     enabled={p.enabled ?? false}
@@ -3307,10 +3387,14 @@ function PraConsolesSection({ tenantName, isOpen }: { tenantName: string; isOpen
   );
 }
 
-const ACCESS_POLICY_SKIP = new Set(["id", "zpa_id", "name", "action", "rule_order"]);
-
 function AccessPolicyRuleRow({ r }: { r: ZpaAccessPolicyRule }) {
   const [expanded, setExpanded] = useState(false);
+
+  const conditions = (r.conditions as Array<{ operator?: string; operands?: Array<{ object_type?: string; entry_values?: Array<{ lhs: string; rhs: string }>; values?: Array<{ lhs: string; rhs: string }> }> }>) ?? [];
+  const connectorGroups = (r.app_connector_groups as Array<{ name?: string; id?: string }>) ?? [];
+  const serverGroups = (r.app_server_groups as Array<{ name?: string; id?: string }>) ?? [];
+  const serviceEdgeGroups = (r.service_edge_groups as Array<{ name?: string; id?: string }>) ?? [];
+
   return (
     <>
       <tr className="cursor-pointer hover:bg-gray-50" onClick={() => setExpanded((x) => !x)}>
@@ -3335,8 +3419,70 @@ function AccessPolicyRuleRow({ r }: { r: ZpaAccessPolicyRule }) {
       </tr>
       {expanded && (
         <tr>
-          <td colSpan={3} className="bg-gray-50 px-4 py-3">
-            <RuleDetailGrid rule={r as unknown as Record<string, unknown>} skipKeys={ACCESS_POLICY_SKIP} />
+          <td colSpan={3} className="bg-gray-50 px-4 py-3 text-xs space-y-3">
+            {!!r.description && (
+              <div>
+                <span className="font-medium text-gray-500 uppercase tracking-wide">Description</span>
+                <p className="mt-0.5 text-gray-700">{String(r.description)}</p>
+              </div>
+            )}
+            {conditions.length > 0 && (
+              <div>
+                <span className="font-medium text-gray-500 uppercase tracking-wide">
+                  Conditions {r.operator ? `(${String(r.operator)})` : ""}
+                </span>
+                <div className="mt-1 space-y-1">
+                  {conditions.map((cond, ci) => {
+                    const operands = cond.operands ?? [];
+                    return operands.map((op, oi) => {
+                      const entries = (op.entry_values ?? op.values ?? []).slice(0, 6);
+                      const label = op.object_type ?? "UNKNOWN";
+                      return (
+                        <div key={`${ci}-${oi}`} className="flex items-start gap-2">
+                          <span className="inline-block bg-blue-50 text-blue-700 rounded px-1.5 py-0.5 font-mono uppercase flex-shrink-0">{label}</span>
+                          <span className="text-gray-600">
+                            {entries.map((e) => e.rhs ?? e.lhs).join(", ") || "(any)"}
+                          </span>
+                        </div>
+                      );
+                    });
+                  })}
+                </div>
+              </div>
+            )}
+            {connectorGroups.length > 0 && (
+              <div>
+                <span className="font-medium text-gray-500 uppercase tracking-wide">Connector Groups</span>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {connectorGroups.map((g, i) => (
+                    <span key={i} className="inline-block bg-gray-100 rounded px-2 py-0.5 font-mono">{g.name ?? g.id}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {serverGroups.length > 0 && (
+              <div>
+                <span className="font-medium text-gray-500 uppercase tracking-wide">Server Groups</span>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {serverGroups.map((g, i) => (
+                    <span key={i} className="inline-block bg-gray-100 rounded px-2 py-0.5 font-mono">{g.name ?? g.id}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {serviceEdgeGroups.length > 0 && (
+              <div>
+                <span className="font-medium text-gray-500 uppercase tracking-wide">Service Edge Groups</span>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {serviceEdgeGroups.map((g, i) => (
+                    <span key={i} className="inline-block bg-gray-100 rounded px-2 py-0.5 font-mono">{g.name ?? g.id}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {!r.description && conditions.length === 0 && connectorGroups.length === 0 && serverGroups.length === 0 && serviceEdgeGroups.length === 0 && (
+              <p className="text-gray-400">No additional details.</p>
+            )}
           </td>
         </tr>
       )}

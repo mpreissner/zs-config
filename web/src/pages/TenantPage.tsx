@@ -511,12 +511,12 @@ function CertificatesSection({ tenantName, isOpen }: { tenantName: string; isOpe
           </thead>
           <tbody className="divide-y divide-gray-100 bg-white">
             {data.map((c: ZpaCertificate) => {
-              const expEpoch = c.expireTime ? parseInt(c.expireTime, 10) : null;
+              const expEpoch = c.valid_to_in_epoch_sec ?? null;
               const expired = expEpoch !== null && expEpoch < now;
               return (
                 <tr key={c.id}>
                   <td className="px-3 py-2 text-gray-900">{c.name}</td>
-                  <td className="px-3 py-2 text-gray-600">{c.issuedTo ?? "-"}</td>
+                  <td className="px-3 py-2 text-gray-600">{c.issued_to ?? "-"}</td>
                   <td className="px-3 py-2 text-gray-500 text-xs">
                     {expEpoch ? new Date(expEpoch * 1000).toLocaleDateString() : "-"}
                   </td>
@@ -631,7 +631,7 @@ function PraPortalsSection({ tenantName, isOpen }: { tenantName: string; isOpen:
             <tr key={p.id}>
               <td className="px-3 py-2 text-gray-900">{p.name}</td>
               <td className="px-3 py-2 text-gray-500 font-mono text-xs">{p.domain ?? "-"}</td>
-              <td className="px-3 py-2 text-gray-500">{p.certificateName ?? "-"}</td>
+              <td className="px-3 py-2 text-gray-500">{p.certificate_name ?? "-"}</td>
             </tr>
           ))}
           {data.length === 0 && (

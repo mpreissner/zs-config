@@ -4,9 +4,9 @@ export interface ZpaCertificate {
   id: string;
   name: string;
   description?: string;
-  issuedTo?: string;
-  issuedBy?: string;
-  expireTime?: string;
+  issued_to?: string;
+  issued_by?: string;
+  valid_to_in_epoch_sec?: number;
   status?: string;
 }
 
@@ -23,8 +23,8 @@ export interface ZpaPraPortal {
   id?: string;
   name: string;
   domain?: string;
-  certificateId?: string;
-  certificateName?: string;
+  certificate_id?: string;
+  certificate_name?: string;
   enabled?: boolean;
   [key: string]: unknown;
 }
