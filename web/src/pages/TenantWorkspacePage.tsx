@@ -6594,12 +6594,12 @@ function AppProfileVisualizer({
     queryFn: () => fetchTrafficProfile(tenantName, policyId),
   });
 
-  // Auto-select the first populated section when data arrives
   useEffect(() => {
     if (!data) return;
     const candidates: Array<[string, number | boolean]> = [
       ["tunnel",  data.tunnelRoutes.length],
       ["dns",     data.dnsRoutes.length],
+      ["zpa",     data.zpaEnabled],
       ["process", data.processBypasses.length],
       ["port",    data.portBypasses.length],
       ["vpn",     data.vpnGatewayBypasses.length],
@@ -6610,68 +6610,72 @@ function AppProfileVisualizer({
     if (first) setActiveSection(first[0]);
   }, [data]);
 
-  const TUNNEL_STROKE: Record<TunnelMode, string> = {
+  const TUNNEL_COLOR: Record<TunnelMode, string> = {
     "Z-Tunnel 2.0": "#22c55e",
     "Z-Tunnel 1.0": "#3b82f6",
     "Proxy":        "#eab308",
     "Unknown":      "#9ca3af",
   };
 
-  const tc = data ? (TUNNEL_STROKE[data.tunnelMode] ?? "#9ca3af") : "#9ca3af";
+  const tc = data ? (TUNNEL_COLOR[data.tunnelMode] ?? "#9ca3af") : "#9ca3af";
   const bypassCount = data
     ? data.processBypasses.length + data.portBypasses.length + data.vpnGatewayBypasses.length
     : 0;
+  const excludeCount = data ? data.tunnelRoutes.filter(r => r.direction === "exclude").length : 0;
+  const localRuleCount = bypassCount + excludeCount;
 
   const tunnelActive = ["tunnel", "dns", "pac"].includes(activeSection);
   const bypassActive = ["process", "port", "vpn"].includes(activeSection);
   const trustedActive = activeSection === "trusted";
+  const zpaActive = activeSection === "zpa";
 
   const tabs: Array<{ key: string; label: string; count: number | null; group: string }> = [];
   if (data) {
-    if (data.tunnelRoutes.length > 0)       tabs.push({ key: "tunnel",  label: "Tunnel Routes",    count: data.tunnelRoutes.length,       group: "tunnel"  });
-    if (data.dnsRoutes.length > 0)          tabs.push({ key: "dns",     label: "DNS Routes",        count: data.dnsRoutes.length,          group: "tunnel"  });
-    if (data.processBypasses.length > 0)    tabs.push({ key: "process", label: "Process Bypasses",  count: data.processBypasses.length,    group: "bypass"  });
-    if (data.portBypasses.length > 0)       tabs.push({ key: "port",    label: "Port Bypasses",     count: data.portBypasses.length,       group: "bypass"  });
-    if (data.vpnGatewayBypasses.length > 0) tabs.push({ key: "vpn",     label: "VPN Gateways",      count: data.vpnGatewayBypasses.length, group: "bypass"  });
-    if (data.trustedNetworks.length > 0)    tabs.push({ key: "trusted", label: "Trusted Networks",  count: data.trustedNetworks.length,    group: "trusted" });
-    if (data.pac.enablePac || data.pac.url) tabs.push({ key: "pac",     label: "PAC Config",        count: null,                          group: "tunnel"  });
+    if (data.tunnelRoutes.length > 0)       tabs.push({ key: "tunnel",  label: "Tunnel Routes",    count: data.tunnelRoutes.length,       group: "zia"    });
+    if (data.dnsRoutes.length > 0)          tabs.push({ key: "dns",     label: "DNS Routes",        count: data.dnsRoutes.length,          group: "zia"    });
+    if (data.zpaEnabled)                    tabs.push({ key: "zpa",     label: "ZPA",               count: null,                          group: "zpa"    });
+    if (data.processBypasses.length > 0)    tabs.push({ key: "process", label: "Process Bypasses",  count: data.processBypasses.length,    group: "bypass" });
+    if (data.portBypasses.length > 0)       tabs.push({ key: "port",    label: "Port Bypasses",     count: data.portBypasses.length,       group: "bypass" });
+    if (data.vpnGatewayBypasses.length > 0) tabs.push({ key: "vpn",     label: "VPN Gateways",      count: data.vpnGatewayBypasses.length, group: "bypass" });
+    if (data.trustedNetworks.length > 0)    tabs.push({ key: "trusted", label: "Trusted Networks",  count: data.trustedNetworks.length,    group: "trusted"});
+    if (data.pac.enablePac || data.pac.url) tabs.push({ key: "pac",     label: "PAC Config",        count: null,                          group: "zia"    });
   }
 
   const tabBtnClass = (key: string, group: string) => {
     const active = activeSection === key;
     const base = "px-3 py-1 rounded-full text-xs font-medium transition-colors cursor-pointer";
     if (!active) return `${base} bg-gray-100 text-gray-600 hover:bg-gray-200`;
-    if (group === "tunnel")  return `${base} bg-green-100 text-green-800 ring-1 ring-green-300`;
+    if (group === "zia")     return `${base} bg-green-100 text-green-800 ring-1 ring-green-300`;
     if (group === "bypass")  return `${base} bg-orange-100 text-orange-800 ring-1 ring-orange-300`;
+    if (group === "zpa")     return `${base} bg-indigo-100 text-indigo-800 ring-1 ring-indigo-300`;
     return `${base} bg-purple-100 text-purple-800 ring-1 ring-purple-300`;
   };
 
-  // ── SVG node map constants ──────────────────────────────────────────────────
-  // Layout (viewBox 0 0 700 196):
-  //  Device       (8, 76)  w=108 h=44   center=(62, 98)
-  //  ZCC Agent   (150, 66) w=172 h=64   center=(236, 98)  right-mid=(322, 98)
-  //  ZIA Cloud   (488, 22) w=184 h=48   center=(580, 46)  left=(488, 46)
-  //  Internet    (488, 122) w=184 h=48  center=(580, 146) left=(488, 146)
-  //  Trusted     (488, 148) w=184 h=36  (shown only when trustedNetworks > 0 AND no Internet)
+  const ZIA_MODE_LABEL: Record<TunnelMode, string> = {
+    "Z-Tunnel 2.0": "All traffic — web + non-web",
+    "Z-Tunnel 1.0": "Web traffic only (HTTP/S)",
+    "Proxy":        "PAC-controlled proxy",
+    "Unknown":      "Unknown routing mode",
+  };
 
-  const hasBypasses = bypassCount > 0;
-  const hasTrusted  = data ? data.trustedNetworks.length > 0 : false;
+  const localSubtitle = data
+    ? data.tunnelMode === "Z-Tunnel 1.0"
+      ? `All non-HTTP/S · ${localRuleCount} explicit exclusion${localRuleCount !== 1 ? "s" : ""}`
+      : data.tunnelMode === "Proxy"
+        ? `PAC DIRECT · ${localRuleCount} exclusion${localRuleCount !== 1 ? "s" : ""}`
+        : localRuleCount > 0
+          ? `${localRuleCount} explicit exclusion${localRuleCount !== 1 ? "s" : ""}`
+          : "No explicit bypasses"
+    : "";
 
-  // When there are no bypass rules, Internet node isn't shown and trusted moves up
-  const ziaY      = hasBypasses ? 22  : 60;
-  const internetY = 122;
-  const trustedY  = hasBypasses ? 148 : 122;
-
-  // Right-side edges originate from the ZCC Agent right edge, split vertically
-  const agentRightY_tunnel  = hasBypasses ? 88  : 98;
-  const agentRightY_bypass  = 108;
-  const ziaEdgeEndY    = ziaY + 24;      // mid-height of ZIA node
-  const internetEdgeEndY = internetY + 24;
-  const trustedEdgeEndY  = trustedY + 18;
+  const fpName = data?.forwardingProfileName;
+  const fpDisplay = fpName
+    ? (fpName.length > 22 ? fpName.slice(0, 22) + "…" : fpName)
+    : "(no profile assigned)";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] flex flex-col">
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b">
@@ -6693,235 +6697,218 @@ function AppProfileVisualizer({
 
           {data && (
             <>
-              {/* ── Node-map diagram ────────────────────────────────────── */}
+              {/* ── Node-map diagram ──────────────────────────────────────── */}
+              {/* Layout (viewBox 0 0 860 218):
+                  Device (8,82) w=100 h=44 — ZCC Agent (136,72) w=150 h=64
+                  Forwarding Profile (314,72) w=184 h=64 — fork trunk x=528 y=34→174
+                  ZIA Cloud (556,8) w=296 h=52 — ZPA (556,80) w=296 h=46 [conditional]
+                  Local/Direct (556,146) w=296 h=56 */}
               <div className="rounded-xl border border-gray-200 bg-gradient-to-br from-gray-50 to-white overflow-hidden select-none">
                 <svg
-                  viewBox="0 0 700 196"
+                  viewBox="0 0 860 218"
                   xmlns="http://www.w3.org/2000/svg"
                   className="w-full"
-                  style={{ height: 196, display: "block" }}
+                  style={{ height: 218, display: "block" }}
                 >
                   <defs>
-                    <marker id="tp-arr-gray"    markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3z" fill="#d1d5db"/></marker>
-                    <marker id="tp-arr-tunnel"  markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3z" fill={tc}/></marker>
-                    <marker id="tp-arr-bypass"  markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3z" fill="#f97316"/></marker>
-                    <marker id="tp-arr-trusted" markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3z" fill="#8b5cf6"/></marker>
-                    <filter id="tp-shadow"><feDropShadow dx="0" dy="1" stdDeviation="2" floodOpacity="0.08"/></filter>
+                    <marker id="tp3-arr-gray"  markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3z" fill="#d1d5db"/></marker>
+                    <marker id="tp3-arr-zia"   markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3z" fill={tc}/></marker>
+                    <marker id="tp3-arr-zpa"   markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3z" fill="#4f46e5"/></marker>
+                    <marker id="tp3-arr-local" markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3z" fill="#f97316"/></marker>
+                    <filter id="tp3-shadow"><feDropShadow dx="0" dy="1" stdDeviation="2" floodOpacity="0.08"/></filter>
                   </defs>
 
-                  {/* ── Edge: Device → ZCC Agent ─────────────────── */}
-                  <line x1="116" y1="98" x2="150" y2="98" stroke="#d1d5db" strokeWidth="2" markerEnd="url(#tp-arr-gray)"/>
+                  {/* ── Edges ────────────────────────────────────────────────── */}
 
-                  {/* ── Edge: ZCC Agent → ZIA Cloud ──────────────── */}
-                  {/* Wide invisible hit-area */}
-                  <path
-                    d={`M 322 ${agentRightY_tunnel} C 400 ${agentRightY_tunnel}, 440 ${ziaEdgeEndY}, 488 ${ziaEdgeEndY}`}
-                    fill="none" stroke="transparent" strokeWidth="16"
+                  {/* Device → ZCC Agent */}
+                  <line x1="108" y1="104" x2="136" y2="104" stroke="#d1d5db" strokeWidth="2" markerEnd="url(#tp3-arr-gray)"/>
+
+                  {/* ZCC Agent → Forwarding Profile */}
+                  <line x1="286" y1="104" x2="314" y2="104" stroke="#d1d5db" strokeWidth="2" markerEnd="url(#tp3-arr-gray)"/>
+
+                  {/* Forwarding Profile → fork junction */}
+                  <line x1="498" y1="104" x2="528" y2="104" stroke="#9ca3af" strokeWidth="2"/>
+
+                  {/* Fork trunk (vertical) */}
+                  <line x1="528" y1="34" x2="528" y2="174" stroke="#e5e7eb" strokeWidth="2"/>
+
+                  {/* ZIA branch */}
+                  <line x1="528" y1="34" x2="558" y2="34" stroke="transparent" strokeWidth="14"
                     className="cursor-pointer"
-                    onClick={() => setActiveSection(tabs.find(t => t.group === "tunnel")?.key ?? "tunnel")}
-                  />
-                  <path
-                    d={`M 322 ${agentRightY_tunnel} C 400 ${agentRightY_tunnel}, 440 ${ziaEdgeEndY}, 488 ${ziaEdgeEndY}`}
-                    fill="none"
-                    stroke={tunnelActive || hovered === "zia-edge" ? tc : "#e5e7eb"}
+                    onClick={() => setActiveSection(tabs.find(t => t.group === "zia")?.key ?? "tunnel")}/>
+                  <line x1="528" y1="34" x2="553" y2="34"
+                    stroke={tunnelActive || hovered === "zia" ? tc : "#d1d5db"}
                     strokeWidth={tunnelActive ? 3 : 2}
-                    strokeDasharray={data.tunnelMode === "Unknown" ? "7,4" : undefined}
-                    markerEnd="url(#tp-arr-tunnel)"
-                    className="cursor-pointer pointer-events-none"
-                  />
-                  {/* Edge label */}
-                  <text
-                    x="405" y={agentRightY_tunnel - 8}
-                    fontSize="9" textAnchor="middle" fill={tunnelActive ? tc : "#9ca3af"}
-                    className="pointer-events-none"
-                  >
-                    {data.tunnelRoutes.filter(r => r.direction === "include").length > 0
-                      ? `${data.tunnelRoutes.filter(r => r.direction === "include").length} tunneled`
-                      : data.tunnelMode !== "Unknown" ? data.tunnelMode : "tunnel"}
+                    markerEnd="url(#tp3-arr-zia)"
+                    className="pointer-events-none"/>
+
+                  {/* ZPA branch */}
+                  {data.zpaEnabled && (
+                    <>
+                      <line x1="528" y1="103" x2="558" y2="103" stroke="transparent" strokeWidth="14"
+                        className="cursor-pointer" onClick={() => setActiveSection("zpa")}/>
+                      <line x1="528" y1="103" x2="553" y2="103"
+                        stroke={zpaActive || hovered === "zpa" ? "#4f46e5" : "#d1d5db"}
+                        strokeWidth={zpaActive ? 3 : 2}
+                        strokeDasharray="5,3"
+                        markerEnd="url(#tp3-arr-zpa)"
+                        className="pointer-events-none"/>
+                    </>
+                  )}
+
+                  {/* Local/Direct branch */}
+                  <line x1="528" y1="174" x2="558" y2="174" stroke="transparent" strokeWidth="14"
+                    className="cursor-pointer"
+                    onClick={() => setActiveSection(tabs.find(t => t.group === "bypass")?.key ?? "process")}/>
+                  <line x1="528" y1="174" x2="553" y2="174"
+                    stroke={bypassActive || hovered === "local" ? "#f97316" : "#d1d5db"}
+                    strokeWidth={bypassActive ? 3 : 2}
+                    strokeDasharray="6,4"
+                    markerEnd="url(#tp3-arr-local)"
+                    className="pointer-events-none"/>
+
+                  {/* ── Node: Device ─────────────────────────────────────────── */}
+                  <g filter="url(#tp3-shadow)">
+                    <rect x="8" y="82" width="100" height="44" rx="8" fill="white" stroke="#e5e7eb" strokeWidth="1.5"/>
+                  </g>
+                  <rect x="16" y="91" width="18" height="12" rx="1.5" fill="none" stroke="#9ca3af" strokeWidth="1.3"/>
+                  <line x1="13" y1="103" x2="37" y2="103" stroke="#9ca3af" strokeWidth="1.3"/>
+                  <line x1="23" y1="104" x2="27" y2="107" stroke="#9ca3af" strokeWidth="1.3"/>
+                  <text x="40" y="98" fontSize="11" fontWeight="600" fill="#374151">Device</text>
+                  <text x="40" y="111" fontSize="9" fill="#9ca3af">Endpoint</text>
+
+                  {/* ── Node: ZCC Agent ──────────────────────────────────────── */}
+                  <g filter="url(#tp3-shadow)">
+                    <rect x="136" y="72" width="150" height="64" rx="8" fill="white" stroke="#93c5fd" strokeWidth="1.5"/>
+                  </g>
+                  <path d="M147 101 L147 88 L157 85 L167 88 L167 101 C167 107 157 110 157 110 C157 110 147 107 147 101Z"
+                    fill="none" stroke="#3b82f6" strokeWidth="1.4"/>
+                  <text x="174" y="89" fontSize="11" fontWeight="600" fill="#1d4ed8">ZCC Agent</text>
+                  <text x="174" y="103" fontSize="9" fill="#6b7280">All traffic intercepted</text>
+                  <circle cx="276" cy="80" r="5" fill={data.active ? "#22c55e" : "#d1d5db"}/>
+                  {data.trustedNetworks.length > 0 && (
+                    <g className="cursor-pointer" onClick={() => setActiveSection("trusted")}>
+                      <rect x="147" y="113" width="130" height="15" rx="4"
+                        fill={trustedActive ? "#faf5ff" : "white"} stroke="#c4b5fd" strokeWidth="0.8"/>
+                      <text x="212" y="123" fontSize="7.5" fill="#7c3aed" textAnchor="middle">
+                        {`Off on ${data.trustedNetworks.length} trusted network${data.trustedNetworks.length !== 1 ? "s" : ""}`}
+                      </text>
+                    </g>
+                  )}
+
+                  {/* ── Node: Forwarding Profile ─────────────────────────────── */}
+                  <g filter="url(#tp3-shadow)">
+                    <rect x="314" y="72" width="184" height="64" rx="8" fill="white" stroke={tc} strokeWidth="1.5"/>
+                  </g>
+                  <line x1="323" y1="104" x2="337" y2="104" stroke="#9ca3af" strokeWidth="1.5"/>
+                  <line x1="337" y1="104" x2="345" y2="96" stroke="#9ca3af" strokeWidth="1.3"/>
+                  <line x1="337" y1="104" x2="345" y2="104" stroke="#9ca3af" strokeWidth="1.3"/>
+                  <line x1="337" y1="104" x2="345" y2="112" stroke="#9ca3af" strokeWidth="1.3"/>
+                  <text x="350" y="89" fontSize="11" fontWeight="600" fill="#374151">Forwarding Profile</text>
+                  <text x="350" y="103" fontSize="9" fill="#6b7280">{fpDisplay}</text>
+                  <rect x="350" y="108"
+                    width={data.tunnelMode.length * 5.4 + 8} height="16" rx="4"
+                    fill={data.tunnelMode === "Z-Tunnel 2.0" ? "#dcfce7" : data.tunnelMode === "Z-Tunnel 1.0" ? "#dbeafe" : data.tunnelMode === "Proxy" ? "#fef9c3" : "#f3f4f6"}
+                    stroke={data.tunnelMode === "Z-Tunnel 2.0" ? "#86efac" : data.tunnelMode === "Z-Tunnel 1.0" ? "#93c5fd" : data.tunnelMode === "Proxy" ? "#fde047" : "#e5e7eb"}
+                    strokeWidth="0.8"/>
+                  <text x="354" y="120" fontSize="8" fontWeight="600"
+                    fill={data.tunnelMode === "Z-Tunnel 2.0" ? "#15803d" : data.tunnelMode === "Z-Tunnel 1.0" ? "#1d4ed8" : data.tunnelMode === "Proxy" ? "#854d0e" : "#6b7280"}>
+                    {data.tunnelMode}
                   </text>
 
-                  {/* ── Edge: ZCC Agent → Direct Internet ────────── */}
-                  {hasBypasses && (
-                    <>
-                      <path
-                        d={`M 322 ${agentRightY_bypass} C 400 ${agentRightY_bypass}, 440 ${internetEdgeEndY}, 488 ${internetEdgeEndY}`}
-                        fill="none" stroke="transparent" strokeWidth="16"
-                        className="cursor-pointer"
-                        onClick={() => setActiveSection(tabs.find(t => t.group === "bypass")?.key ?? "process")}
-                      />
-                      <path
-                        d={`M 322 ${agentRightY_bypass} C 400 ${agentRightY_bypass}, 440 ${internetEdgeEndY}, 488 ${internetEdgeEndY}`}
-                        fill="none"
-                        stroke={bypassActive || hovered === "bypass-edge" ? "#f97316" : "#e5e7eb"}
-                        strokeWidth={bypassActive ? 3 : 2}
-                        strokeDasharray="7,4"
-                        markerEnd="url(#tp-arr-bypass)"
-                        className="cursor-pointer pointer-events-none"
-                      />
-                      <text
-                        x="405" y={agentRightY_bypass + 16}
-                        fontSize="9" textAnchor="middle" fill={bypassActive ? "#f97316" : "#9ca3af"}
-                        className="pointer-events-none"
-                      >
-                        {bypassCount} bypass{bypassCount !== 1 ? "es" : ""}
-                      </text>
-                    </>
-                  )}
-
-                  {/* ── Edge: ZCC Agent → Trusted Networks ───────── */}
-                  {hasTrusted && (
-                    <>
-                      <path
-                        d={`M 322 ${hasBypasses ? agentRightY_bypass + 6 : agentRightY_tunnel + 6} C 410 ${hasBypasses ? agentRightY_bypass + 6 : agentRightY_tunnel + 6}, 450 ${trustedEdgeEndY}, 488 ${trustedEdgeEndY}`}
-                        fill="none" stroke="transparent" strokeWidth="14"
-                        className="cursor-pointer"
-                        onClick={() => setActiveSection("trusted")}
-                      />
-                      <path
-                        d={`M 322 ${hasBypasses ? agentRightY_bypass + 6 : agentRightY_tunnel + 6} C 410 ${hasBypasses ? agentRightY_bypass + 6 : agentRightY_tunnel + 6}, 450 ${trustedEdgeEndY}, 488 ${trustedEdgeEndY}`}
-                        fill="none"
-                        stroke={trustedActive ? "#8b5cf6" : "#e5e7eb"}
-                        strokeWidth={trustedActive ? 2.5 : 1.5}
-                        strokeDasharray="4,4"
-                        markerEnd="url(#tp-arr-trusted)"
-                        className="pointer-events-none"
-                      />
-                    </>
-                  )}
-
-                  {/* ── Node: Device ─────────────────────────────── */}
-                  <g filter="url(#tp-shadow)">
-                    <rect x="8" y="76" width="108" height="44" rx="8" fill="white" stroke="#e5e7eb" strokeWidth="1.5"/>
-                  </g>
-                  {/* monitor icon */}
-                  <rect x="18" y="86" width="18" height="12" rx="1.5" fill="none" stroke="#9ca3af" strokeWidth="1.3"/>
-                  <line x1="15" y1="99" x2="39" y2="99" stroke="#9ca3af" strokeWidth="1.3"/>
-                  <line x1="25" y1="100" x2="29" y2="103" stroke="#9ca3af" strokeWidth="1.3"/>
-                  <text x="44" y="92" fontSize="11" fontWeight="600" fill="#374151">Device</text>
-                  <text x="44" y="106" fontSize="9" fill="#9ca3af">Endpoint</text>
-
-                  {/* ── Node: ZCC Agent ───────────────────────────── */}
-                  <g filter="url(#tp-shadow)">
-                    <rect x="150" y="66" width="172" height="64" rx="8" fill="white" stroke="#93c5fd" strokeWidth="1.5"/>
-                  </g>
-                  {/* shield icon */}
-                  <path d="M162 96 L162 83 L172 80 L182 83 L182 96 C182 101 172 104 172 104 C172 104 162 101 162 96Z" fill="none" stroke="#3b82f6" strokeWidth="1.4"/>
-                  <text x="190" y="82" fontSize="11" fontWeight="600" fill="#1d4ed8">ZCC Agent</text>
-                  <text x="190" y="96" fontSize="9.5" fill="#6b7280">{data.tunnelMode}</text>
-                  {data.forwardingProfileName && (
-                    <text x="190" y="110" fontSize="8.5" fill="#9ca3af">
-                      {data.forwardingProfileName.length > 22 ? data.forwardingProfileName.slice(0, 22) + "…" : data.forwardingProfileName}
-                    </text>
-                  )}
-                  {/* active status dot */}
-                  <circle cx="309" cy="74" r="5" fill={data.active ? "#22c55e" : "#d1d5db"}/>
-                  <title>{data.active ? "Policy active" : "Policy inactive"}</title>
-                  {/* ZApp badge */}
-                  {data.tunnelZappTraffic && (
-                    <>
-                      <rect x="288" y="118" width="34" height="14" rx="4" fill="#ede9fe" stroke="#c4b5fd" strokeWidth="1"/>
-                      <text x="305" y="128" fontSize="7.5" fontWeight="600" fill="#6d28d9" textAnchor="middle">ZApp</text>
-                    </>
-                  )}
-
-                  {/* ── Node: ZIA Cloud ───────────────────────────── */}
+                  {/* ── Node: ZIA Cloud ──────────────────────────────────────── */}
                   <g
-                    filter="url(#tp-shadow)"
+                    filter="url(#tp3-shadow)"
                     className="cursor-pointer"
-                    onClick={() => setActiveSection(tabs.find(t => t.group === "tunnel")?.key ?? "tunnel")}
+                    onClick={() => setActiveSection(tabs.find(t => t.group === "zia")?.key ?? "tunnel")}
                     onMouseEnter={() => setHovered("zia")}
                     onMouseLeave={() => setHovered(null)}
                   >
-                    <rect
-                      x="488" y={ziaY} width="184" height="48" rx="8"
+                    <rect x="556" y="8" width="296" height="52" rx="8"
                       fill={tunnelActive || hovered === "zia" ? "#f0fdf4" : "white"}
                       stroke={tunnelActive ? tc : "#86efac"}
-                      strokeWidth={tunnelActive ? 2 : 1.5}
-                    />
+                      strokeWidth={tunnelActive ? 2 : 1.5}/>
                   </g>
-                  {/* cloud icon */}
-                  <path
-                    d={`M498 ${ziaY+38} C495 ${ziaY+38} 494 ${ziaY+34} 496 ${ziaY+31} C494 ${ziaY+29} 495 ${ziaY+25} 499 ${ziaY+24} C499 ${ziaY+20} 504 ${ziaY+17} 509 ${ziaY+19} C510 ${ziaY+16} 516 ${ziaY+15} 519 ${ziaY+18} C524 ${ziaY+16} 530 ${ziaY+20} 528 ${ziaY+25} C531 ${ziaY+25} 533 ${ziaY+28} 531 ${ziaY+31} C532 ${ziaY+34} 530 ${ziaY+37} 527 ${ziaY+38}Z`}
-                    fill="none" stroke="#22c55e" strokeWidth="1.2"
-                    className="pointer-events-none"
-                  />
-                  <text x="537" y={ziaY + 22} fontSize="11" fontWeight="600" fill="#15803d" className="pointer-events-none">ZIA Cloud</text>
-                  <text x="537" y={ziaY + 37} fontSize="9" fill="#6b7280" className="pointer-events-none">
-                    {data.tunnelRoutes.filter(r => r.direction === "include").length} in · {data.tunnelRoutes.filter(r => r.direction === "exclude").length} ex · {data.dnsRoutes.length} DNS
+                  <path d="M565 48 C562 48 561 45 563 42 C561 40 562 37 566 36 C566 32 571 29 576 31 C577 28 583 27 586 30 C591 28 596 32 594 37 C597 37 599 40 597 43 C598 46 596 49 593 49Z"
+                    fill="none" stroke="#22c55e" strokeWidth="1.2" className="pointer-events-none"/>
+                  <text x="603" y="27" fontSize="11" fontWeight="600" fill="#15803d" className="pointer-events-none">ZIA Cloud</text>
+                  <text x="603" y="42" fontSize="9" fill="#6b7280" className="pointer-events-none">
+                    {ZIA_MODE_LABEL[data.tunnelMode]}
                   </text>
-
-                  {/* ── Node: Direct Internet ─────────────────────── */}
-                  {hasBypasses && (
-                    <g
-                      filter="url(#tp-shadow)"
-                      className="cursor-pointer"
-                      onClick={() => setActiveSection(tabs.find(t => t.group === "bypass")?.key ?? "process")}
-                      onMouseEnter={() => setHovered("internet")}
-                      onMouseLeave={() => setHovered(null)}
-                    >
-                      <rect
-                        x="488" y={internetY} width="184" height="48" rx="8"
-                        fill={bypassActive || hovered === "internet" ? "#fff7ed" : "white"}
-                        stroke={bypassActive ? "#f97316" : "#fdba74"}
-                        strokeWidth={bypassActive ? 2 : 1.5}
-                        strokeDasharray="5,3"
-                      />
-                      {/* globe icon */}
-                      <circle cx="504" cy={internetY + 24} r="10" fill="none" stroke="#f97316" strokeWidth="1.3"/>
-                      <ellipse cx="504" cy={internetY + 24} rx="5" ry="10" fill="none" stroke="#f97316" strokeWidth="1"/>
-                      <line x1="494" y1={internetY + 24} x2="514" y2={internetY + 24} stroke="#f97316" strokeWidth="1"/>
-                      <text x="522" y={internetY + 20} fontSize="11" fontWeight="600" fill="#c2410c">Direct Internet</text>
-                      <text x="522" y={internetY + 35} fontSize="9" fill="#6b7280">
-                        {bypassCount} bypass rule{bypassCount !== 1 ? "s" : ""}
-                      </text>
-                    </g>
-                  )}
-
-                  {/* ── Node: Trusted Networks ────────────────────── */}
-                  {hasTrusted && (
-                    <g
-                      filter="url(#tp-shadow)"
-                      className="cursor-pointer"
-                      onClick={() => setActiveSection("trusted")}
-                      onMouseEnter={() => setHovered("trusted")}
-                      onMouseLeave={() => setHovered(null)}
-                    >
-                      <rect
-                        x="488" y={trustedY} width="184" height="34" rx="8"
-                        fill={trustedActive || hovered === "trusted" ? "#faf5ff" : "white"}
-                        stroke={trustedActive ? "#8b5cf6" : "#c4b5fd"}
-                        strokeWidth={trustedActive ? 2 : 1.5}
-                        strokeDasharray="4,3"
-                      />
-                      <text x="580" y={trustedY + 21} fontSize="10" fontWeight="500" fill="#7c3aed" textAnchor="middle">
-                        {data.trustedNetworks.length} Trusted Network{data.trustedNetworks.length !== 1 ? "s" : ""} (agent off)
-                      </text>
-                    </g>
-                  )}
-
-                  {/* PAC badge overlaid on ZIA node top-right */}
                   {(data.pac.enablePac || data.pac.url) && (
-                    <g className="cursor-pointer" onClick={() => setActiveSection("pac")}>
-                      <rect x="650" y={ziaY} width="38" height="17" rx="4" fill="#fef3c7" stroke="#fbbf24" strokeWidth="1"/>
-                      <text x="669" y={ziaY + 11} fontSize="8" fontWeight="600" fill="#92400e" textAnchor="middle">PAC</text>
+                    <g className="cursor-pointer" onClick={(e) => { e.stopPropagation(); setActiveSection("pac"); }}>
+                      <rect x="820" y="10" width="30" height="16" rx="4" fill="#fef3c7" stroke="#fbbf24" strokeWidth="1"/>
+                      <text x="835" y="21" fontSize="8" fontWeight="600" fill="#92400e" textAnchor="middle" className="pointer-events-none">PAC</text>
                     </g>
+                  )}
+
+                  {/* ── Node: ZPA Private Apps ───────────────────────────────── */}
+                  {data.zpaEnabled && (
+                    <g
+                      filter="url(#tp3-shadow)"
+                      className="cursor-pointer"
+                      onClick={() => setActiveSection("zpa")}
+                      onMouseEnter={() => setHovered("zpa")}
+                      onMouseLeave={() => setHovered(null)}
+                    >
+                      <rect x="556" y="80" width="296" height="46" rx="8"
+                        fill={zpaActive || hovered === "zpa" ? "#eef2ff" : "white"}
+                        stroke={zpaActive ? "#4f46e5" : "#a5b4fc"}
+                        strokeWidth={zpaActive ? 2 : 1.5}
+                        strokeDasharray="5,3"/>
+                      <rect x="565" y="95" width="14" height="11" rx="2" fill="none" stroke="#4f46e5" strokeWidth="1.3"/>
+                      <path d="M568 95 A4 4 0 0 1 576 95" fill="none" stroke="#4f46e5" strokeWidth="1.3"/>
+                      <circle cx="572" cy="101" r="1.5" fill="#4f46e5"/>
+                      <text x="586" y="99" fontSize="11" fontWeight="600" fill="#3730a3">ZPA Private Apps</text>
+                      <text x="586" y="113" fontSize="9" fill="#6b7280">ZPA-enrolled private access</text>
+                    </g>
+                  )}
+
+                  {/* ── Node: Local / Direct ─────────────────────────────────── */}
+                  <g
+                    filter="url(#tp3-shadow)"
+                    className="cursor-pointer"
+                    onClick={() => setActiveSection(tabs.find(t => t.group === "bypass")?.key ?? "process")}
+                    onMouseEnter={() => setHovered("local")}
+                    onMouseLeave={() => setHovered(null)}
+                  >
+                    <rect x="556" y="146" width="296" height="56" rx="8"
+                      fill={bypassActive || hovered === "local" ? "#fff7ed" : "white"}
+                      stroke={bypassActive ? "#f97316" : "#fdba74"}
+                      strokeWidth={bypassActive ? 2 : 1.5}
+                      strokeDasharray="5,3"/>
+                  </g>
+                  <circle cx="570" cy="174" r="10" fill="none" stroke="#f97316" strokeWidth="1.3" className="pointer-events-none"/>
+                  <ellipse cx="570" cy="174" rx="5" ry="10" fill="none" stroke="#f97316" strokeWidth="1" className="pointer-events-none"/>
+                  <line x1="560" y1="174" x2="580" y2="174" stroke="#f97316" strokeWidth="1" className="pointer-events-none"/>
+                  <text x="587" y="168" fontSize="11" fontWeight="600" fill="#c2410c" className="pointer-events-none">Local / Direct</text>
+                  <text x="587" y="182" fontSize="8.5" fill="#6b7280" className="pointer-events-none">{localSubtitle}</text>
+                  {data.tunnelMode === "Z-Tunnel 1.0" && (
+                    <text x="587" y="196" fontSize="8" fill="#9ca3af" fontStyle="italic" className="pointer-events-none">
+                      Non-HTTP/S bypasses the tunnel
+                    </text>
                   )}
 
                   {/* Legend */}
-                  <circle cx="12" cy="184" r="4" fill={data.active ? "#22c55e" : "#d1d5db"}/>
-                  <text x="20" y="188" fontSize="8.5" fill="#9ca3af">{data.active ? "Active" : "Inactive"}</text>
-                  <line x1="60" y1="184" x2="74" y2="184" stroke={tc} strokeWidth="2"/>
-                  <text x="78" y="188" fontSize="8.5" fill="#9ca3af">Tunneled</text>
-                  {hasBypasses && (
+                  <circle cx="10" cy="208" r="4" fill={data.active ? "#22c55e" : "#d1d5db"}/>
+                  <text x="18" y="212" fontSize="8.5" fill="#9ca3af">{data.active ? "Active" : "Inactive"}</text>
+                  <line x1="64" y1="208" x2="78" y2="208" stroke={tc} strokeWidth="2"/>
+                  <text x="82" y="212" fontSize="8.5" fill="#9ca3af">ZIA tunnel</text>
+                  <line x1="130" y1="208" x2="144" y2="208" stroke="#f97316" strokeWidth="2" strokeDasharray="4,3"/>
+                  <text x="148" y="212" fontSize="8.5" fill="#9ca3af">Local/direct</text>
+                  {data.zpaEnabled && (
                     <>
-                      <line x1="126" y1="184" x2="140" y2="184" stroke="#f97316" strokeWidth="2" strokeDasharray="4,3"/>
-                      <text x="144" y="188" fontSize="8.5" fill="#9ca3af">Bypassed</text>
+                      <line x1="210" y1="208" x2="224" y2="208" stroke="#4f46e5" strokeWidth="2" strokeDasharray="5,3"/>
+                      <text x="228" y="212" fontSize="8.5" fill="#9ca3af">ZPA</text>
                     </>
+                  )}
+                  {data.tunnelZappTraffic && (
+                    <text x={data.zpaEnabled ? 264 : 210} y="212" fontSize="8.5" fill="#7c3aed">ZApp tunneled</text>
                   )}
                 </svg>
               </div>
 
-              {/* ── Tab bar ──────────────────────────────────────────── */}
+              {/* ── Tab bar ─────────────────────────────────────────────────── */}
               {tabs.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {tabs.map(tab => (
@@ -6936,7 +6923,7 @@ function AppProfileVisualizer({
                 </div>
               )}
 
-              {/* ── Detail panel ─────────────────────────────────────── */}
+              {/* ── Detail panels ────────────────────────────────────────────── */}
               {activeSection === "tunnel" && data.tunnelRoutes.length > 0 && (
                 <div className="overflow-x-auto rounded border border-gray-100">
                   <table className="min-w-full text-sm divide-y divide-gray-200">
@@ -6949,11 +6936,11 @@ function AppProfileVisualizer({
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-100">
                       {data.tunnelRoutes.map((r, i) => (
-                        <tr key={i}>
+                        <tr key={i} className={r.direction === "exclude" ? "bg-orange-50/40" : ""}>
                           <td className="px-3 py-1.5 font-mono text-xs">{r.cidr}</td>
                           <td className="px-3 py-1.5">
-                            <span className={`px-1.5 py-0.5 rounded text-xs ${r.direction === "include" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
-                              {r.direction}
+                            <span className={`px-1.5 py-0.5 rounded text-xs ${r.direction === "include" ? "bg-green-50 text-green-700" : "bg-orange-50 text-orange-700"}`}>
+                              {r.direction === "include" ? "→ ZIA" : "→ Local"}
                             </span>
                           </td>
                           <td className="px-3 py-1.5 text-gray-600 text-xs">{r.ipVersion}</td>
@@ -6978,14 +6965,25 @@ function AppProfileVisualizer({
                         <tr key={i}>
                           <td className="px-3 py-1.5 font-mono text-xs">{r.suffix}</td>
                           <td className="px-3 py-1.5">
-                            <span className={`px-1.5 py-0.5 rounded text-xs ${r.direction === "include" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
-                              {r.direction}
+                            <span className={`px-1.5 py-0.5 rounded text-xs ${r.direction === "include" ? "bg-green-50 text-green-700" : "bg-orange-50 text-orange-700"}`}>
+                              {r.direction === "include" ? "→ ZIA" : "→ Local"}
                             </span>
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                </div>
+              )}
+
+              {activeSection === "zpa" && (
+                <div className="bg-indigo-50 border border-indigo-200 rounded p-4 space-y-1">
+                  <p className="text-sm font-medium text-indigo-800">ZPA Private Access Configured</p>
+                  <p className="text-xs text-indigo-700">
+                    This forwarding profile enables ZPA access. Private application traffic from
+                    ZPA-enrolled devices is routed through a dedicated ZPA tunnel, separate from
+                    ZIA web traffic. Segment and application policies are managed in the ZPA portal.
+                  </p>
                 </div>
               )}
 

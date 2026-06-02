@@ -204,6 +204,7 @@ export interface TrafficProfile {
   dnsRoutes: DnsRoute[];
   tunnelZappTraffic: boolean;
   trustedNetworks: string[];
+  zpaEnabled: boolean;
   rawPolicySnippet: Record<string, unknown>;
   rawForwardingSnippet: Record<string, unknown> | null;
 }

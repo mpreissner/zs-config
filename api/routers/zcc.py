@@ -55,6 +55,31 @@ def _derive_tunnel_mode(raw_fp: Optional[Dict]) -> str:
     return "Z-Tunnel 1.0"
 
 
+# ZPA indicator field names that can appear in a forwarding profile action.
+# Excludes password fields.  If any is present and truthy, ZPA is enabled.
+_ZPA_FIELDS = frozenset({
+    "enable_zpa", "zpa_gw_addr", "zpa_gateway", "zpa_enabled",
+    "zpa_tunnel", "enable_zpa_gw", "zpa_gw_config",
+})
+
+
+def _detect_zpa(raw_fp: Optional[Dict]) -> bool:
+    """Return True when the forwarding profile indicates ZPA access is configured."""
+    if not raw_fp:
+        return False
+    for action in (raw_fp.get("forwarding_profile_actions") or []):
+        if not isinstance(action, dict):
+            continue
+        for k, v in action.items():
+            if k.lower() in _ZPA_FIELDS and v:
+                return True
+    # Also accept a top-level key on the profile itself
+    for k, v in raw_fp.items():
+        if k.lower() in _ZPA_FIELDS and v:
+            return True
+    return False
+
+
 def _extract_process_bypasses(raw_policy: Dict) -> List[Dict]:
     """Extract per-OS process-based bypass entries from a web_policy raw_config."""
     platform_keys = {
@@ -99,6 +124,9 @@ def _build_traffic_profile(
     fp_name = raw_fp.get("name") if raw_fp else None
     fp_id = str(raw_policy.get("forwardingProfileId", "")) or None
     tunnel_mode = _derive_tunnel_mode(raw_fp)
+
+    # ZPA detection
+    zpa_enabled = _detect_zpa(raw_fp)
 
     # PAC config
     pac_url = raw_policy.get("pac_url") or raw_policy.get("pacUrl") or None
@@ -192,6 +220,7 @@ def _build_traffic_profile(
         "dnsRoutes": dns_routes,
         "tunnelZappTraffic": bool(raw_policy.get("tunnelZappTraffic")),
         "trustedNetworks": trusted_networks,
+        "zpaEnabled": zpa_enabled,
         "rawPolicySnippet": raw_snippet,
         "rawForwardingSnippet": raw_fp_snippet,
     }
