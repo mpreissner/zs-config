@@ -59,6 +59,8 @@ def zcc_menu():
                 questionary.Choice("Import Config", value="import"),
                 questionary.Choice("Reset N/A Resource Types", value="reset_na"),
                 questionary.Separator(),
+                questionary.Choice("Snapshots", value="snapshots"),
+                questionary.Separator(),
                 questionary.Choice("← Back", value="back"),
             ],
             use_indicator=True,
@@ -98,6 +100,8 @@ def zcc_menu():
             _import_zcc_config(client, tenant)
         elif choice == "reset_na":
             _reset_na_resources(client, tenant)
+        elif choice == "snapshots":
+            _zcc_snapshots_menu(client, tenant)
         elif choice in ("back", None):
             break
 
@@ -1992,3 +1996,340 @@ def _view_web_privacy(tenant):
 
     syntax = Syntax(json.dumps(raw_config, indent=2, default=str), "json", theme="monokai")
     scroll_view(render_rich_to_lines(syntax), header_ansi=capture_banner())
+
+
+# ------------------------------------------------------------------
+# Snapshots submenu
+# ------------------------------------------------------------------
+
+def _zcc_snapshots_menu(client, tenant):
+    while True:
+        render_banner()
+        choice = questionary.select(
+            "ZCC Snapshots",
+            choices=[
+                questionary.Choice("List Snapshots", value="list"),
+                questionary.Choice("Create Snapshot", value="create"),
+                questionary.Choice("View Diff vs Live", value="diff"),
+                questionary.Choice("Restore from Snapshot", value="restore"),
+                questionary.Choice("Delete Snapshot", value="delete"),
+                questionary.Separator(),
+                questionary.Choice("<- Back", value="back"),
+            ],
+            use_indicator=True,
+        ).ask()
+
+        if choice == "list":
+            _list_zcc_snapshots(tenant)
+        elif choice == "create":
+            _create_zcc_snapshot(client, tenant)
+        elif choice == "diff":
+            _diff_zcc_snapshot(client, tenant)
+        elif choice == "restore":
+            _restore_zcc_snapshot(client, tenant)
+        elif choice == "delete":
+            _delete_zcc_snapshot(tenant)
+        elif choice in ("back", None):
+            break
+
+
+def _list_zcc_snapshots(tenant):
+    from services.zcc_snapshot_service import ZCCSnapshotService
+    service = ZCCSnapshotService(None, tenant.id)
+    snapshots = service.list_snapshots()
+
+    if not snapshots:
+        console.print("[yellow]No snapshots found.[/yellow]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    table = Table(title=f"ZCC Snapshots ({len(snapshots)} found)", show_lines=False)
+    table.add_column("ID", style="dim", no_wrap=True)
+    table.add_column("Label", style="cyan")
+    table.add_column("Created", no_wrap=True)
+    table.add_column("Resources")
+    table.add_column("Note")
+
+    for s in snapshots:
+        created = s.created_at.strftime("%Y-%m-%d %H:%M") if s.created_at else "—"
+        table.add_row(
+            str(s.id),
+            s.label or "—",
+            created,
+            str(s.resource_count),
+            s.note or "",
+        )
+
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+    scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
+
+
+def _create_zcc_snapshot(client, tenant):
+    from services.zcc_snapshot_service import ZCCSnapshotService
+
+    label = None
+    while not label:
+        label = questionary.text("Snapshot label:").ask()
+        if label is None:
+            return
+        label = label.strip()
+
+    note = questionary.text("Optional note (blank = none):").ask()
+    if note is None:
+        return
+    note = note.strip() or None
+
+    service = ZCCSnapshotService(client, tenant.id)
+    with console.status("Creating snapshot..."):
+        try:
+            snap = service.create_snapshot(label, note)
+        except Exception as e:
+            console.print(f"[red]x Error: {e}[/red]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            return
+
+    console.print(f"[green]Snapshot created: {snap.label} ({snap.resource_count} resources)[/green]")
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def _diff_zcc_snapshot(client, tenant):
+    from services.zcc_snapshot_service import ZCCSnapshotService
+
+    snapshot_id = _pick_zcc_snapshot(tenant)
+    if snapshot_id is None:
+        return
+
+    service = ZCCSnapshotService(client, tenant.id)
+    with console.status("Computing diff..."):
+        try:
+            diff = service.diff_snapshot(snapshot_id)
+        except Exception as e:
+            console.print(f"[red]x Error: {e}[/red]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            return
+
+    if not diff:
+        console.print("[yellow]No resources in snapshot.[/yellow]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    table = Table(title=f"Diff — Snapshot {snapshot_id} vs Live", show_lines=False)
+    table.add_column("Resource Type", style="cyan")
+    table.add_column("Added")
+    table.add_column("Removed")
+    table.add_column("Changed")
+    table.add_column("Unchanged")
+    table.add_column("Restorable")
+
+    for entry in diff:
+        added_str = f"[yellow]{entry['added_since']}[/yellow]" if entry["added_since"] > 0 else str(entry["added_since"])
+        removed_str = f"[red]{entry['removed_since']}[/red]" if entry["removed_since"] > 0 else str(entry["removed_since"])
+        changed_str = f"[yellow]{entry['changed_since']}[/yellow]" if entry["changed_since"] > 0 else str(entry["changed_since"])
+        restorable_str = "[green]Yes[/green]" if entry["restorable"] else "[red]No[/red]"
+        table.add_row(
+            entry["resource_type"],
+            added_str,
+            removed_str,
+            changed_str,
+            str(entry["unchanged"]),
+            restorable_str,
+        )
+
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+    scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
+
+
+def _restore_zcc_snapshot(client, tenant):
+    from services.zcc_snapshot_service import ZCCSnapshotService
+
+    snapshot_id = _pick_zcc_snapshot(tenant)
+    if snapshot_id is None:
+        return
+
+    service = ZCCSnapshotService(client, tenant.id)
+
+    with console.status("Loading diff for restore planning..."):
+        try:
+            diff = service.diff_snapshot(snapshot_id)
+        except Exception as e:
+            console.print(f"[red]x Error loading diff: {e}[/red]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            return
+
+    target_choice = questionary.select(
+        "Restore target:",
+        choices=[
+            questionary.Choice("Same tenant", value="same"),
+            questionary.Choice("Different tenant", value="other"),
+        ],
+    ).ask()
+    if target_choice is None:
+        return
+
+    target_tenant_name = None
+    if target_choice == "other":
+        target_tenant_name = questionary.text("Target tenant name:").ask()
+        if not target_tenant_name:
+            return
+        target_tenant_name = target_tenant_name.strip()
+
+    restorable_types = [e["resource_type"] for e in diff if e["restorable"]]
+    if not restorable_types:
+        console.print("[yellow]No restorable resource types found in this snapshot.[/yellow]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    type_choices = [
+        questionary.Choice(rt, value=rt, checked=True)
+        for rt in restorable_types
+    ]
+    selected_types = questionary.checkbox(
+        "Select resource types to restore:",
+        choices=type_choices,
+    ).ask()
+    if not selected_types:
+        return
+
+    dry_run = questionary.confirm("Dry run only (no changes applied)?", default=True).ask()
+    if dry_run is None:
+        return
+
+    target_client = None
+    target_tenant_id = None
+    if target_tenant_name:
+        from services.config_service import get_tenant, decrypt_secret
+        from lib.auth import ZscalerAuth
+        from lib.zcc_client import ZCCClient
+        tgt = get_tenant(target_tenant_name)
+        if not tgt:
+            console.print(f"[red]x Tenant '{target_tenant_name}' not found.[/red]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            return
+        tgt_auth = ZscalerAuth(
+            tgt.zidentity_base_url,
+            tgt.client_id,
+            decrypt_secret(tgt.client_secret_enc),
+            govcloud=bool(tgt.govcloud),
+        )
+        target_client = ZCCClient(tgt_auth, tgt.oneapi_base_url, tgt.zia_cloud, tgt.zia_tenant_id)
+        target_tenant_id = tgt.id
+
+    mode_label = "dry run" if dry_run else "restore"
+    console.print(f"\n[bold]Starting {mode_label}...[/bold]")
+
+    with console.status(f"Running {mode_label}..."):
+        try:
+            result = service.restore_snapshot(
+                snapshot_id=snapshot_id,
+                resource_types=selected_types,
+                dry_run=dry_run,
+                target_client=target_client,
+                target_tenant_id=target_tenant_id,
+            )
+        except Exception as e:
+            console.print(f"[red]x Restore failed: {e}[/red]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            return
+
+    _action_styles = {
+        "created": "green",
+        "updated": "cyan",
+        "deleted": "red",
+        "skipped": "dim",
+        "unrestorable": "yellow",
+        "failed": "red",
+    }
+
+    results = result.get("results", [])
+    summary = result.get("summary", {})
+
+    table = Table(title=f"Restore Results {'(DRY RUN)' if dry_run else ''}", show_lines=False)
+    table.add_column("Resource Type", style="cyan")
+    table.add_column("Action")
+    table.add_column("Name")
+    table.add_column("Status")
+    table.add_column("Reason")
+
+    for r in results:
+        action = r["action"]
+        style = _action_styles.get(action, "white")
+        status_str = "[green]OK[/green]" if r["success"] else "[red]FAIL[/red]"
+        table.add_row(
+            r["resource_type"],
+            f"[{style}]{action}[/{style}]",
+            r["name"] or "—",
+            status_str,
+            r["reason"] or "",
+        )
+
+    from cli.banner import capture_banner
+    from cli.scroll_view import render_rich_to_lines, scroll_view
+    scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
+
+    console.print(
+        f"Created: {summary.get('created', 0)}  "
+        f"Updated: {summary.get('updated', 0)}  "
+        f"Deleted: {summary.get('deleted', 0)}  "
+        f"Skipped: {summary.get('skipped', 0)}  "
+        f"Failed: {summary.get('failed', 0)}  "
+        f"Unrestorable: {summary.get('unrestorable', 0)}"
+    )
+
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def _delete_zcc_snapshot(tenant):
+    from services.zcc_snapshot_service import ZCCSnapshotService
+
+    snapshot_id = _pick_zcc_snapshot(tenant)
+    if snapshot_id is None:
+        return
+
+    service = ZCCSnapshotService(None, tenant.id)
+    snapshots = service.list_snapshots()
+    snap = next((s for s in snapshots if s.id == snapshot_id), None)
+    label = snap.label if snap else str(snapshot_id)
+
+    confirmed = questionary.confirm(
+        f"Delete snapshot '{label}'? This cannot be undone.",
+        default=False,
+    ).ask()
+    if not confirmed:
+        return
+
+    with console.status("Deleting snapshot..."):
+        try:
+            service.delete_snapshot(snapshot_id)
+        except Exception as e:
+            console.print(f"[red]x Error: {e}[/red]")
+            questionary.press_any_key_to_continue("Press any key to continue...").ask()
+            return
+
+    console.print(f"[green]Snapshot '{label}' deleted.[/green]")
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def _pick_zcc_snapshot(tenant):
+    from services.zcc_snapshot_service import ZCCSnapshotService
+    service = ZCCSnapshotService(None, tenant.id)
+    snapshots = service.list_snapshots()
+    if not snapshots:
+        console.print("[yellow]No snapshots found.[/yellow]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return None
+
+    choices = [
+        questionary.Choice(
+            f"{s.id:4}  {s.created_at.strftime('%Y-%m-%d %H:%M')}  {s.label}  ({s.resource_count} resources)",
+            value=s.id,
+        )
+        for s in snapshots
+    ]
+    choices.append(questionary.Choice("<- Cancel", value=0))
+
+    selected = questionary.select("Select a snapshot:", choices=choices).ask()
+    if selected is None or selected == 0:
+        return None
+    return selected

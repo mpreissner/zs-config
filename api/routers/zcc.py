@@ -297,9 +297,42 @@ def _get_service(tenant_name: str, user: AuthUser):
     return ZCCService(client, tenant_id=tenant.id)
 
 
+def _get_snapshot_service(tenant_name: str, user: AuthUser):
+    from lib.auth import ZscalerAuth
+    from lib.zcc_client import ZCCClient
+    from services.config_service import decrypt_secret, get_tenant
+    from services.zcc_snapshot_service import ZCCSnapshotService
+    from api.dependencies import check_tenant_access
+
+    tenant = get_tenant(tenant_name)
+    if not tenant:
+        raise HTTPException(status_code=404, detail=f"Tenant '{tenant_name}' not found")
+    check_tenant_access(tenant.id, user)
+
+    auth = ZscalerAuth(
+        tenant.zidentity_base_url,
+        tenant.client_id,
+        decrypt_secret(tenant.client_secret_enc),
+        govcloud=bool(tenant.govcloud),
+    )
+    client = ZCCClient(auth, tenant.oneapi_base_url, tenant.zia_cloud, tenant.zia_tenant_id)
+    return ZCCSnapshotService(client, tenant_id=tenant.id)
+
+
 class DeviceRemoveRequest(BaseModel):
     udids: List[str]
     os_type: int
+
+
+class SnapshotCreateRequest(BaseModel):
+    label: str
+    note: Optional[str] = None
+
+
+class SnapshotRestoreRequest(BaseModel):
+    resource_types: Optional[List[str]] = None
+    dry_run: bool = False
+    target_tenant: Optional[str] = None
 
 
 # ------------------------------------------------------------------
@@ -591,3 +624,113 @@ def get_traffic_profile(
         raw_policy, raw_fp, zia_pac_file_id, zia_pac_file_name,
         predefined_ip_bypasses, custom_ip_bypasses, app_service_bypasses,
     )
+
+
+# ------------------------------------------------------------------
+# Snapshots
+# ------------------------------------------------------------------
+
+@router.post("/{tenant}/snapshots")
+def create_snapshot(
+    tenant: str,
+    body: SnapshotCreateRequest,
+    user: AuthUser = Depends(require_auth),
+):
+    svc = _get_snapshot_service(tenant, user)
+    snap = svc.create_snapshot(body.label, body.note)
+    return {
+        "id": snap.id,
+        "label": snap.label,
+        "note": snap.note,
+        "created_at": snap.created_at.isoformat(),
+        "resource_count": snap.resource_count,
+    }
+
+
+@router.get("/{tenant}/snapshots")
+def list_snapshots(
+    tenant: str,
+    user: AuthUser = Depends(require_auth),
+):
+    svc = _get_snapshot_service(tenant, user)
+    snaps = svc.list_snapshots()
+    return [
+        {
+            "id": s.id,
+            "label": s.label,
+            "note": s.note,
+            "created_at": s.created_at.isoformat(),
+            "resource_count": s.resource_count,
+        }
+        for s in snaps
+    ]
+
+
+@router.delete("/{tenant}/snapshots/{snapshot_id}")
+def delete_snapshot(
+    tenant: str,
+    snapshot_id: int,
+    user: AuthUser = Depends(require_admin),
+):
+    svc = _get_snapshot_service(tenant, user)
+    try:
+        svc.delete_snapshot(snapshot_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"deleted": True}
+
+
+@router.get("/{tenant}/snapshots/{snapshot_id}/diff")
+def diff_snapshot(
+    tenant: str,
+    snapshot_id: int,
+    user: AuthUser = Depends(require_auth),
+):
+    svc = _get_snapshot_service(tenant, user)
+    try:
+        return svc.diff_snapshot(snapshot_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post("/{tenant}/snapshots/{snapshot_id}/restore")
+def restore_snapshot(
+    tenant: str,
+    snapshot_id: int,
+    body: SnapshotRestoreRequest,
+    user: AuthUser = Depends(require_admin),
+):
+    from lib.auth import ZscalerAuth
+    from lib.zcc_client import ZCCClient
+    from services.config_service import decrypt_secret, get_tenant as _get_tenant
+    from services.zcc_snapshot_service import ZCCSnapshotService
+
+    svc = _get_snapshot_service(tenant, user)
+
+    target_client = None
+    target_tenant_id = None
+    if body.target_tenant:
+        tgt = _get_tenant(body.target_tenant)
+        if not tgt:
+            raise HTTPException(status_code=404, detail=f"Target tenant '{body.target_tenant}' not found")
+        tgt_auth = ZscalerAuth(
+            tgt.zidentity_base_url,
+            tgt.client_id,
+            decrypt_secret(tgt.client_secret_enc),
+            govcloud=bool(tgt.govcloud),
+        )
+        target_client = ZCCClient(tgt_auth, tgt.oneapi_base_url, tgt.zia_cloud, tgt.zia_tenant_id)
+        target_tenant_id = tgt.id
+
+    try:
+        result = svc.restore_snapshot(
+            snapshot_id=snapshot_id,
+            resource_types=body.resource_types,
+            dry_run=body.dry_run,
+            target_client=target_client,
+            target_tenant_id=target_tenant_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    return result

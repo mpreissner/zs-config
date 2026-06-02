@@ -157,6 +157,16 @@ class ZCCClient:
         resp.raise_for_status()
         return resp.json() if resp.content else {}
 
+    def _direct_patch(self, path: str, json: Optional[dict] = None) -> Dict:
+        resp = requests.patch(
+            f"{self._zcc_base}/{path}",
+            headers={"Authorization": f"Bearer {self._get_token()}"},
+            json=json,
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json() if resp.content else {}
+
     # ------------------------------------------------------------------
     # Devices
     # ------------------------------------------------------------------
@@ -321,6 +331,21 @@ class ZCCClient:
         result, resp, err = self._sdk.zcc.trusted_networks.list_by_company()
         return _to_dicts(_unwrap(result, resp, err))
 
+    # Trusted Networks (write)
+
+    def create_trusted_network(self, **kwargs) -> Dict:
+        result, resp, err = self._sdk.zcc.trusted_networks.add_trusted_network(**kwargs)
+        return _to_dict(_unwrap(result, resp, err))
+
+    def update_trusted_network(self, **kwargs) -> Dict:
+        result, resp, err = self._sdk.zcc.trusted_networks.update_trusted_network(**kwargs)
+        return _to_dict(_unwrap(result, resp, err))
+
+    def delete_trusted_network(self, network_id: int) -> None:
+        _, _, err = self._sdk.zcc.trusted_networks.delete_trusted_network(network_id)
+        if err:
+            raise RuntimeError(str(err))
+
     # ------------------------------------------------------------------
     # Forwarding Profiles
     # ------------------------------------------------------------------
@@ -328,6 +353,17 @@ class ZCCClient:
     def list_forwarding_profiles(self) -> List[Dict]:
         result, resp, err = self._sdk.zcc.forwarding_profile.list_by_company()
         return _to_dicts(_unwrap(result, resp, err))
+
+    # Forwarding Profiles (write)
+
+    def update_forwarding_profile(self, **kwargs) -> Dict:
+        result, resp, err = self._sdk.zcc.forwarding_profile.update_forwarding_profile(**kwargs)
+        return _to_dict(_unwrap(result, resp, err))
+
+    def delete_forwarding_profile(self, profile_id: int) -> None:
+        _, _, err = self._sdk.zcc.forwarding_profile.delete_forwarding_profile(profile_id)
+        if err:
+            raise RuntimeError(str(err))
 
     # ------------------------------------------------------------------
     # Admin Users
@@ -414,6 +450,12 @@ class ZCCClient:
         result, resp, err = self._sdk.zcc.fail_open_policy.list_by_company()
         return _to_dicts(_unwrap(result, resp, err))
 
+    # Fail Open Policy (write)
+
+    def update_fail_open_policy(self, **kwargs) -> Dict:
+        result, resp, err = self._sdk.zcc.fail_open_policy.update_failopen_policy(**kwargs)
+        return _to_dict(_unwrap(result, resp, err))
+
     # ------------------------------------------------------------------
     # Web Privacy
     # ------------------------------------------------------------------
@@ -432,6 +474,61 @@ class ZCCClient:
         if "id" not in item:
             item = dict(item)
             item["id"] = "1"
+        return [item]
+
+    # Web Privacy (write)
+
+    def set_web_privacy(self, **kwargs) -> Dict:
+        result, resp, err = self._sdk.zcc.web_privacy.set_web_privacy_info(**kwargs)
+        return _to_dict(_unwrap(result, resp, err))
+
+    # ------------------------------------------------------------------
+    # Device Cleanup
+
+    def get_device_cleanup(self) -> Dict:
+        return self._direct_get("getDeviceCleanupInfo")
+
+    def set_device_cleanup(self, **kwargs) -> Dict:
+        return self._direct_put("setDeviceCleanupInfo", json=kwargs)
+
+    def get_device_cleanup_singleton(self) -> List[Dict]:
+        """Wraps get_device_cleanup() as a list for uniform import service handling."""
+        item = self.get_device_cleanup()
+        if not item:
+            return []
+        item = dict(item)
+        item.setdefault("id", "1")
+        return [item]
+
+    # ------------------------------------------------------------------
+    # Application Profiles
+
+    def list_application_profiles(self) -> List[Dict]:
+        data = self._direct_get("application-profiles")
+        return data if isinstance(data, list) else (data.get("list", []) if isinstance(data, dict) else [])
+
+    def update_application_profile(self, profile_id: str, **kwargs) -> Dict:
+        return self._direct_patch(f"application-profiles/{profile_id}", json=kwargs)
+
+    # ------------------------------------------------------------------
+    # Entitlement singleton wrappers
+
+    def get_zpa_entitlements_singleton(self) -> List[Dict]:
+        """Wraps get_zpa_entitlements() as a list for uniform import service handling."""
+        item = self.get_zpa_entitlements()
+        if not item:
+            return []
+        item = dict(item) if isinstance(item, dict) else {"data": item}
+        item.setdefault("id", "1")
+        return [item]
+
+    def get_zdx_entitlements_singleton(self) -> List[Dict]:
+        """Wraps get_zdx_entitlements() as a list for uniform import service handling."""
+        item = self.get_zdx_entitlements()
+        if not item:
+            return []
+        item = dict(item) if isinstance(item, dict) else {"data": item}
+        item.setdefault("id", "1")
         return [item]
 
     # ------------------------------------------------------------------

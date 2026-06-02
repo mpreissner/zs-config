@@ -51,6 +51,14 @@ RESOURCE_DEFINITIONS: List[ResourceDef] = [
     ResourceDef("ip_app_predefined", "list_ip_apps_predefined", name_field="appName"),
     ResourceDef("ip_app_custom",     "list_ip_apps_custom",     name_field="appName"),
     ResourceDef("process_app",       "list_process_apps",       name_field="appName"),
+    # Singleton: GET /getDeviceCleanupInfo — direct, no SDK
+    ResourceDef("device_cleanup",    "get_device_cleanup_singleton",   id_field="id", name_field="id"),
+    # GET /getZpaGroupEntitlements — already in client
+    ResourceDef("entitlement_zpa",   "get_zpa_entitlements_singleton", id_field="id"),
+    # GET /getZdxGroupEntitlements — already in client
+    ResourceDef("entitlement_zdx",   "get_zdx_entitlements_singleton", id_field="id"),
+    # GET /application-profiles — direct, shape TBD
+    ResourceDef("application_profile", "list_application_profiles",    id_field="id", name_field="name"),
 ]
 
 

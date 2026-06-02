@@ -153,9 +153,16 @@ import {
   listProcessApps,
   getDeviceOtp,
   fetchTrafficProfile,
+  listZccSnapshots,
+  createZccSnapshot,
+  deleteZccSnapshot,
+  diffZccSnapshot,
+  restoreZccSnapshot,
   ZccDevice,
   ZccTrustedNetwork,
   ZccForwardingProfile,
+  ZccFpAction,
+  ZccFpZpaAction,
   ZccWebPolicy,
   ZccWebAppService,
   ZccAdminRole,
@@ -165,6 +172,9 @@ import {
   ZccProcessApp,
   TrafficProfile,
   TunnelMode,
+  ZccSnapshot,
+  ZccDiffEntry,
+  ZccRestoreResponse,
 } from "../api/zcc";
 import {
   searchDevices as searchZdxDevices,
@@ -5087,6 +5097,136 @@ function ZccDevicesSection({ tenantName, isOpen }: { tenantName: string; isOpen:
   );
 }
 
+// ── Forwarding Profiles expandable section ────────────────────────────────────
+
+const FP_NET_TYPE: Record<number, string> = {
+  0: "Off Network",
+  1: "On Trusted Network",
+  2: "VPN Trusted Network",
+};
+
+function fpModeLabel(action: ZccFpAction): string {
+  if ((action.action_type ?? 0) === 3) return "ZCC Bypass";
+  if (action.enable_packet_tunnel === 1) return "Z-Tunnel 2.0";
+  const spd = action.system_proxy_data;
+  if ((action.system_proxy ?? 0) === 2 || spd?.enable_proxy_server) return "Proxy";
+  return "Z-Tunnel 1.0";
+}
+
+function fpModeClass(mode: string): string {
+  if (mode === "Z-Tunnel 2.0") return "bg-green-50 text-green-700";
+  if (mode === "Z-Tunnel 1.0") return "bg-blue-50 text-blue-700";
+  if (mode === "Proxy") return "bg-yellow-50 text-yellow-700";
+  return "bg-gray-100 text-gray-500";
+}
+
+function ForwardingProfileRow({ fp }: { fp: ZccForwardingProfile }) {
+  const [expanded, setExpanded] = useState(false);
+  const actions = (fp.forwarding_profile_actions ?? []) as ZccFpAction[];
+  const zpaActions = (fp.forwarding_profile_zpa_actions ?? []) as ZccFpZpaAction[];
+  const sortedActions = [...actions]
+    .filter(a => (a.network_type ?? 0) in FP_NET_TYPE)
+    .sort((a, b) => (a.network_type ?? 0) - (b.network_type ?? 0));
+  const tnList = (fp.trusted_networks ?? []) as string[];
+  const isActive = fp.active === "1" || fp.active === 1 || fp.active === true;
+
+  return (
+    <>
+      <tr className="cursor-pointer hover:bg-gray-50" onClick={() => setExpanded(x => !x)}>
+        <td className="px-3 py-2 font-mono text-xs text-gray-500">{fp.id ?? "-"}</td>
+        <td className="px-3 py-2 text-gray-900 flex items-center gap-1.5">
+          <span className={`transition-transform ${expanded ? "rotate-90" : ""}`}>{CHEVRON}</span>
+          {fp.name ?? "-"}
+        </td>
+        <td className="px-3 py-2">
+          <span className={`px-1.5 py-0.5 rounded-full text-xs ${isActive ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+            {isActive ? "Active" : "Inactive"}
+          </span>
+        </td>
+        <td className="px-3 py-2 text-xs text-gray-500">
+          {fp.predefined_tn_all ? "All" : tnList.length > 0 ? tnList.join(", ") : "—"}
+        </td>
+      </tr>
+      {expanded && (
+        <tr>
+          <td colSpan={4} className="bg-gray-50 px-4 py-3">
+            <div className="overflow-x-auto rounded border border-gray-200">
+              <table className="min-w-full text-xs divide-y divide-gray-200">
+                <thead className="bg-white">
+                  <tr>
+                    <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Network Context</th>
+                    <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Tunnel Mode</th>
+                    <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Transport</th>
+                    <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">ZPA</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {sortedActions.map((action, ai) => {
+                    const netType = action.network_type ?? 0;
+                    const mode = fpModeLabel(action);
+                    const transport = action.primary_transport === 1 ? "DTLS" : "TLS";
+                    const zpaAction = zpaActions.find(z => z.network_type === netType);
+                    const zpaOn = zpaAction && (zpaAction.action_type ?? 0) !== 0;
+                    return (
+                      <tr key={ai}>
+                        <td className="px-3 py-1.5 font-medium text-gray-700">{FP_NET_TYPE[netType] ?? `Type ${netType}`}</td>
+                        <td className="px-3 py-1.5">
+                          <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${fpModeClass(mode)}`}>{mode}</span>
+                        </td>
+                        <td className="px-3 py-1.5 text-gray-600">{mode !== "ZCC Bypass" ? transport : "—"}</td>
+                        <td className="px-3 py-1.5">
+                          {zpaOn
+                            ? <span className="px-1.5 py-0.5 rounded text-xs bg-indigo-50 text-indigo-700">On</span>
+                            : <span className="text-gray-400">—</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function ForwardingProfilesSection({ tenantName, isOpen }: { tenantName: string; isOpen: boolean }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["zcc-forwarding-profiles", tenantName],
+    queryFn: () => listForwardingProfiles(tenantName),
+    enabled: isOpen,
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+  if (!data) return null;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Trusted Networks</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100 bg-white">
+          {(data as ZccForwardingProfile[]).map((fp, i) => (
+            <ForwardingProfileRow key={fp.id ?? i} fp={fp} />
+          ))}
+          {data.length === 0 && (
+            <tr><td colSpan={4} className="px-3 py-4 text-center text-gray-400">No forwarding profiles</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function ZccReadOnlySection<T extends { id?: string; name?: string }>({
   queryKey,
   queryFn,
@@ -6603,6 +6743,7 @@ function AppProfileVisualizer({
 }) {
   const [activeSection, setActiveSection] = useState<string>("tunnel");
   const [hovered, setHovered] = useState<string | null>(null);
+  const [networkContext, setNetworkContext] = useState<"off" | "on" | "vpn">("off");
 
   const { data, isLoading, error } = useQuery<TrafficProfile>({
     queryKey: ["traffic-profile", tenantName, policyId],
@@ -6617,8 +6758,6 @@ function AppProfileVisualizer({
       ["zpa",     data.zpaEnabled],
       ["process", data.processBypasses.length],
       ["port",    data.portBypasses.length],
-      ["vpn",     data.vpnGatewayBypasses.length],
-      ["trusted", data.trustedNetworks.length],
       ["pac",     data.pac.enablePac || !!data.pac.url],
     ];
     const first = candidates.find(([, v]) => Boolean(v));
@@ -6640,8 +6779,7 @@ function AppProfileVisualizer({
   const localRuleCount = bypassCount + excludeCount;
 
   const tunnelActive = ["tunnel", "dns", "pac"].includes(activeSection);
-  const bypassActive = ["process", "port", "vpn"].includes(activeSection);
-  const trustedActive = activeSection === "trusted";
+  const bypassActive = ["process", "port"].includes(activeSection);
   const zpaActive = activeSection === "zpa";
 
   const tabs: Array<{ key: string; label: string; count: number | null; group: string }> = [];
@@ -6651,8 +6789,6 @@ function AppProfileVisualizer({
     if (data.zpaEnabled)                    tabs.push({ key: "zpa",     label: "ZPA",               count: null,                          group: "zpa"    });
     if (data.processBypasses.length > 0)    tabs.push({ key: "process", label: "Process Bypasses",  count: data.processBypasses.length,    group: "bypass" });
     if (data.portBypasses.length > 0)       tabs.push({ key: "port",    label: "Port Bypasses",     count: data.portBypasses.length,       group: "bypass" });
-    if (data.vpnGatewayBypasses.length > 0) tabs.push({ key: "vpn",     label: "VPN Gateways",      count: data.vpnGatewayBypasses.length, group: "bypass" });
-    if (data.trustedNetworks.length > 0)    tabs.push({ key: "trusted", label: "Trusted Networks",  count: data.trustedNetworks.length,    group: "trusted"});
     if (data.pac.enablePac || data.pac.url) tabs.push({ key: "pac",     label: "PAC Config",        count: null,                          group: "zia"    });
   }
 
@@ -6683,10 +6819,46 @@ function AppProfileVisualizer({
           : "No explicit bypasses"
     : "";
 
-  const fpName = data?.forwardingProfileName;
-  const fpDisplay = fpName
-    ? (fpName.length > 22 ? fpName.slice(0, 22) + "…" : fpName)
-    : "(no profile assigned)";
+  // Per-context forwarding profile actions from rawForwardingSnippet
+  const fpRaw = data?.rawForwardingSnippet;
+  const fpAllActions = (fpRaw
+    ? ((fpRaw.forwardingProfileActions as unknown[]) ?? (fpRaw.forwarding_profile_actions as unknown[]) ?? [])
+    : []) as Array<Record<string, unknown>>;
+  const fpZpaActionsRaw = (fpRaw
+    ? ((fpRaw.forwardingProfileZpaActions as unknown[]) ?? (fpRaw.forwarding_profile_zpa_actions as unknown[]) ?? [])
+    : []) as Array<Record<string, unknown>>;
+  const NC_INT: Record<string, number> = { on: 1, vpn: 2, off: 0 };
+  const getCtxFpAction = (ctx: string): Record<string, unknown> =>
+    fpAllActions.find(a => Number(a.networkType ?? a.network_type) === NC_INT[ctx]) ?? {};
+  const ctxModeStr = (ctx: string): string => {
+    const a = getCtxFpAction(ctx);
+    if (Object.keys(a).length === 0) return data?.tunnelMode ?? "";
+    if ((a.actionType ?? a.action_type) === 3) return "ZCC Bypass";
+    if (a.enablePacketTunnel === 1 || a.enable_packet_tunnel === 1) return "Z-Tunnel 2.0";
+    const spd = (a.systemProxyData ?? a.system_proxy_data ?? {}) as Record<string, unknown>;
+    if ((a.systemProxy ?? a.system_proxy ?? 0) === 2 || spd.enableProxyServer || spd.enable_proxy_server) return "Proxy";
+    return "Z-Tunnel 1.0";
+  };
+  const ctxTransStr = (ctx: string): string =>
+    (getCtxFpAction(ctx).primaryTransport ?? getCtxFpAction(ctx).primary_transport) === 1 ? "DTLS" : "TLS";
+  const ctxZpaOn = (ctx: string): boolean => {
+    if (fpZpaActionsRaw.length === 0) return data?.zpaEnabled ?? false;
+    const getAt = (c: string): number | null => {
+      const a = fpZpaActionsRaw.find(x => Number(x.networkType ?? x.network_type) === NC_INT[c]);
+      if (!a) return null;
+      const v = a.actionType ?? a.action_type;
+      return v === null || v === undefined ? null : Number(v);
+    };
+    // on-trusted:  0=None(off),  1=Tunnel(on)
+    // vpn-trusted: 0=None(off),  1=Same-as-On
+    // off-trusted: 0=Tunnel(on), 1=Same-as-On
+    const onAt  = getAt("on");
+    const onOn  = onAt === 1;
+    if (ctx === "on")  return onOn;
+    if (ctx === "vpn") { const at = getAt("vpn"); return at === 1 ? onOn : at === 0 ? false : (data?.zpaEnabled ?? false); }
+    if (ctx === "off") { const at = getAt("off"); return at === 0 ? true  : at === 1 ? onOn  : (data?.zpaEnabled ?? false); }
+    return data?.zpaEnabled ?? false;
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -6695,7 +6867,7 @@ function AppProfileVisualizer({
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b">
           <div>
-            <h2 className="text-base font-semibold text-gray-900">ZCC Agent — Traffic Profile</h2>
+            <h2 className="text-base font-semibold text-gray-900">ZCC — Traffic Profile</h2>
             <p className="text-xs text-gray-500 mt-0.5">{policyName}</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
@@ -6713,17 +6885,17 @@ function AppProfileVisualizer({
           {data && (
             <>
               {/* ── Node-map diagram ──────────────────────────────────────── */}
-              {/* Layout (viewBox 0 0 860 218):
-                  Device (8,82) w=100 h=44 — ZCC Agent (136,72) w=150 h=64
-                  Forwarding Profile (314,72) w=184 h=64 — fork trunk x=528 y=34→174
-                  ZIA Cloud (556,8) w=296 h=52 — ZPA (556,80) w=296 h=46 [conditional]
-                  Local/Direct (556,146) w=296 h=56 */}
+              {/* Layout (viewBox 0 0 860 215):
+                  Device (8,86) — ZCC (136,76) — junction x=305 trunk y=50..166
+                  3 Network Context nodes (314, y=27/85/143) w=172 h=46
+                  All 3 connect → right fork trunk x=510 y=38..180
+                  Fork → ZIA(524,14) / ZPA(524,73) / Local(524,156) */}
               <div className="rounded-xl border border-gray-200 bg-gradient-to-br from-gray-50 to-white overflow-hidden select-none">
                 <svg
-                  viewBox="0 0 860 218"
+                  viewBox="0 0 860 215"
                   xmlns="http://www.w3.org/2000/svg"
                   className="w-full"
-                  style={{ height: 218, display: "block" }}
+                  style={{ height: 215, display: "block" }}
                 >
                   <defs>
                     <marker id="tp3-arr-gray"  markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3z" fill="#d1d5db"/></marker>
@@ -6733,197 +6905,217 @@ function AppProfileVisualizer({
                     <filter id="tp3-shadow"><feDropShadow dx="0" dy="1" stdDeviation="2" floodOpacity="0.08"/></filter>
                   </defs>
 
-                  {/* ── Edges ────────────────────────────────────────────────── */}
+                  {/* ── Left-side edges ───────────────────────────────────────── */}
+                  <line x1="108" y1="108" x2="136" y2="108" stroke="#d1d5db" strokeWidth="2" markerEnd="url(#tp3-arr-gray)"/>
+                  <line x1="286" y1="108" x2="305" y2="108" stroke="#d1d5db" strokeWidth="2"/>
+                  <line x1="305" y1="50"  x2="305" y2="166" stroke="#e5e7eb" strokeWidth="2"/>
+                  <line x1="305" y1="50"  x2="313" y2="50"  stroke="#d1d5db" strokeWidth="1.5" markerEnd="url(#tp3-arr-gray)"/>
+                  <line x1="305" y1="108" x2="313" y2="108" stroke="#d1d5db" strokeWidth="1.5" markerEnd="url(#tp3-arr-gray)"/>
+                  <line x1="305" y1="166" x2="313" y2="166" stroke="#d1d5db" strokeWidth="1.5" markerEnd="url(#tp3-arr-gray)"/>
 
-                  {/* Device → ZCC Agent */}
-                  <line x1="108" y1="104" x2="136" y2="104" stroke="#d1d5db" strokeWidth="2" markerEnd="url(#tp3-arr-gray)"/>
+                  {/* ── Context → right fork (all 3 always visible) ──────────── */}
+                  <line x1="486" y1="50"
+                    x2="510" y2="50"
+                    stroke={networkContext === "on" ? "#7c3aed" : "#e5e7eb"}
+                    strokeWidth={networkContext === "on" ? 2 : 1.5}/>
+                  <line x1="486" y1="108"
+                    x2="510" y2="108"
+                    stroke={networkContext === "vpn" ? "#4f46e5" : "#e5e7eb"}
+                    strokeWidth={networkContext === "vpn" ? 2 : 1.5}/>
+                  <line x1="486" y1="166"
+                    x2="510" y2="166"
+                    stroke={networkContext === "off" ? tc : "#e5e7eb"}
+                    strokeWidth={networkContext === "off" ? 2 : 1.5}/>
 
-                  {/* ZCC Agent → Forwarding Profile */}
-                  <line x1="286" y1="104" x2="314" y2="104" stroke="#d1d5db" strokeWidth="2" markerEnd="url(#tp3-arr-gray)"/>
-
-                  {/* Forwarding Profile → fork junction */}
-                  <line x1="498" y1="104" x2="528" y2="104" stroke="#9ca3af" strokeWidth="2"/>
-
-                  {/* Fork trunk (vertical) */}
-                  <line x1="528" y1="34" x2="528" y2="174" stroke="#e5e7eb" strokeWidth="2"/>
-
-                  {/* ZIA branch */}
-                  <line x1="528" y1="34" x2="558" y2="34" stroke="transparent" strokeWidth="14"
-                    className="cursor-pointer"
-                    onClick={() => setActiveSection(tabs.find(t => t.group === "zia")?.key ?? "tunnel")}/>
-                  <line x1="528" y1="34" x2="553" y2="34"
+                  {/* ── Right fork trunk + branches ───────────────────────────── */}
+                  <line x1="510" y1="38"  x2="510" y2="180" stroke="#e5e7eb" strokeWidth="2"/>
+                  <line x1="510" y1="38"  x2="521" y2="38"
                     stroke={tunnelActive || hovered === "zia" ? tc : "#d1d5db"}
-                    strokeWidth={tunnelActive ? 3 : 2}
-                    markerEnd="url(#tp3-arr-zia)"
-                    className="pointer-events-none"/>
-
-                  {/* ZPA branch */}
+                    strokeWidth={tunnelActive ? 2.5 : 1.5}
+                    markerEnd="url(#tp3-arr-zia)" className="pointer-events-none"/>
                   {data.zpaEnabled && (
-                    <>
-                      <line x1="528" y1="103" x2="558" y2="103" stroke="transparent" strokeWidth="14"
-                        className="cursor-pointer" onClick={() => setActiveSection("zpa")}/>
-                      <line x1="528" y1="103" x2="553" y2="103"
-                        stroke={zpaActive || hovered === "zpa" ? "#4f46e5" : "#d1d5db"}
-                        strokeWidth={zpaActive ? 3 : 2}
-                        strokeDasharray="5,3"
-                        markerEnd="url(#tp3-arr-zpa)"
-                        className="pointer-events-none"/>
-                    </>
+                    <line x1="510" y1="97"  x2="521" y2="97"
+                      stroke={ctxZpaOn(networkContext) ? (zpaActive || hovered === "zpa" ? "#4f46e5" : "#a5b4fc") : "#e5e7eb"}
+                      strokeWidth={ctxZpaOn(networkContext) && zpaActive ? 2.5 : 1.5}
+                      strokeDasharray="5,3"
+                      markerEnd="url(#tp3-arr-zpa)" className="pointer-events-none"/>
                   )}
-
-                  {/* Local/Direct branch */}
-                  <line x1="528" y1="174" x2="558" y2="174" stroke="transparent" strokeWidth="14"
-                    className="cursor-pointer"
-                    onClick={() => setActiveSection(tabs.find(t => t.group === "bypass")?.key ?? "process")}/>
-                  <line x1="528" y1="174" x2="553" y2="174"
+                  <line x1="510" y1="180" x2="521" y2="180"
                     stroke={bypassActive || hovered === "local" ? "#f97316" : "#d1d5db"}
-                    strokeWidth={bypassActive ? 3 : 2}
+                    strokeWidth={bypassActive ? 2.5 : 1.5}
                     strokeDasharray="6,4"
-                    markerEnd="url(#tp3-arr-local)"
-                    className="pointer-events-none"/>
+                    markerEnd="url(#tp3-arr-local)" className="pointer-events-none"/>
 
-                  {/* ── Node: Device ─────────────────────────────────────────── */}
+                  {/* ── Node: Device ──────────────────────────────────────────── */}
                   <g filter="url(#tp3-shadow)">
-                    <rect x="8" y="82" width="100" height="44" rx="8" fill="white" stroke="#e5e7eb" strokeWidth="1.5"/>
+                    <rect x="8" y="86" width="100" height="44" rx="8" fill="white" stroke="#e5e7eb" strokeWidth="1.5"/>
                   </g>
-                  <rect x="16" y="91" width="18" height="12" rx="1.5" fill="none" stroke="#9ca3af" strokeWidth="1.3"/>
-                  <line x1="13" y1="103" x2="37" y2="103" stroke="#9ca3af" strokeWidth="1.3"/>
-                  <line x1="23" y1="104" x2="27" y2="107" stroke="#9ca3af" strokeWidth="1.3"/>
-                  <text x="40" y="98" fontSize="11" fontWeight="600" fill="#374151">Device</text>
-                  <text x="40" y="111" fontSize="9" fill="#9ca3af">Endpoint</text>
+                  <rect x="16" y="95" width="18" height="12" rx="1.5" fill="none" stroke="#9ca3af" strokeWidth="1.3"/>
+                  <line x1="13" y1="107" x2="37" y2="107" stroke="#9ca3af" strokeWidth="1.3"/>
+                  <line x1="23" y1="108" x2="27" y2="111" stroke="#9ca3af" strokeWidth="1.3"/>
+                  <text x="40" y="102" fontSize="11" fontWeight="600" fill="#374151">Device</text>
+                  <text x="40" y="115" fontSize="9" fill="#9ca3af">Endpoint</text>
 
-                  {/* ── Node: ZCC Agent ──────────────────────────────────────── */}
+                  {/* ── Node: ZCC ─────────────────────────────────────────────── */}
                   <g filter="url(#tp3-shadow)">
-                    <rect x="136" y="72" width="150" height="64" rx="8" fill="white" stroke="#93c5fd" strokeWidth="1.5"/>
+                    <rect x="136" y="76" width="150" height="64" rx="8" fill="white" stroke="#93c5fd" strokeWidth="1.5"/>
                   </g>
-                  <path d="M147 101 L147 88 L157 85 L167 88 L167 101 C167 107 157 110 157 110 C157 110 147 107 147 101Z"
+                  <path d="M147 105 L147 92 L157 89 L167 92 L167 105 C167 111 157 114 157 114 C157 114 147 111 147 105Z"
                     fill="none" stroke="#3b82f6" strokeWidth="1.4"/>
-                  <text x="174" y="89" fontSize="11" fontWeight="600" fill="#1d4ed8">ZCC Agent</text>
-                  <text x="174" y="103" fontSize="9" fill="#6b7280">All traffic intercepted</text>
-                  <circle cx="276" cy="80" r="5" fill={data.active ? "#22c55e" : "#d1d5db"}/>
-                  {data.trustedNetworks.length > 0 && (
-                    <g className="cursor-pointer" onClick={() => setActiveSection("trusted")}>
-                      <rect x="147" y="113" width="130" height="15" rx="4"
-                        fill={trustedActive ? "#faf5ff" : "white"} stroke="#c4b5fd" strokeWidth="0.8"/>
-                      <text x="212" y="123" fontSize="7.5" fill="#7c3aed" textAnchor="middle">
-                        {`Off on ${data.trustedNetworks.length} trusted network${data.trustedNetworks.length !== 1 ? "s" : ""}`}
-                      </text>
-                    </g>
+                  <text x="174" y="96" fontSize="11" fontWeight="600" fill="#1d4ed8">ZCC</text>
+                  <text x="174" y="110" fontSize="9" fill="#6b7280">All traffic intercepted</text>
+                  <circle cx="276" cy="84" r="5" fill={data.active ? "#22c55e" : "#d1d5db"}/>
+                  {data.deviceType && (
+                    <text x="174" y="124" fontSize="8" fill="#9ca3af">
+                      {`${data.deviceType.charAt(0).toUpperCase()}${data.deviceType.slice(1)} policy`}
+                    </text>
                   )}
 
-                  {/* ── Node: Forwarding Profile ─────────────────────────────── */}
-                  <g filter="url(#tp3-shadow)">
-                    <rect x="314" y="72" width="184" height="64" rx="8" fill="white" stroke={tc} strokeWidth="1.5"/>
+                  {/* ── 3 Network Context Nodes ───────────────────────────────── */}
+
+                  {/* On Trusted Network (y=27, h=46, center=50) */}
+                  <g filter="url(#tp3-shadow)" className="cursor-pointer"
+                    onClick={() => setNetworkContext("on")}
+                    onMouseEnter={() => setHovered("on-node")} onMouseLeave={() => setHovered(null)}>
+                    <rect x="314" y="27" width="172" height="46" rx="7"
+                      fill={networkContext === "on" ? "#faf5ff" : "white"}
+                      stroke={networkContext === "on" ? "#7c3aed" : hovered === "on-node" ? "#c4b5fd" : "#e5e7eb"}
+                      strokeWidth={networkContext === "on" ? 2 : 1.5}/>
                   </g>
-                  <line x1="323" y1="104" x2="337" y2="104" stroke="#9ca3af" strokeWidth="1.5"/>
-                  <line x1="337" y1="104" x2="345" y2="96" stroke="#9ca3af" strokeWidth="1.3"/>
-                  <line x1="337" y1="104" x2="345" y2="104" stroke="#9ca3af" strokeWidth="1.3"/>
-                  <line x1="337" y1="104" x2="345" y2="112" stroke="#9ca3af" strokeWidth="1.3"/>
-                  <text x="350" y="89" fontSize="11" fontWeight="600" fill="#374151">Forwarding Profile</text>
-                  <text x="350" y="103" fontSize="9" fill="#6b7280">{fpDisplay}</text>
-                  <rect x="350" y="108"
-                    width={data.tunnelMode.length * 5.4 + 8} height="16" rx="4"
-                    fill={data.tunnelMode === "Z-Tunnel 2.0" ? "#dcfce7" : data.tunnelMode === "Z-Tunnel 1.0" ? "#dbeafe" : data.tunnelMode === "Proxy" ? "#fef9c3" : "#f3f4f6"}
-                    stroke={data.tunnelMode === "Z-Tunnel 2.0" ? "#86efac" : data.tunnelMode === "Z-Tunnel 1.0" ? "#93c5fd" : data.tunnelMode === "Proxy" ? "#fde047" : "#e5e7eb"}
-                    strokeWidth="0.8"/>
-                  <text x="354" y="120" fontSize="8" fontWeight="600"
-                    fill={data.tunnelMode === "Z-Tunnel 2.0" ? "#15803d" : data.tunnelMode === "Z-Tunnel 1.0" ? "#1d4ed8" : data.tunnelMode === "Proxy" ? "#854d0e" : "#6b7280"}>
-                    {data.tunnelMode}
+                  <text x="330" y="46" fontSize="10" fontWeight="600"
+                    fill={networkContext === "on" ? "#5b21b6" : "#374151"} className="pointer-events-none">
+                    On Trusted Network
+                  </text>
+                  <text x="330" y="61" fontSize="8"
+                    fill={networkContext === "on" ? "#7c3aed" : "#9ca3af"} className="pointer-events-none">
+                    {ctxModeStr("on")}{ctxModeStr("on") ? ` · ${ctxTransStr("on")}` : ""}
                   </text>
 
-                  {/* ── Node: ZIA Cloud ──────────────────────────────────────── */}
-                  <g
-                    filter="url(#tp3-shadow)"
-                    className="cursor-pointer"
+                  {/* VPN Trusted Network (y=85, h=46, center=108) */}
+                  <g filter="url(#tp3-shadow)" className="cursor-pointer"
+                    onClick={() => setNetworkContext("vpn")}
+                    onMouseEnter={() => setHovered("vpn-node")} onMouseLeave={() => setHovered(null)}>
+                    <rect x="314" y="85" width="172" height="46" rx="7"
+                      fill={networkContext === "vpn" ? "#eef2ff" : "white"}
+                      stroke={networkContext === "vpn" ? "#4f46e5" : hovered === "vpn-node" ? "#a5b4fc" : "#e5e7eb"}
+                      strokeWidth={networkContext === "vpn" ? 2 : 1.5}/>
+                  </g>
+                  <text x="330" y="104" fontSize="10" fontWeight="600"
+                    fill={networkContext === "vpn" ? "#3730a3" : "#374151"} className="pointer-events-none">
+                    VPN Trusted Network
+                  </text>
+                  <text x="330" y="119" fontSize="8"
+                    fill={networkContext === "vpn" ? "#4f46e5" : "#9ca3af"} className="pointer-events-none">
+                    {ctxModeStr("vpn")}{ctxModeStr("vpn") ? ` · ${ctxTransStr("vpn")}` : ""}
+                  </text>
+
+                  {/* Off Trusted Network (y=143, h=46, center=166) */}
+                  <g filter="url(#tp3-shadow)" className="cursor-pointer"
+                    onClick={() => setNetworkContext("off")}
+                    onMouseEnter={() => setHovered("off-node")} onMouseLeave={() => setHovered(null)}>
+                    <rect x="314" y="143" width="172" height="46" rx="7"
+                      fill={networkContext === "off"
+                        ? (data.tunnelMode === "Z-Tunnel 2.0" ? "#f0fdf4" : data.tunnelMode === "Proxy" ? "#fefce8" : "#eff6ff")
+                        : "white"}
+                      stroke={networkContext === "off" ? tc : hovered === "off-node" ? "#d1d5db" : "#e5e7eb"}
+                      strokeWidth={networkContext === "off" ? 2 : 1.5}/>
+                  </g>
+                  <text x="330" y="162" fontSize="10" fontWeight="600" fill="#374151" className="pointer-events-none">
+                    Off Trusted Network
+                  </text>
+                  <text x="330" y="176" fontSize="8"
+                    fill={networkContext === "off" ? "#6b7280" : "#9ca3af"} className="pointer-events-none">
+                    {ctxModeStr("off")}{ctxModeStr("off") ? ` · ${ctxTransStr("off")}` : ""}
+                  </text>
+
+                  {/* ── Right side: ZIA Cloud (always visible) ───────────────── */}
+                  <g filter="url(#tp3-shadow)" className="cursor-pointer"
                     onClick={() => setActiveSection(tabs.find(t => t.group === "zia")?.key ?? "tunnel")}
-                    onMouseEnter={() => setHovered("zia")}
-                    onMouseLeave={() => setHovered(null)}
-                  >
-                    <rect x="556" y="8" width="296" height="52" rx="8"
+                    onMouseEnter={() => setHovered("zia")} onMouseLeave={() => setHovered(null)}>
+                    <rect x="524" y="14" width="296" height="48" rx="8"
                       fill={tunnelActive || hovered === "zia" ? "#f0fdf4" : "white"}
                       stroke={tunnelActive ? tc : "#86efac"}
                       strokeWidth={tunnelActive ? 2 : 1.5}/>
                   </g>
-                  <path d="M565 48 C562 48 561 45 563 42 C561 40 562 37 566 36 C566 32 571 29 576 31 C577 28 583 27 586 30 C591 28 596 32 594 37 C597 37 599 40 597 43 C598 46 596 49 593 49Z"
+                  <path d="M533 44 C530 44 529 41 531 38 C529 36 530 33 534 32 C534 28 539 25 544 27 C545 24 551 23 554 26 C559 24 564 28 562 33 C565 33 567 36 565 39 C566 42 564 45 561 45Z"
                     fill="none" stroke="#22c55e" strokeWidth="1.2" className="pointer-events-none"/>
-                  <text x="603" y="27" fontSize="11" fontWeight="600" fill="#15803d" className="pointer-events-none">ZIA Cloud</text>
-                  <text x="603" y="42" fontSize="9" fill="#6b7280" className="pointer-events-none">
+                  <text x="571" y="30" fontSize="10" fontWeight="600" fill="#15803d" className="pointer-events-none">ZIA Cloud</text>
+                  <text x="571" y="45" fontSize="8.5" fill="#6b7280" className="pointer-events-none">
                     {ZIA_MODE_LABEL[data.tunnelMode]}
                   </text>
                   {(data.pac.enablePac || data.pac.url) && (
                     <g className="cursor-pointer" onClick={(e) => { e.stopPropagation(); setActiveSection("pac"); }}>
-                      <rect x="820" y="10" width="30" height="16" rx="4" fill="#fef3c7" stroke="#fbbf24" strokeWidth="1"/>
-                      <text x="835" y="21" fontSize="8" fontWeight="600" fill="#92400e" textAnchor="middle" className="pointer-events-none">PAC</text>
+                      <rect x="788" y="16" width="30" height="16" rx="4" fill="#fef3c7" stroke="#fbbf24" strokeWidth="1"/>
+                      <text x="803" y="27" fontSize="8" fontWeight="600" fill="#92400e" textAnchor="middle" className="pointer-events-none">PAC</text>
                     </g>
                   )}
 
-                  {/* ── Node: ZPA Private Apps ───────────────────────────────── */}
-                  {data.zpaEnabled && (
-                    <g
-                      filter="url(#tp3-shadow)"
-                      className="cursor-pointer"
-                      onClick={() => setActiveSection("zpa")}
-                      onMouseEnter={() => setHovered("zpa")}
-                      onMouseLeave={() => setHovered(null)}
-                    >
-                      <rect x="556" y="80" width="296" height="46" rx="8"
-                        fill={zpaActive || hovered === "zpa" ? "#eef2ff" : "white"}
-                        stroke={zpaActive ? "#4f46e5" : "#a5b4fc"}
-                        strokeWidth={zpaActive ? 2 : 1.5}
-                        strokeDasharray="5,3"/>
-                      <rect x="565" y="95" width="14" height="11" rx="2" fill="none" stroke="#4f46e5" strokeWidth="1.3"/>
-                      <path d="M568 95 A4 4 0 0 1 576 95" fill="none" stroke="#4f46e5" strokeWidth="1.3"/>
-                      <circle cx="572" cy="101" r="1.5" fill="#4f46e5"/>
-                      <text x="586" y="99" fontSize="11" fontWeight="600" fill="#3730a3">ZPA Private Apps</text>
-                      <text x="586" y="113" fontSize="9" fill="#6b7280">ZPA-enrolled private access</text>
-                    </g>
-                  )}
+                  {/* ── Right side: ZPA (always visible when enabled) ────────── */}
+                  {data.zpaEnabled && (() => {
+                    const zpaCtxOn = ctxZpaOn(networkContext);
+                    const zpaBorderColor = zpaCtxOn ? (zpaActive ? "#4f46e5" : "#a5b4fc") : "#d1d5db";
+                    const zpaIconColor   = zpaCtxOn ? "#4f46e5" : "#d1d5db";
+                    const zpaLabelColor  = zpaCtxOn ? "#3730a3" : "#9ca3af";
+                    return (
+                      <g filter="url(#tp3-shadow)" className="cursor-pointer"
+                        onClick={() => setActiveSection("zpa")}
+                        onMouseEnter={() => setHovered("zpa")} onMouseLeave={() => setHovered(null)}>
+                        <rect x="524" y="73" width="296" height="48" rx="8"
+                          fill={zpaCtxOn && (zpaActive || hovered === "zpa") ? "#eef2ff" : "white"}
+                          stroke={zpaBorderColor}
+                          strokeWidth={zpaCtxOn && zpaActive ? 2 : 1.5}
+                          strokeDasharray="5,3"/>
+                        <rect x="533" y="89" width="14" height="11" rx="2" fill="none" stroke={zpaIconColor} strokeWidth="1.3"/>
+                        <path d="M536 89 A4 4 0 0 1 544 89" fill="none" stroke={zpaIconColor} strokeWidth="1.3"/>
+                        <circle cx="540" cy="95" r="1.5" fill={zpaIconColor}/>
+                        <text x="554" y="91" fontSize="10" fontWeight="600" fill={zpaLabelColor}>ZPA Private Apps</text>
+                        <text x="554" y="106" fontSize="8.5" fill={zpaCtxOn ? "#6b7280" : "#d1d5db"}>ZPA-enrolled private access</text>
+                        {zpaCtxOn && (
+                          <rect x="784" y="75" width="34" height="15" rx="4" fill="#eef2ff" stroke="#a5b4fc" strokeWidth="0.8"/>
+                        )}
+                        {zpaCtxOn && (
+                          <text x="801" y="85" fontSize="7.5" fill="#4f46e5" textAnchor="middle" className="pointer-events-none">active</text>
+                        )}
+                        {!zpaCtxOn && (
+                          <text x="801" y="85" fontSize="7.5" fill="#d1d5db" textAnchor="middle" className="pointer-events-none">off</text>
+                        )}
+                      </g>
+                    );
+                  })()}
 
-                  {/* ── Node: Local / Direct ─────────────────────────────────── */}
-                  <g
-                    filter="url(#tp3-shadow)"
-                    className="cursor-pointer"
+                  {/* ── Right side: Local / Direct (always visible) ──────────── */}
+                  <g filter="url(#tp3-shadow)" className="cursor-pointer"
                     onClick={() => setActiveSection(tabs.find(t => t.group === "bypass")?.key ?? "process")}
-                    onMouseEnter={() => setHovered("local")}
-                    onMouseLeave={() => setHovered(null)}
-                  >
-                    <rect x="556" y="146" width="296" height="56" rx="8"
+                    onMouseEnter={() => setHovered("local")} onMouseLeave={() => setHovered(null)}>
+                    <rect x="524" y="156" width="296" height="48" rx="8"
                       fill={bypassActive || hovered === "local" ? "#fff7ed" : "white"}
                       stroke={bypassActive ? "#f97316" : "#fdba74"}
                       strokeWidth={bypassActive ? 2 : 1.5}
                       strokeDasharray="5,3"/>
                   </g>
-                  <circle cx="570" cy="174" r="10" fill="none" stroke="#f97316" strokeWidth="1.3" className="pointer-events-none"/>
-                  <ellipse cx="570" cy="174" rx="5" ry="10" fill="none" stroke="#f97316" strokeWidth="1" className="pointer-events-none"/>
-                  <line x1="560" y1="174" x2="580" y2="174" stroke="#f97316" strokeWidth="1" className="pointer-events-none"/>
-                  <text x="587" y="168" fontSize="11" fontWeight="600" fill="#c2410c" className="pointer-events-none">Local / Direct</text>
-                  <text x="587" y="182" fontSize="8.5" fill="#6b7280" className="pointer-events-none">{localSubtitle}</text>
-                  {data.tunnelMode === "Z-Tunnel 1.0" && (
-                    <text x="587" y="196" fontSize="8" fill="#9ca3af" fontStyle="italic" className="pointer-events-none">
-                      Non-HTTP/S bypasses the tunnel
-                    </text>
-                  )}
+                  <circle cx="538" cy="180" r="9" fill="none" stroke="#f97316" strokeWidth="1.3" className="pointer-events-none"/>
+                  <ellipse cx="538" cy="180" rx="4.5" ry="9" fill="none" stroke="#f97316" strokeWidth="1" className="pointer-events-none"/>
+                  <line x1="529" y1="180" x2="547" y2="180" stroke="#f97316" strokeWidth="1" className="pointer-events-none"/>
+                  <text x="555" y="175" fontSize="10" fontWeight="600" fill="#c2410c" className="pointer-events-none">Local / Direct</text>
+                  <text x="555" y="189" fontSize="8" fill="#6b7280" className="pointer-events-none">{localSubtitle}</text>
 
                   {/* Legend */}
-                  <circle cx="10" cy="208" r="4" fill={data.active ? "#22c55e" : "#d1d5db"}/>
-                  <text x="18" y="212" fontSize="8.5" fill="#9ca3af">{data.active ? "Active" : "Inactive"}</text>
-                  <line x1="64" y1="208" x2="78" y2="208" stroke={tc} strokeWidth="2"/>
-                  <text x="82" y="212" fontSize="8.5" fill="#9ca3af">ZIA tunnel</text>
-                  <line x1="130" y1="208" x2="144" y2="208" stroke="#f97316" strokeWidth="2" strokeDasharray="4,3"/>
-                  <text x="148" y="212" fontSize="8.5" fill="#9ca3af">Local/direct</text>
+                  <circle cx="10" cy="207" r="4" fill={data.active ? "#22c55e" : "#d1d5db"}/>
+                  <text x="18" y="211" fontSize="8.5" fill="#9ca3af">{data.active ? "Active" : "Inactive"}</text>
+                  <line x1="64" y1="207" x2="78" y2="207" stroke={tc} strokeWidth="2"/>
+                  <text x="82" y="211" fontSize="8.5" fill="#9ca3af">ZIA tunnel</text>
+                  <line x1="130" y1="207" x2="144" y2="207" stroke="#f97316" strokeWidth="2" strokeDasharray="4,3"/>
+                  <text x="148" y="211" fontSize="8.5" fill="#9ca3af">Local/direct</text>
                   {data.zpaEnabled && (
                     <>
-                      <line x1="210" y1="208" x2="224" y2="208" stroke="#4f46e5" strokeWidth="2" strokeDasharray="5,3"/>
-                      <text x="228" y="212" fontSize="8.5" fill="#9ca3af">ZPA</text>
+                      <line x1="210" y1="207" x2="224" y2="207" stroke="#4f46e5" strokeWidth="2" strokeDasharray="5,3"/>
+                      <text x="228" y="211" fontSize="8.5" fill="#9ca3af">ZPA</text>
                     </>
-                  )}
-                  {data.tunnelZappTraffic && (
-                    <text x={data.zpaEnabled ? 264 : 210} y="212" fontSize="8.5" fill="#7c3aed">ZApp tunneled</text>
                   )}
                 </svg>
               </div>
 
-              {/* ── Targeting bar ───────────────────────────────────────────── */}
+              {/* ── Targeting bar ─────────────────────────────────────────────── */}
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs px-1">
                 {data.deviceType && (
                   <span className="flex items-center gap-1.5">
@@ -6951,22 +7143,17 @@ function AppProfileVisualizer({
                 </span>
               </div>
 
-              {/* ── Tab bar ─────────────────────────────────────────────────── */}
+              {/* ── Tab bar + detail panels (always visible) ─────────────────── */}
               {tabs.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {tabs.map(tab => (
-                    <button
-                      key={tab.key}
-                      onClick={() => setActiveSection(tab.key)}
-                      className={tabBtnClass(tab.key, tab.group)}
-                    >
+                    <button key={tab.key} onClick={() => setActiveSection(tab.key)} className={tabBtnClass(tab.key, tab.group)}>
                       {tab.label}{tab.count !== null ? ` (${tab.count})` : ""}
                     </button>
                   ))}
                 </div>
               )}
 
-              {/* ── Detail panels ────────────────────────────────────────────── */}
               {activeSection === "tunnel" && data.tunnelRoutes.length > 0 && (
                 <div className="overflow-x-auto rounded border border-gray-100">
                   <table className="min-w-full text-sm divide-y divide-gray-200">
@@ -7023,9 +7210,9 @@ function AppProfileVisualizer({
                 <div className="bg-indigo-50 border border-indigo-200 rounded p-4 space-y-1">
                   <p className="text-sm font-medium text-indigo-800">ZPA Private Access Configured</p>
                   <p className="text-xs text-indigo-700">
-                    This forwarding profile enables ZPA access. Private application traffic from
-                    ZPA-enrolled devices is routed through a dedicated ZPA tunnel, separate from
-                    ZIA web traffic. Segment and application policies are managed in the ZPA portal.
+                    Private application traffic from ZPA-enrolled devices routes through a dedicated ZPA
+                    tunnel, separate from ZIA web traffic. Segment and application policies are managed
+                    in the ZPA portal.
                   </p>
                 </div>
               )}
@@ -7070,22 +7257,6 @@ function AppProfileVisualizer({
                     </tbody>
                   </table>
                 </div>
-              )}
-
-              {activeSection === "vpn" && data.vpnGatewayBypasses.length > 0 && (
-                <ul className="list-disc list-inside space-y-0.5">
-                  {data.vpnGatewayBypasses.map((g, i) => (
-                    <li key={i} className="font-mono text-xs text-gray-700">{g.gateway}</li>
-                  ))}
-                </ul>
-              )}
-
-              {activeSection === "trusted" && data.trustedNetworks.length > 0 && (
-                <ul className="list-disc list-inside space-y-0.5">
-                  {data.trustedNetworks.map((n, i) => (
-                    <li key={i} className="text-xs text-gray-700">{typeof n === "string" ? n : JSON.stringify(n)}</li>
-                  ))}
-                </ul>
               )}
 
               {activeSection === "pac" && (
@@ -7377,12 +7548,7 @@ function ZccTab({
           />
         </Accordion>
         <Accordion title="Forwarding Profiles" isOpen={!!open.forwardingProfiles} onToggle={() => toggle("forwardingProfiles")}>
-          <ZccReadOnlySection<ZccForwardingProfile>
-            queryKey={["zcc-forwarding-profiles", tenant.name]}
-            queryFn={() => listForwardingProfiles(tenant.name)}
-            isOpen={!!open.forwardingProfiles}
-            emptyMessage="No forwarding profiles"
-          />
+          <ForwardingProfilesSection tenantName={tenant.name} isOpen={!!open.forwardingProfiles} />
         </Accordion>
       </SectionGroup>
 
@@ -7442,6 +7608,357 @@ function ZccTab({
           <ZccWebPrivacySection tenantName={tenant.name} isOpen={!!open.webPrivacy} />
         </Accordion>
       </SectionGroup>
+
+      {/* Config Snapshots */}
+      <SectionGroup title="Config Snapshots" isOpen={!!groups.snapshots} onToggle={() => toggleGroup("snapshots")}>
+        <Accordion title="Snapshots" isOpen={!!open.snapshots} onToggle={() => toggle("snapshots")}>
+          <ZccSnapshotsSection tenant={tenant} isOpen={!!open.snapshots} />
+        </Accordion>
+      </SectionGroup>
+    </div>
+  );
+}
+
+// ── ZCC Restore Modal ─────────────────────────────────────────────────────────
+
+function ZccRestoreModal({
+  tenant,
+  snapshot,
+  onClose,
+}: {
+  tenant: Tenant;
+  snapshot: ZccSnapshot;
+  onClose: () => void;
+}) {
+  const [dryRun, setDryRun] = useState(true);
+  const [targetTenant, setTargetTenant] = useState("");
+  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+  const [result, setResult] = useState<ZccRestoreResponse | null>(null);
+
+  const diffQuery = useQuery<ZccDiffEntry[]>({
+    queryKey: ["zcc-snapshot-diff", tenant.name, snapshot.id],
+    queryFn: () => diffZccSnapshot(tenant.name, snapshot.id),
+  });
+
+  const restorableDiff = (diffQuery.data ?? []).filter((e) => e.restorable);
+
+  const allRestorableTypes = restorableDiff.map((e) => e.resource_type);
+
+  const toggleType = (t: string) =>
+    setSelectedTypes((prev) =>
+      prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]
+    );
+
+  const selectAll = () => setSelectedTypes([...allRestorableTypes]);
+  const clearAll = () => setSelectedTypes([]);
+
+  const restoreMut = useMutation({
+    mutationFn: () =>
+      restoreZccSnapshot(tenant.name, snapshot.id, {
+        resource_types: selectedTypes.length > 0 ? selectedTypes : undefined,
+        dry_run: dryRun,
+        target_tenant: targetTenant.trim() || undefined,
+      }),
+    onSuccess: (data) => setResult(data),
+  });
+
+  const ACTION_COLOR: Record<string, string> = {
+    created: "text-green-700",
+    updated: "text-blue-700",
+    deleted: "text-red-700",
+    skipped: "text-gray-500",
+    unrestorable: "text-yellow-700",
+    failed: "text-red-700",
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-3 border-b">
+          <h2 className="text-base font-semibold text-gray-900">
+            Restore: {snapshot.label || "Snapshot"} ({snapshot.resource_count} resources)
+          </h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+          {!result ? (
+            <>
+              {diffQuery.isLoading && <LoadingSpinner />}
+              {diffQuery.error && (
+                <ErrorMessage message={diffQuery.error instanceof Error ? diffQuery.error.message : "Failed to load diff"} />
+              )}
+              {diffQuery.data && (
+                <div className="space-y-3">
+                  <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                    <table className="min-w-full text-sm divide-y divide-gray-100">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Added</th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Removed</th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Changed</th>
+                          <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Unchanged</th>
+                          <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Restore?</th>
+                          <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Include</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-100">
+                        {diffQuery.data.map((e) => (
+                          <tr key={e.resource_type}>
+                            <td className="px-3 py-2 font-mono text-xs text-gray-700">{e.resource_type}</td>
+                            <td className="px-3 py-2 text-right text-yellow-600">{e.added_since > 0 ? e.added_since : "—"}</td>
+                            <td className="px-3 py-2 text-right text-red-600">{e.removed_since > 0 ? e.removed_since : "—"}</td>
+                            <td className="px-3 py-2 text-right text-blue-600">{e.changed_since > 0 ? e.changed_since : "—"}</td>
+                            <td className="px-3 py-2 text-right text-gray-500">{e.unchanged}</td>
+                            <td className="px-3 py-2 text-center">
+                              {e.restorable
+                                ? <span className="text-xs text-green-700 font-medium">Yes</span>
+                                : <span className="text-xs text-gray-400">No</span>}
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              {e.restorable && (
+                                <input
+                                  type="checkbox"
+                                  checked={selectedTypes.includes(e.resource_type)}
+                                  onChange={() => toggleType(e.resource_type)}
+                                  className="h-4 w-4 accent-zs-500"
+                                />
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {allRestorableTypes.length > 0 && (
+                    <div className="flex gap-2 text-xs">
+                      <button onClick={selectAll} className="text-zs-600 hover:text-zs-800">Select all</button>
+                      <span className="text-gray-300">|</span>
+                      <button onClick={clearAll} className="text-gray-500 hover:text-gray-700">Clear</button>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Target tenant (leave blank for same tenant)
+                    </label>
+                    <input
+                      type="text"
+                      value={targetTenant}
+                      onChange={(e) => setTargetTenant(e.target.value)}
+                      placeholder="tenant name"
+                      className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+                    />
+                  </div>
+
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={dryRun}
+                      onChange={(e) => setDryRun(e.target.checked)}
+                      className="h-4 w-4 accent-zs-500"
+                    />
+                    Dry run (preview only — no changes applied)
+                  </label>
+                </div>
+              )}
+              {restoreMut.isError && (
+                <ErrorMessage message={restoreMut.error instanceof Error ? restoreMut.error.message : "Restore failed"} />
+              )}
+            </>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm font-medium text-gray-700">
+                {result.dry_run ? "Dry run complete" : "Restore complete"} —{" "}
+                Created: {result.summary.created}, Updated: {result.summary.updated}, Deleted: {result.summary.deleted},
+                Skipped: {result.summary.skipped}, Failed: {result.summary.failed}, Unrestorable: {result.summary.unrestorable}
+              </p>
+              <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                <table className="min-w-full text-sm divide-y divide-gray-100">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                      <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">OK</th>
+                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-100">
+                    {result.results.map((r, i) => (
+                      <tr key={i}>
+                        <td className="px-3 py-2 font-mono text-xs text-gray-700">{r.resource_type}</td>
+                        <td className={`px-3 py-2 text-xs font-medium ${ACTION_COLOR[r.action] ?? ""}`}>{r.action}</td>
+                        <td className="px-3 py-2 text-xs text-gray-600">{r.name ?? "—"}</td>
+                        <td className="px-3 py-2 text-center">{r.success ? "✓" : "✗"}</td>
+                        <td className="px-3 py-2 text-xs text-gray-500">{r.reason ?? ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 px-5 py-3 border-t">
+          {!result ? (
+            <>
+              <button
+                onClick={onClose}
+                className="px-3 py-1.5 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => restoreMut.mutate()}
+                disabled={restoreMut.isPending || selectedTypes.length === 0}
+                className="px-3 py-1.5 text-sm rounded-md bg-zs-500 hover:bg-zs-600 text-white disabled:opacity-60"
+              >
+                {restoreMut.isPending ? "Running..." : dryRun ? "Run Dry Run" : "Restore"}
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={onClose}
+              className="px-3 py-1.5 text-sm rounded-md bg-zs-500 hover:bg-zs-600 text-white"
+            >
+              Close
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── ZCC Snapshots Section ─────────────────────────────────────────────────────
+
+function ZccSnapshotsSection({ tenant, isOpen }: { tenant: Tenant; isOpen: boolean }) {
+  const qc = useQueryClient();
+  const [labelInput, setLabelInput] = useState("");
+  const [noteInput, setNoteInput] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<ZccSnapshot | null>(null);
+
+  const { data, isLoading, error } = useQuery<ZccSnapshot[]>({
+    queryKey: ["zcc-snapshots", tenant.name],
+    queryFn: () => listZccSnapshots(tenant.name),
+    enabled: isOpen,
+  });
+
+  const createMut = useMutation({
+    mutationFn: () =>
+      createZccSnapshot(tenant.name, {
+        label: labelInput.trim() || "Snapshot",
+        note: noteInput.trim() || undefined,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["zcc-snapshots", tenant.name] });
+      setLabelInput("");
+      setNoteInput("");
+    },
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => deleteZccSnapshot(tenant.name, id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["zcc-snapshots", tenant.name] });
+      setDeleteTarget(null);
+    },
+  });
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error instanceof Error ? error.message : "Failed to load"} />;
+
+  const snaps = data ?? [];
+
+  return (
+    <div className="space-y-4">
+      {deleteTarget !== null && (
+        <ConfirmDialog
+          title="Delete Snapshot"
+          message="Delete this snapshot? This cannot be undone."
+          onConfirm={() => deleteMut.mutate(deleteTarget)}
+          onCancel={() => setDeleteTarget(null)}
+          destructive
+        />
+      )}
+
+      {restoreTarget && (
+        <ZccRestoreModal
+          tenant={tenant}
+          snapshot={restoreTarget}
+          onClose={() => setRestoreTarget(null)}
+        />
+      )}
+
+      <div className="space-y-2">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Label</label>
+          <input
+            type="text"
+            value={labelInput}
+            onChange={(e) => setLabelInput(e.target.value)}
+            placeholder="e.g. pre-change baseline"
+            className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Note (optional)</label>
+          <input
+            type="text"
+            value={noteInput}
+            onChange={(e) => setNoteInput(e.target.value)}
+            placeholder=""
+            className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+          />
+        </div>
+        <button
+          onClick={() => createMut.mutate()}
+          disabled={createMut.isPending || !labelInput.trim()}
+          className="px-3 py-1.5 text-xs rounded-md bg-zs-500 hover:bg-zs-600 text-white disabled:opacity-60"
+        >
+          {createMut.isPending ? "Saving..." : "Save Snapshot"}
+        </button>
+      </div>
+      {createMut.isError && (
+        <ErrorMessage message={createMut.error instanceof Error ? createMut.error.message : "Failed to save"} />
+      )}
+
+      {snaps.length === 0 ? (
+        <p className="text-sm text-gray-400">No snapshots saved yet.</p>
+      ) : (
+        <div className="divide-y divide-gray-100 border border-gray-200 rounded-lg overflow-hidden">
+          {snaps.map((s: ZccSnapshot) => (
+            <div key={s.id} className="flex items-center justify-between px-4 py-3 bg-white">
+              <div>
+                <p className="text-sm font-medium text-gray-900">{s.label || <span className="italic text-gray-400">Unlabeled</span>}</p>
+                <p className="text-xs text-gray-400">
+                  {formatDateTime(s.created_at)} · {s.resource_count} resources
+                  {s.note && <span className="ml-2 italic text-gray-400">{s.note}</span>}
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setRestoreTarget(s)}
+                  className="text-xs text-zs-600 hover:text-zs-800"
+                >
+                  Restore
+                </button>
+                <button
+                  onClick={() => setDeleteTarget(s.id)}
+                  className="text-xs text-red-500 hover:text-red-700"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -17,9 +17,33 @@ export interface ZccTrustedNetwork {
   [key: string]: unknown;
 }
 
+export interface ZccFpAction {
+  action_type?: number;
+  enable_packet_tunnel?: number;
+  primary_transport?: number;
+  system_proxy?: number;
+  system_proxy_data?: { enable_proxy_server?: number; [key: string]: unknown };
+  network_type?: number;
+  [key: string]: unknown;
+}
+
+export interface ZccFpZpaAction {
+  action_type?: number;
+  primary_transport?: number;
+  network_type?: number;
+  [key: string]: unknown;
+}
+
 export interface ZccForwardingProfile {
   id?: string;
   name?: string;
+  active?: string | number | boolean;
+  trusted_networks?: string[];
+  trusted_network_ids?: string[];
+  predefined_trusted_networks?: boolean;
+  predefined_tn_all?: boolean;
+  forwarding_profile_actions?: ZccFpAction[];
+  forwarding_profile_zpa_actions?: ZccFpZpaAction[];
   [key: string]: unknown;
 }
 
@@ -223,3 +247,96 @@ export const fetchTrafficProfile = (
   policyId: string,
 ): Promise<TrafficProfile> =>
   apiFetch<TrafficProfile>(`/api/v1/zcc/${encodeURIComponent(tenantName)}/traffic-profile/${encodeURIComponent(policyId)}`);
+
+// ── Snapshot types and API ───────────────────────────────────────────────────
+
+export interface ZccSnapshot {
+  id: number;
+  tenant_id: number;
+  label: string;
+  note: string | null;
+  created_at: string;
+  resource_count: number;
+}
+
+export interface ZccDiffEntry {
+  resource_type: string;
+  added_since: number;
+  removed_since: number;
+  changed_since: number;
+  unchanged: number;
+  restorable: boolean;
+}
+
+export interface ZccRestoreResult {
+  resource_type: string;
+  action: string;
+  name: string | null;
+  success: boolean;
+  reason: string | null;
+}
+
+export interface ZccRestoreSummary {
+  created: number;
+  updated: number;
+  deleted: number;
+  skipped: number;
+  failed: number;
+  unrestorable: number;
+}
+
+export interface ZccRestoreResponse {
+  snapshot_id: number;
+  dry_run: boolean;
+  results: ZccRestoreResult[];
+  summary: ZccRestoreSummary;
+}
+
+export interface ZccSnapshotCreateBody {
+  label: string;
+  note?: string;
+}
+
+export interface ZccSnapshotRestoreBody {
+  resource_types?: string[];
+  dry_run?: boolean;
+  target_tenant?: string;
+}
+
+export const listZccSnapshots = (tenant: string): Promise<ZccSnapshot[]> =>
+  apiFetch<ZccSnapshot[]>(`${base(tenant)}/snapshots`);
+
+export const createZccSnapshot = (
+  tenant: string,
+  body: ZccSnapshotCreateBody
+): Promise<ZccSnapshot> =>
+  apiFetch<ZccSnapshot>(`${base(tenant)}/snapshots`, {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
+  });
+
+export const deleteZccSnapshot = (
+  tenant: string,
+  snapshotId: number
+): Promise<{ deleted: boolean }> =>
+  apiFetch<{ deleted: boolean }>(`${base(tenant)}/snapshots/${snapshotId}`, {
+    method: "DELETE",
+  });
+
+export const diffZccSnapshot = (
+  tenant: string,
+  snapshotId: number
+): Promise<ZccDiffEntry[]> =>
+  apiFetch<ZccDiffEntry[]>(`${base(tenant)}/snapshots/${snapshotId}/diff`);
+
+export const restoreZccSnapshot = (
+  tenant: string,
+  snapshotId: number,
+  body: ZccSnapshotRestoreBody
+): Promise<ZccRestoreResponse> =>
+  apiFetch<ZccRestoreResponse>(`${base(tenant)}/snapshots/${snapshotId}/restore`, {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
+  });
