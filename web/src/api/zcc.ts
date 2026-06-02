@@ -153,6 +153,11 @@ export const listProcessApps = (tenant: string): Promise<ZccProcessApp[]> =>
 
 // ── Traffic Profile types and fetch ─────────────────────────────────────────
 
+export interface PolicyTarget {
+  id: string;
+  name: string;
+}
+
 export interface PortBypass {
   port: string;
   protocol: string;
@@ -205,6 +210,10 @@ export interface TrafficProfile {
   tunnelZappTraffic: boolean;
   trustedNetworks: string[];
   zpaEnabled: boolean;
+  deviceType: string | null;
+  targetUsers: PolicyTarget[];
+  targetGroups: PolicyTarget[];
+  targetDepartments: PolicyTarget[];
   rawPolicySnippet: Record<string, unknown>;
   rawForwardingSnippet: Record<string, unknown> | null;
 }

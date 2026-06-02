@@ -38,45 +38,49 @@ def _as_list(val) -> list:
 
 
 def _derive_tunnel_mode(raw_fp: Optional[Dict]) -> str:
-    """Derive tunnel mode string from forwarding profile raw_config."""
+    """Derive tunnel mode string from forwarding profile raw_config.
+
+    Handles both camelCase (onNetPolicy from direct HTTP) and snake_case
+    (forwarding_profile DB records from the old SDK-based import).
+    """
     if not raw_fp:
         return "Unknown"
-    actions = raw_fp.get("forwarding_profile_actions") or []
+    actions = (raw_fp.get("forwardingProfileActions") or
+               raw_fp.get("forwarding_profile_actions") or [])
     if not actions:
         return "Unknown"
     first = actions[0] if isinstance(actions[0], dict) else {}
-    if first.get("enable_packet_tunnel"):
+    if first.get("enablePacketTunnel") or first.get("enable_packet_tunnel"):
         return "Z-Tunnel 2.0"
-    if first.get("system_proxy"):
+    if first.get("systemProxy") or first.get("system_proxy"):
         return "Proxy"
-    spd = first.get("system_proxy_data") or {}
-    if spd.get("enable_proxy_server"):
+    spd = first.get("systemProxyData") or first.get("system_proxy_data") or {}
+    if spd.get("enableProxyServer") or spd.get("enable_proxy_server"):
         return "Proxy"
     return "Z-Tunnel 1.0"
 
 
-# ZPA indicator field names that can appear in a forwarding profile action.
-# Excludes password fields.  If any is present and truthy, ZPA is enabled.
-_ZPA_FIELDS = frozenset({
-    "enable_zpa", "zpa_gw_addr", "zpa_gateway", "zpa_enabled",
-    "zpa_tunnel", "enable_zpa_gw", "zpa_gw_config",
-})
-
-
 def _detect_zpa(raw_fp: Optional[Dict]) -> bool:
-    """Return True when the forwarding profile indicates ZPA access is configured."""
+    """Return True when the forwarding profile indicates ZPA access is configured.
+
+    Checks forwardingProfileZpaActions (camelCase from direct HTTP) or
+    forwarding_profile_zpa_actions (snake_case from legacy SDK import).
+    ZPA is active when any action has actionType/action_type that is truthy.
+    """
     if not raw_fp:
         return False
-    for action in (raw_fp.get("forwarding_profile_actions") or []):
-        if not isinstance(action, dict):
-            continue
-        for k, v in action.items():
-            if k.lower() in _ZPA_FIELDS and v:
+    # camelCase ZPA actions (onNetPolicy from direct HTTP)
+    for action in (raw_fp.get("forwardingProfileZpaActions") or []):
+        if isinstance(action, dict):
+            at = action.get("actionType") or action.get("action_type") or 0
+            if at and at != 0:
                 return True
-    # Also accept a top-level key on the profile itself
-    for k, v in raw_fp.items():
-        if k.lower() in _ZPA_FIELDS and v:
-            return True
+    # snake_case ZPA actions (legacy forwarding_profile DB record)
+    for action in (raw_fp.get("forwarding_profile_zpa_actions") or []):
+        if isinstance(action, dict):
+            at = action.get("action_type") or action.get("actionType") or 0
+            if at and at != 0:
+                return True
     return False
 
 
@@ -108,6 +112,29 @@ def _extract_process_bypasses(raw_policy: Dict) -> List[Dict]:
     return bypasses
 
 
+def _extract_policy_targets(raw_policy: Dict, field: str) -> List[Dict]:
+    """Extract user/group/department targeting objects from a web policy."""
+    items = raw_policy.get(field) or []
+    if not isinstance(items, list):
+        return []
+    result = []
+    for item in items:
+        if isinstance(item, dict):
+            name = str(
+                item.get("name") or item.get("userName") or item.get("groupName") or
+                item.get("deptName") or item.get("departmentName") or ""
+            )
+            id_val = str(
+                item.get("id") or item.get("userId") or item.get("groupId") or
+                item.get("deptId") or ""
+            )
+            if name or id_val:
+                result.append({"id": id_val, "name": name})
+        elif isinstance(item, str) and item:
+            result.append({"id": item, "name": item})
+    return result
+
+
 def _build_traffic_profile(
     raw_policy: Dict,
     raw_fp: Optional[Dict],
@@ -134,13 +161,17 @@ def _build_traffic_profile(
     enable_pac = False
     custom_pac_len = None
     if raw_fp:
-        actions = raw_fp.get("forwarding_profile_actions") or []
+        actions = (raw_fp.get("forwardingProfileActions") or
+                   raw_fp.get("forwarding_profile_actions") or [])
         if actions and isinstance(actions[0], dict):
             first = actions[0]
-            spd = first.get("system_proxy_data") or {}
-            fp_pac_url = spd.get("pac_u_r_l") or spd.get("pac_url") or None
-            enable_pac = bool(spd.get("enable_p_a_c") or spd.get("enable_pac"))
-            custom_pac = first.get("custom_pac")
+            spd = (first.get("systemProxyData") or
+                   first.get("system_proxy_data") or {})
+            fp_pac_url = (spd.get("pacURL") or spd.get("pac_u_r_l") or
+                          spd.get("pac_url") or None)
+            enable_pac = bool(spd.get("enablePAC") or spd.get("enable_p_a_c") or
+                              spd.get("enable_pac"))
+            custom_pac = first.get("customPac") or first.get("custom_pac")
             if custom_pac:
                 custom_pac_len = len(str(custom_pac))
 
@@ -153,7 +184,8 @@ def _build_traffic_profile(
         "ziaPacFileName": zia_pac_file_name,
     }
 
-    # Port bypasses — sourcePortBasedBypasses is a list of objects
+    # Port bypasses — sourcePortBasedBypasses may be a list of dicts or a
+    # comma-separated string of "port:protocol" tokens (e.g. "3389:*,443:TCP").
     port_bypasses = []
     for pb in _as_list(pe.get("sourcePortBasedBypasses")):
         if isinstance(pb, dict):
@@ -161,6 +193,12 @@ def _build_traffic_profile(
                 "port": str(pb.get("port", "")),
                 "protocol": str(pb.get("protocol", pb.get("proto", ""))),
             })
+        elif isinstance(pb, str) and pb:
+            if ":" in pb:
+                port, proto = pb.split(":", 1)
+                port_bypasses.append({"port": port.strip(), "protocol": proto.strip()})
+            else:
+                port_bypasses.append({"port": pb.strip(), "protocol": "*"})
 
     # VPN gateway bypasses — vpnGateways may be a comma-separated string
     vpn_bypasses = []
@@ -177,9 +215,9 @@ def _build_traffic_profile(
     for cidr in _as_list(pe.get("packetTunnelExcludeList")):
         tunnel_routes.append({"cidr": cidr, "direction": "exclude", "ipVersion": "ipv4"})
     for cidr in _as_list(pe.get("packetTunnelIncludeListForIPv6")):
-        tunnel_routes.append({"cidr": cidr, "direction": "include", "ipVersion": "ipv6"})
+        tunnel_routes.append({"cidr": cidr.strip("[]"), "direction": "include", "ipVersion": "ipv6"})
     for cidr in _as_list(pe.get("packetTunnelExcludeListForIPv6")):
-        tunnel_routes.append({"cidr": cidr, "direction": "exclude", "ipVersion": "ipv6"})
+        tunnel_routes.append({"cidr": cidr.strip("[]"), "direction": "exclude", "ipVersion": "ipv6"})
 
     # DNS routes — also comma-separated strings
     dns_routes = []
@@ -191,10 +229,17 @@ def _build_traffic_profile(
     # Process bypasses extracted from platform sub-policies
     process_bypasses = _extract_process_bypasses(raw_policy)
 
-    # Trusted networks from forwarding profile (snake_case keys from as_dict())
+    # Trusted networks from forwarding profile (camelCase from direct HTTP or snake_case legacy)
     trusted_networks: List[str] = []
     if raw_fp:
-        trusted_networks = raw_fp.get("trusted_networks") or []
+        trusted_networks = (raw_fp.get("trustedNetworks") or
+                            raw_fp.get("trusted_networks") or [])
+
+    # Policy targeting — users/groups/departments may be empty (means all users)
+    device_type = raw_policy.get("device_type") or None
+    target_users = _extract_policy_targets(raw_policy, "users")
+    target_groups = _extract_policy_targets(raw_policy, "groups")
+    target_departments = _extract_policy_targets(raw_policy, "departments")
 
     # Strip password fields from rawPolicySnippet
     raw_snippet = _strip_passwords(pe)
@@ -221,6 +266,10 @@ def _build_traffic_profile(
         "tunnelZappTraffic": bool(raw_policy.get("tunnelZappTraffic")),
         "trustedNetworks": trusted_networks,
         "zpaEnabled": zpa_enabled,
+        "deviceType": device_type,
+        "targetUsers": target_users,
+        "targetGroups": target_groups,
+        "targetDepartments": target_departments,
         "rawPolicySnippet": raw_snippet,
         "rawForwardingSnippet": raw_fp_snippet,
     }
@@ -438,16 +487,31 @@ def get_traffic_profile(
             raise HTTPException(status_code=404, detail="App profile not found")
 
         raw_policy = policy_row.raw_config or {}
-        fp_id = str(raw_policy.get("forwardingProfileId", ""))
-        fp_row = None
-        if fp_id:
-            fp_row = (
-                session.query(ZCCResource)
-                .filter_by(tenant_id=t.id, resource_type="forwarding_profile",
-                           zcc_id=fp_id, is_deleted=False)
-                .first()
-            )
-        raw_fp = fp_row.raw_config if fp_row else None
+        # onNetPolicy is the forwarding profile embedded inline by the direct HTTP
+        # import (list_web_policies via _direct_get). Use it directly when present.
+        raw_fp = raw_policy.get("onNetPolicy") or None
+        if not raw_fp:
+            # Legacy fallback: look up forwarding_profile by ID for records imported
+            # before the switch to _direct_get (which embeds onNetPolicy).
+            fp_id = str(raw_policy.get("forwardingProfileId", ""))
+            if fp_id:
+                fp_id_candidates = [fp_id]
+                if fp_id.endswith(".0"):
+                    fp_id_candidates.append(fp_id[:-2])
+                else:
+                    fp_id_candidates.append(fp_id + ".0")
+                fp_row = (
+                    session.query(ZCCResource)
+                    .filter(
+                        ZCCResource.tenant_id == t.id,
+                        ZCCResource.resource_type == "forwarding_profile",
+                        ZCCResource.zcc_id.in_(fp_id_candidates),
+                        ZCCResource.is_deleted == False,  # noqa: E712
+                    )
+                    .first()
+                )
+                if fp_row:
+                    raw_fp = fp_row.raw_config
 
         # Cross-reference PAC URL against ZIA pac_file resources
         pac_url = raw_policy.get("pac_url") or raw_policy.get("pacUrl") or ""

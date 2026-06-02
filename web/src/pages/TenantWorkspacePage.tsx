@@ -1,4 +1,4 @@
-import { useState, useEffect, ReactNode } from "react";
+import { useState, useEffect, ReactNode, Fragment } from "react";
 import { formatDateTime, formatDate } from "../utils/time";
 import { Link, useParams, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -6575,6 +6575,21 @@ function ZdxTab({ tenant }: { tenant: Tenant }) {
 
 // ── App Profile Visualizer ────────────────────────────────────────────────────
 
+const OS_DISPLAY: Record<string, { label: string; cls: string }> = {
+  windows: { label: "Windows",  cls: "bg-blue-50 text-blue-700" },
+  macos:   { label: "macOS",    cls: "bg-gray-100 text-gray-700" },
+  ios:     { label: "iOS",      cls: "bg-indigo-50 text-indigo-700" },
+  android: { label: "Android",  cls: "bg-green-50 text-green-700" },
+  linux:   { label: "Linux",    cls: "bg-yellow-50 text-yellow-700" },
+};
+
+function OsBadge({ os }: { os: string }) {
+  const d = OS_DISPLAY[os.toLowerCase()] ?? { label: os, cls: "bg-gray-50 text-gray-600" };
+  return (
+    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${d.cls}`}>{d.label}</span>
+  );
+}
+
 function AppProfileVisualizer({
   tenantName,
   policyId,
@@ -6680,7 +6695,7 @@ function AppProfileVisualizer({
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b">
           <div>
-            <h2 className="text-base font-semibold text-gray-900">Traffic Profile</h2>
+            <h2 className="text-base font-semibold text-gray-900">ZCC Agent — Traffic Profile</h2>
             <p className="text-xs text-gray-500 mt-0.5">{policyName}</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
@@ -6908,6 +6923,34 @@ function AppProfileVisualizer({
                 </svg>
               </div>
 
+              {/* ── Targeting bar ───────────────────────────────────────────── */}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs px-1">
+                {data.deviceType && (
+                  <span className="flex items-center gap-1.5">
+                    <span className="text-gray-500 font-medium">OS:</span>
+                    <OsBadge os={data.deviceType} />
+                  </span>
+                )}
+                <span className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-gray-500 font-medium">Targets:</span>
+                  {data.targetUsers.length === 0 && data.targetGroups.length === 0 && data.targetDepartments.length === 0 ? (
+                    <span className="text-gray-400">All users</span>
+                  ) : (
+                    <>
+                      {data.targetUsers.map((u, i) => (
+                        <span key={i} className="px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700">{u.name || u.id}</span>
+                      ))}
+                      {data.targetGroups.map((g, i) => (
+                        <span key={i} className="px-1.5 py-0.5 rounded-full bg-green-50 text-green-700">Group: {g.name || g.id}</span>
+                      ))}
+                      {data.targetDepartments.map((d, i) => (
+                        <span key={i} className="px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-700">Dept: {d.name || d.id}</span>
+                      ))}
+                    </>
+                  )}
+                </span>
+              </div>
+
               {/* ── Tab bar ─────────────────────────────────────────────────── */}
               {tabs.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
@@ -7084,6 +7127,7 @@ function AppProfilesSection({
   isOpen: boolean;
 }) {
   const [visualizerPolicy, setVisualizerPolicy] = useState<{ id: string; name: string } | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const { data, isLoading, error } = useQuery<ZccWebPolicy[]>({
     queryKey: ["zcc-web-policies", tenantName],
@@ -7101,30 +7145,190 @@ function AppProfilesSection({
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead className="bg-gray-50">
             <tr>
+              <th className="w-8 px-2 py-2"></th>
               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">OS</th>
               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 bg-white">
-            {data.map((policy: ZccWebPolicy, i: number) => (
-              <tr key={policy.id ?? i}>
-                <td className="px-3 py-2 font-mono text-xs text-gray-500">{policy.id ?? "-"}</td>
-                <td className="px-3 py-2 text-gray-900">{policy.name ?? "-"}</td>
-                <td className="px-3 py-2">
-                  {policy.id && (
-                    <button
-                      onClick={() => setVisualizerPolicy({ id: String(policy.id), name: policy.name ?? String(policy.id) })}
-                      className="text-xs text-zs-600 hover:text-zs-800 underline underline-offset-2 transition-colors"
-                    >
-                      View Traffic Profile
-                    </button>
+            {data.map((policy: ZccWebPolicy, i: number) => {
+              const rowKey = String(policy.id ?? i);
+              const isExpanded = expandedId === rowKey;
+
+              // Derived helpers from raw_config fields
+              const onNetPolicy = policy.onNetPolicy as Record<string, unknown> | undefined;
+              const fpActions = (onNetPolicy?.forwardingProfileActions as Array<Record<string, unknown>>) ?? [];
+              const zpaActions = (onNetPolicy?.forwardingProfileZpaActions as Array<Record<string, unknown>>) ?? [];
+              const tunnelMode = (() => {
+                if (!fpActions.length) return null;
+                const f = fpActions[0];
+                if (f.enablePacketTunnel && f.enablePacketTunnel !== 0) return "Z-Tunnel 2.0";
+                if (f.systemProxy && f.systemProxy !== 0) return "Proxy";
+                return "Z-Tunnel 1.0";
+              })();
+              const zpaEnabled = zpaActions.some(a => a.actionType && a.actionType !== 0);
+              const trustedNetworks = (onNetPolicy?.trustedNetworks as string[]) ?? [];
+
+              const rawGroups = policy.groups as Array<Record<string, unknown>> | undefined;
+              const groupList = Array.isArray(rawGroups)
+                ? rawGroups.filter(g => typeof g === "object" && g !== null).map(g => String(g.name || g.id || ""))
+                : [];
+
+              const pe = policy.policyExtension as Record<string, unknown> | undefined;
+              const splitCsv = (v: unknown) =>
+                typeof v === "string" && v ? v.split(",").map(s => s.trim().replace(/^\[|\]$/g, "")).filter(Boolean) : [];
+              const includeList = splitCsv(pe?.packetTunnelIncludeList);
+              const excludeList = splitCsv(pe?.packetTunnelExcludeList);
+              const vpnGateways = splitCsv(pe?.vpnGateways);
+              const portBypasses = splitCsv(pe?.sourcePortBasedBypasses);
+              const sslCertInstall = !!(policy.install_ssl_certs && policy.install_ssl_certs !== 0 && policy.install_ssl_certs !== "0");
+
+              return (
+                <Fragment key={rowKey}>
+                  <tr className={isExpanded ? "bg-blue-50/40" : "hover:bg-gray-50/50"}>
+                    <td className="px-2 py-2 text-center">
+                      <button
+                        onClick={() => setExpandedId(isExpanded ? null : rowKey)}
+                        className="text-gray-400 hover:text-gray-600 transition-colors inline-flex items-center justify-center"
+                        title={isExpanded ? "Collapse" : "Expand"}
+                      >
+                        <span className={`transition-transform ${isExpanded ? "rotate-90" : ""}`}>{CHEVRON}</span>
+                      </button>
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs text-gray-500">{policy.id ?? "-"}</td>
+                    <td className="px-3 py-2 text-gray-900">{policy.name ?? "-"}</td>
+                    <td className="px-3 py-2">
+                      {policy.device_type
+                        ? <OsBadge os={String(policy.device_type)} />
+                        : <span className="text-gray-400 text-xs">-</span>}
+                    </td>
+                    <td className="px-3 py-2">
+                      {policy.id && (
+                        <button
+                          onClick={() => setVisualizerPolicy({ id: String(policy.id), name: policy.name ?? String(policy.id) })}
+                          className="text-xs text-zs-600 hover:text-zs-800 underline underline-offset-2 transition-colors"
+                        >
+                          Visualize Traffic Profile
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                  {isExpanded && (
+                    <tr className="bg-blue-50/30 border-b border-blue-100">
+                      <td colSpan={5} className="px-6 pt-2 pb-4">
+                        <div className="space-y-3 text-xs">
+
+                          {/* Row 1: Policy overview */}
+                          <div className="grid grid-cols-2 md:grid-cols-5 gap-x-6 gap-y-2">
+                            <div>
+                              <div className="text-gray-500 font-medium mb-0.5">Status</div>
+                              {policy.active
+                                ? <span className="bg-green-50 text-green-700 px-1.5 py-0.5 rounded">Active</span>
+                                : <span className="bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">Inactive</span>}
+                            </div>
+                            <div>
+                              <div className="text-gray-500 font-medium mb-0.5">Priority</div>
+                              <div className="text-gray-900">{String(policy.ruleOrder ?? "—")}</div>
+                            </div>
+                            <div>
+                              <div className="text-gray-500 font-medium mb-0.5">Tunnel Mode</div>
+                              {tunnelMode
+                                ? <span className={`px-1.5 py-0.5 rounded font-medium ${tunnelMode === "Z-Tunnel 2.0" ? "bg-blue-50 text-blue-700" : tunnelMode === "Proxy" ? "bg-orange-50 text-orange-700" : "bg-gray-100 text-gray-600"}`}>{tunnelMode}</span>
+                                : <span className="text-gray-400">—</span>}
+                            </div>
+                            <div>
+                              <div className="text-gray-500 font-medium mb-0.5">ZPA</div>
+                              {zpaEnabled
+                                ? <span className="bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded">Enabled</span>
+                                : <span className="text-gray-400">Disabled</span>}
+                            </div>
+                            <div>
+                              <div className="text-gray-500 font-medium mb-0.5">SSL Inspect</div>
+                              {sslCertInstall
+                                ? <span className="bg-green-50 text-green-700 px-1.5 py-0.5 rounded">Installing</span>
+                                : <span className="text-gray-400">Off</span>}
+                            </div>
+                          </div>
+
+                          {/* Row 2: Forwarding profile + targeting */}
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-2">
+                            <div>
+                              <div className="text-gray-500 font-medium mb-0.5">Forwarding Profile</div>
+                              <div className="text-gray-900">{String(onNetPolicy?.name ?? "—")}</div>
+                            </div>
+                            <div>
+                              <div className="text-gray-500 font-medium mb-0.5">Trusted Networks</div>
+                              {trustedNetworks.length > 0
+                                ? <div className="flex flex-wrap gap-1">{trustedNetworks.map((n, ni) => <span key={ni} className="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">{n}</span>)}</div>
+                                : <span className="text-gray-400">None (always active)</span>}
+                            </div>
+                            <div>
+                              <div className="text-gray-500 font-medium mb-0.5">Groups</div>
+                              {groupList.length === 0
+                                ? <span className="text-gray-400">All users</span>
+                                : <div className="flex flex-wrap gap-1">{groupList.map((g, gi) => <span key={gi} className="bg-green-50 text-green-700 px-1.5 py-0.5 rounded">{g}</span>)}</div>}
+                            </div>
+                          </div>
+
+                          {/* Row 3: Routing */}
+                          {(includeList.length > 0 || excludeList.length > 0) && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+                              {includeList.length > 0 && (
+                                <div>
+                                  <div className="text-gray-500 font-medium mb-0.5">Tunnel Includes ({includeList.length})</div>
+                                  <div className="text-gray-700 font-mono leading-relaxed">
+                                    {includeList.slice(0, 4).join(", ")}
+                                    {includeList.length > 4 && <span className="text-gray-400"> +{includeList.length - 4} more</span>}
+                                  </div>
+                                </div>
+                              )}
+                              {excludeList.length > 0 && (
+                                <div>
+                                  <div className="text-gray-500 font-medium mb-0.5">Tunnel Excludes ({excludeList.length})</div>
+                                  <div className="text-gray-700 font-mono leading-relaxed">
+                                    {excludeList.slice(0, 4).join(", ")}
+                                    {excludeList.length > 4 && <span className="text-gray-400"> +{excludeList.length - 4} more</span>}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Row 4: Bypasses */}
+                          {(vpnGateways.length > 0 || portBypasses.length > 0 || !!policy.pac_url) && (
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-2">
+                              {vpnGateways.length > 0 && (
+                                <div>
+                                  <div className="text-gray-500 font-medium mb-0.5">VPN Bypasses ({vpnGateways.length})</div>
+                                  <div className="text-gray-700 font-mono">{vpnGateways.join(", ")}</div>
+                                </div>
+                              )}
+                              {portBypasses.length > 0 && (
+                                <div>
+                                  <div className="text-gray-500 font-medium mb-0.5">Port Bypasses ({portBypasses.length})</div>
+                                  <div className="text-gray-700 font-mono">{portBypasses.join(", ")}</div>
+                                </div>
+                              )}
+                              {!!policy.pac_url && (
+                                <div>
+                                  <div className="text-gray-500 font-medium mb-0.5">PAC URL</div>
+                                  <div className="text-gray-700 font-mono truncate">{String(policy.pac_url)}</div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                        </div>
+                      </td>
+                    </tr>
                   )}
-                </td>
-              </tr>
-            ))}
+                </Fragment>
+              );
+            })}
             {data.length === 0 && (
-              <tr><td colSpan={3} className="px-3 py-4 text-center text-gray-400">No app profiles</td></tr>
+              <tr><td colSpan={5} className="px-3 py-4 text-center text-gray-400">No app profiles</td></tr>
             )}
           </tbody>
         </table>

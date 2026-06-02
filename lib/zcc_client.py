@@ -379,26 +379,30 @@ class ZCCClient:
     # ------------------------------------------------------------------
 
     def list_web_policies(self) -> List[Dict]:
-        # The API returns nothing without device_type; fetch per-OS and combine.
-        # Use _to_camel_dict(wp) on each WebPolicy result object to get a
-        # camelCase plain dict — avoids the ZscalerCollection.form_list mutation
-        # side-effect that makes resp.get_body() non-JSON-serialisable.
-        device_types = ["windows", "macos", "ios", "android", "linux"]
+        # Use the direct HTTP endpoint so that onNetPolicy (the embedded forwarding
+        # profile object) is preserved in raw_config. The SDK's request_format()
+        # strips onNetPolicy, making forwarding-profile lookup impossible.
+        # Query only desktop OS types — iOS/Android use MDM-managed policies, not
+        # ZCC Agent routing profiles, and those endpoints hang on unsupported tenants.
+        _DESKTOP_TYPES = {3: "windows", 4: "macos", 5: "linux"}
         seen_ids: set = set()
         all_policies: List[Dict] = []
-        for dt in device_types:
-            result, _, err = self._sdk.zcc.web_policy.list_by_company(
-                query_params={"device_type": dt}
-            )
-            if err:
+        for dt_int, dt_str in _DESKTOP_TYPES.items():
+            try:
+                data = self._direct_get(
+                    "web/policy/listByCompany", params={"deviceType": dt_int}
+                )
+            except Exception:
                 continue
-            for wp in (result or []):
-                item = _to_camel_dict(wp)
+            items = data if isinstance(data, list) else data.get("list", [])
+            for item in (items or []):
+                if not isinstance(item, dict):
+                    continue
                 pid = item.get("id")
                 if pid is None or pid in seen_ids:
                     continue
                 seen_ids.add(pid)
-                item["device_type"] = dt  # injected so the DB record is self-describing
+                item["device_type"] = dt_str  # injected so the DB record is self-describing
                 all_policies.append(item)
         return all_policies
 
