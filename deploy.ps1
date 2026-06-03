@@ -1,9 +1,9 @@
-# deploy.ps1 — Pull, build, and deploy zs-config on a Windows Docker host.
+# deploy.ps1 - Pull, build, and deploy zs-config on a Windows Docker host.
 #
 # Works in two modes:
-#   1. Standalone (fresh machine) — run the script directly; it will clone
+#   1. Standalone (fresh machine) - run the script directly; it will clone
 #      the repo into .\zs-config next to the script, then deploy from there.
-#   2. Inside the repo — run from an existing clone; it will pull and redeploy.
+#   2. Inside the repo - run from an existing clone; it will pull and redeploy.
 #
 # Usage:
 #   .\deploy.ps1 [branch]
@@ -20,7 +20,7 @@ $ErrorActionPreference = "Stop"
 $RepoUrl = "https://github.com/mpreissner/zs-config.git"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-# ── Preflight ─────────────────────────────────────────────────────────────────
+# -- Preflight ------------------------------------------------------------------
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     Write-Error "ERROR: docker is not installed or not in PATH."
@@ -34,7 +34,7 @@ try {
     exit 1
 }
 
-# ── docker-compose.yml diff check ────────────────────────────────────────────
+# -- docker-compose.yml diff check ----------------------------------------------
 
 $script:DcBackup = $null
 
@@ -66,11 +66,11 @@ function Invoke-ComposeDiff {
 
     Write-Host ""
     Write-Host "docker-compose.yml differs from upstream (origin/$Branch):"
-    Write-Host "────────────────────────────────────────────────────────────"
+    Write-Host "------------------------------------------------------------"
     $ErrorActionPreference = "Continue"
     & git diff --no-index --src-prefix="local/" --dst-prefix="upstream/" $dcFile $tmpRemote
     $ErrorActionPreference = $savedPref
-    Write-Host "────────────────────────────────────────────────────────────"
+    Write-Host "------------------------------------------------------------"
     Write-Host ""
     Remove-Item $tmpRemote -ErrorAction SilentlyContinue
 
@@ -84,7 +84,7 @@ function Invoke-ComposeDiff {
             Write-Host "Local docker-compose.yml saved; will be restored after pull."
         }
     } else {
-        Write-Host "Non-interactive — using upstream docker-compose.yml."
+        Write-Host "Non-interactive - using upstream docker-compose.yml."
     }
     Write-Host ""
 }
@@ -98,7 +98,7 @@ function Restore-Compose {
     }
 }
 
-# ── Clone if not already inside the repo ─────────────────────────────────────
+# -- Clone if not already inside the repo --------------------------------------
 
 $IsRepo = $false
 try {
@@ -132,7 +132,7 @@ if ($IsRepo) {
     }
 }
 
-# ── Ensure JWT_SECRET is set ──────────────────────────────────────────────────
+# -- Ensure JWT_SECRET is set ---------------------------------------------------
 
 $EnvFile = Join-Path $RepoDir ".env"
 $JwtSecret = $null
@@ -150,12 +150,12 @@ if (-not $JwtSecret) {
     [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
     $JwtSecret = ($bytes | ForEach-Object { $_.ToString("x2") }) -join ""
     Add-Content -Path $EnvFile -Value "JWT_SECRET=$JwtSecret"
-    Write-Host "Generated JWT_SECRET and saved to $EnvFile — keep this file safe."
+    Write-Host "Generated JWT_SECRET and saved to $EnvFile - keep this file safe."
 }
 
 $env:JWT_SECRET = $JwtSecret
 
-# ── Ensure persistent Docker volumes exist ────────────────────────────────────
+# -- Ensure persistent Docker volumes exist -------------------------------------
 
 foreach ($vol in @("zs-config_zs-db", "zs-config_zs-plugins")) {
     $exists = docker volume inspect $vol 2>$null
@@ -165,7 +165,7 @@ foreach ($vol in @("zs-config_zs-db", "zs-config_zs-plugins")) {
     }
 }
 
-# ── Inject host trust store ───────────────────────────────────────────────────
+# -- Inject host trust store ----------------------------------------------------
 # Exports trusted root certs into docker/ca-bundle.pem so the image includes
 # any corporate SSL-inspection CAs present on this machine.  Cleared in the
 # finally block so the file is never committed with real cert content.
@@ -186,12 +186,12 @@ try {
     $certCount = (Select-String -Path $Bundle -Pattern "BEGIN CERTIFICATE" -ErrorAction SilentlyContinue).Count
     Write-Host "  Exported $certCount certificates"
 
-    # ── Build ─────────────────────────────────────────────────────────────────
+    # -- Build -------------------------------------------------------------------
 
     Write-Host "Building image..."
     docker compose build
 
-    # ── Deploy ────────────────────────────────────────────────────────────────
+    # -- Deploy ------------------------------------------------------------------
 
     Write-Host "Stopping existing container..."
     docker compose down
@@ -199,7 +199,7 @@ try {
     Write-Host "Starting container..."
     docker compose up -d
 
-    # ── Health check ──────────────────────────────────────────────────────────
+    # -- Health check ------------------------------------------------------------
 
     Write-Host "Waiting for health check..."
     $ready = $false
