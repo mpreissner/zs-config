@@ -19,6 +19,13 @@ BRANCH="${1:-main}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DC_BACKUP=""
 
+NON_INTERACTIVE=0
+for arg in "$@"; do
+    case "$arg" in
+        --non-interactive) NON_INTERACTIVE=1 ;;
+    esac
+done
+
 # ── Preflight ─────────────────────────────────────────────────────────────────
 
 if ! command -v docker &>/dev/null; then
@@ -60,7 +67,7 @@ _compose_diff() {
     echo ""
     rm -f "$tmp_remote"
 
-    if [[ -t 0 ]]; then
+    if [[ -t 0 ]] && [[ "$NON_INTERACTIVE" -eq 0 ]]; then
         echo "  [1] Use upstream version (recommended)"
         echo "  [2] Keep my local version"
         read -r -p "Choice [1/2, default 1]: " _dc_choice
@@ -138,7 +145,10 @@ fi
 # 0.0.0.0   = all interfaces (required for server/remote access)
 
 if [[ -z "${BIND_ADDR:-}" ]]; then
-    if [[ -t 0 ]]; then
+    if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+        BIND_ADDR="0.0.0.0"
+        echo "Non-interactive — network binding set to ${BIND_ADDR}."
+    elif [[ -t 0 ]]; then
         echo ""
         echo "Network binding:"
         echo "  [1] Localhost only — 127.0.0.1 (default, single machine)"
@@ -160,7 +170,7 @@ fi
 # ── SSL certificate (optional) ────────────────────────────────────────────────
 # If ZS_SSL_DOMAIN is already set (from .env or environment), skip prompting.
 
-if [[ -z "${ZS_SSL_DOMAIN:-}" ]] && [[ -t 0 ]]; then
+if [[ -z "${ZS_SSL_DOMAIN:-}" ]] && [[ -t 0 ]] && [[ "$NON_INTERACTIVE" -eq 0 ]]; then
     echo ""
     echo "SSL certificate (optional):"
     echo "  Skip to use HTTP on port 8000, or provide a cert to enable HTTPS on port 8443."
