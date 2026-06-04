@@ -108,28 +108,29 @@ function New-SeedIso {
         "packages:`n" +
         "  - docker.io`n" +
         "  - docker-compose-v2`n" +
+        "  - openssh-server`n" +
         "  - curl`n" +
         "  - git`n" +
         "`n" +
         "runcmd:`n" +
         "  - systemctl enable --now docker`n" +
-        "  - usermod -aG docker zsadmin"
+        "  - usermod -aG docker zsadmin`n" +
+        "  - systemctl enable --now ssh"
 
-    # Try IMAPI2 first
+    # Try IMAPI2 first.
+    # AddTree requires a directory path; write seed files to a temp dir so the
+    # names in the ISO are exactly "meta-data" and "user-data".
+    # FileSystemsToCreate = 3 => ISO9660 + Joliet (cloud-init reads both).
+    $TmpSeedDir = Join-Path $env:TEMP "zs-cloudinit-$(Get-Random)"
     try {
+        New-Item -ItemType Directory -Force -Path $TmpSeedDir | Out-Null
+        [System.IO.File]::WriteAllText("$TmpSeedDir\meta-data", $MetaData, [System.Text.Encoding]::ASCII)
+        [System.IO.File]::WriteAllText("$TmpSeedDir\user-data", $UserData,  [System.Text.Encoding]::ASCII)
+
         $fsi = New-Object -ComObject IMAPI2FS.MsftFileSystemImage
-        $fsi.FileSystemsToCreate = 4   # FsiFileSystemISO9660
+        $fsi.FileSystemsToCreate = 3   # FsiFileSystemISO9660 | FsiFileSystemJoliet
         $fsi.VolumeName = "cidata"
-
-        $mdTmp = [System.IO.Path]::GetTempFileName()
-        $udTmp = [System.IO.Path]::GetTempFileName()
-        [System.IO.File]::WriteAllText($mdTmp, $MetaData, [System.Text.Encoding]::ASCII)
-        [System.IO.File]::WriteAllText($udTmp, $UserData, [System.Text.Encoding]::ASCII)
-
-        $fsi.Root.AddTree($mdTmp, $false)
-        $fsi.Root.RenameItem((Split-Path $mdTmp -Leaf), "meta-data")
-        $fsi.Root.AddTree($udTmp, $false)
-        $fsi.Root.RenameItem((Split-Path $udTmp -Leaf), "user-data")
+        $fsi.Root.AddTree($TmpSeedDir, $false)
 
         $result    = $fsi.CreateResultImage()
         $adoStream = New-Object -ComObject ADODB.Stream
@@ -139,9 +140,11 @@ function New-SeedIso {
         $adoStream.SaveToFile($SeedIso, 2)
         $adoStream.Close()
 
-        Remove-Item $mdTmp, $udTmp -ErrorAction SilentlyContinue
+        Remove-Item $TmpSeedDir -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "Cloud-init seed ISO created."
         return $SeedIso
     } catch {
+        Remove-Item $TmpSeedDir -Recurse -Force -ErrorAction SilentlyContinue
         Write-Host "IMAPI2 unavailable; falling back to FAT-VHD seed disk."
     }
 
