@@ -6750,10 +6750,16 @@ function AppProfileVisualizer({
     queryFn: () => fetchTrafficProfile(tenantName, policyId),
   });
 
+  const { data: zpaApps } = useQuery<ZpaApplication[]>({
+    queryKey: ["zpa-applications", tenantName],
+    queryFn: () => fetchApplications(tenantName),
+    enabled: data?.zpaEnabled === true,
+  });
+
   useEffect(() => {
     if (!data) return;
     const candidates: Array<[string, number | boolean]> = [
-      ["tunnel",  data.tunnelRoutes.length],
+      ["tunnel",  data.tunnelRoutes.filter(r => r.direction === "include").length],
       ["dns",     data.dnsRoutes.length],
       ["zpa",     data.zpaEnabled],
       ["process", data.processBypasses.length],
@@ -6784,7 +6790,7 @@ function AppProfileVisualizer({
 
   const tabs: Array<{ key: string; label: string; count: number | null; group: string }> = [];
   if (data) {
-    if (data.tunnelRoutes.length > 0)       tabs.push({ key: "tunnel",  label: "Tunnel Routes",    count: data.tunnelRoutes.length,       group: "zia"    });
+    if (data.tunnelRoutes.some(r => r.direction === "include")) tabs.push({ key: "tunnel", label: "Tunnel Routes", count: data.tunnelRoutes.filter(r => r.direction === "include").length, group: "zia" });
     if (data.dnsRoutes.length > 0)          tabs.push({ key: "dns",     label: "DNS Routes",        count: data.dnsRoutes.length,          group: "zia"    });
     if (data.zpaEnabled)                    tabs.push({ key: "zpa",     label: "ZPA",               count: null,                          group: "zpa"    });
     if (data.processBypasses.length > 0)    tabs.push({ key: "process", label: "Process Bypasses",  count: data.processBypasses.length,    group: "bypass" });
@@ -6955,12 +6961,10 @@ function AppProfileVisualizer({
                   {totalBypassCount > 0 && (
                     <>
                       <circle cx="147" cy="108" r="3.5" fill="#fff7ed" stroke="#f97316" strokeWidth="1.5"/>
-                      <line x1="147" y1="112" x2="147" y2="195"
-                        stroke="#f97316" strokeWidth="1.5" strokeDasharray="3,3"/>
-                      <line x1="147" y1="195" x2="644" y2="195"
-                        stroke="#f97316" strokeWidth="1.5" strokeDasharray="3,3"
+                      <path d="M147 112 L147 207 L650 207 L650 190"
+                        stroke="#f97316" strokeWidth="1.5" strokeDasharray="3,3" fill="none"
                         markerEnd="url(#tp3-arr-local)"/>
-                      <text x="155" y="189" fontSize="7" fill="#f97316">
+                      <text x="175" y="204" fontSize="7" fill="#f97316">
                         {`${totalBypassCount} bypass rule${totalBypassCount !== 1 ? "s" : ""} → Direct`}
                       </text>
                     </>
@@ -6980,34 +6984,33 @@ function AppProfileVisualizer({
                     return (
                       <>
                         {/* Trunk up to ZIA */}
-                        <line x1="596" y1={ctxY} x2="596" y2="38"
+                        <line x1="596" y1={ctxY} x2="596" y2="50"
                           stroke={tc} strokeWidth="1.5"/>
                         {/* → ZIA */}
-                        <line x1="596" y1="38" x2="644" y2="38"
-                          stroke={tunnelActive || hovered === "zia" ? tc : "#d1d5db"}
-                          strokeWidth={tunnelActive ? 2.5 : 1.5}
+                        <line x1="596" y1="50" x2="644" y2="50"
+                          stroke={tc}
+                          strokeWidth="2"
                           markerEnd="url(#tp3-arr-zia)" className="pointer-events-none"/>
-                        {/* Trunk down to Local */}
-                        <line x1="596" y1={ctxY} x2="596" y2="180"
-                          stroke={localActive ? "#fdba74" : "#e5e7eb"} strokeWidth="1.5"
-                          strokeDasharray="6,4"/>
-                        {/* → ZPA */}
-                        {data.zpaEnabled && (
-                          <line x1="596" y1="97" x2="644" y2="97"
-                            stroke={zpaCtxOn ? (zpaActive || hovered === "zpa" ? "#4f46e5" : "#a5b4fc") : "#e5e7eb"}
-                            strokeWidth={zpaCtxOn && zpaActive ? 2.5 : 1.5}
-                            strokeDasharray="5,3"
+                        {/* Trunk down to Local (only when ZPA or Local destination active) */}
+                        {(localActive || (data.zpaEnabled && zpaCtxOn)) && (
+                          <line x1="596" y1={ctxY} x2="596" y2="166"
+                            stroke={localActive ? "#f97316" : "#4f46e5"} strokeWidth="1.5"/>
+                        )}
+                        {/* → ZPA (only when ZPA active for this context) */}
+                        {data.zpaEnabled && zpaCtxOn && (
+                          <line x1="596" y1="108" x2="644" y2="108"
+                            stroke="#4f46e5"
+                            strokeWidth="2"
                             markerEnd="url(#tp3-arr-zpa)" className="pointer-events-none"/>
                         )}
-                        {/* → Local / Direct */}
-                        <line x1="596" y1="180" x2="644" y2="180"
-                          stroke={localActive
-                            ? (bypassActive || hovered === "local" ? "#f97316" : "#fdba74")
-                            : "#e5e7eb"}
-                          strokeWidth={bypassActive ? 2.5 : 1.5}
-                          strokeDasharray="6,4"
-                          markerEnd={localActive ? "url(#tp3-arr-local)" : "url(#tp3-arr-gray)"}
-                          className="pointer-events-none"/>
+                        {/* → Local / Direct (only when local bypass is active) */}
+                        {localActive && (
+                          <line x1="596" y1="166" x2="644" y2="166"
+                            stroke="#f97316"
+                            strokeWidth="2"
+                            markerEnd="url(#tp3-arr-local)"
+                            className="pointer-events-none"/>
+                        )}
                       </>
                     );
                   })()}
@@ -7015,8 +7018,8 @@ function AppProfileVisualizer({
                   {/* ── PAC path labels near fork arrows (only when evaluated) ─ */}
                   {pacEvaluated && (
                     <>
-                      <text x="599" y="33" fontSize="7" fill="#9ca3af" className="pointer-events-none">PAC PROXY</text>
-                      <text x="599" y="192" fontSize="7" fill="#9ca3af" className="pointer-events-none">PAC DIRECT</text>
+                      <text x="599" y="45" fontSize="7" fill="#9ca3af" className="pointer-events-none">PAC PROXY</text>
+                      <text x="599" y="178" fontSize="7" fill="#9ca3af" className="pointer-events-none">PAC DIRECT</text>
                     </>
                   )}
 
@@ -7109,15 +7112,15 @@ function AppProfileVisualizer({
                   <g filter="url(#tp3-shadow)" className="cursor-pointer"
                     onClick={() => setActiveSection(tabs.find(t => t.group === "zia")?.key ?? "tunnel")}
                     onMouseEnter={() => setHovered("zia")} onMouseLeave={() => setHovered(null)}>
-                    <rect x="524" y="14" width="240" height="48" rx="8"
+                    <rect x="524" y="26" width="240" height="48" rx="8"
                       fill={tunnelActive || hovered === "zia" ? "#f0fdf4" : "white"}
                       stroke={tunnelActive ? tc : "#86efac"}
                       strokeWidth={tunnelActive ? 2 : 1.5}/>
                   </g>
-                  <path d="M533 44 C530 44 529 41 531 38 C529 36 530 33 534 32 C534 28 539 25 544 27 C545 24 551 23 554 26 C559 24 564 28 562 33 C565 33 567 36 565 39 C566 42 564 45 561 45Z"
+                  <path d="M533 56 C530 56 529 53 531 50 C529 48 530 45 534 44 C534 40 539 37 544 39 C545 36 551 35 554 38 C559 36 564 40 562 45 C565 45 567 48 565 51 C566 54 564 57 561 57Z"
                     fill="none" stroke="#22c55e" strokeWidth="1.2" className="pointer-events-none"/>
-                  <text x="571" y="30" fontSize="10" fontWeight="600" fill="#15803d" className="pointer-events-none">ZIA Cloud</text>
-                  <text x="571" y="45" fontSize="8.5" fill="#6b7280" className="pointer-events-none">
+                  <text x="571" y="42" fontSize="10" fontWeight="600" fill="#15803d" className="pointer-events-none">ZIA Cloud</text>
+                  <text x="571" y="57" fontSize="8.5" fill="#6b7280" className="pointer-events-none">
                     {pacEvaluated
                       ? "PAC PROXY path"
                       : detailedMode === "T2.0"
@@ -7126,8 +7129,8 @@ function AppProfileVisualizer({
                   </text>
                   {(data.pac.enablePac || data.pac.url) && (
                     <g className="cursor-pointer" onClick={(e) => { e.stopPropagation(); setActiveSection("pac"); }}>
-                      <rect x="730" y="16" width="30" height="16" rx="4" fill="#fef3c7" stroke="#fbbf24" strokeWidth="1"/>
-                      <text x="745" y="27" fontSize="8" fontWeight="600" fill="#92400e" textAnchor="middle" className="pointer-events-none">PAC</text>
+                      <rect x="730" y="28" width="30" height="16" rx="4" fill="#fef3c7" stroke="#fbbf24" strokeWidth="1"/>
+                      <text x="745" y="39" fontSize="8" fontWeight="600" fill="#92400e" textAnchor="middle" className="pointer-events-none">PAC</text>
                     </g>
                   )}
 
@@ -7141,20 +7144,19 @@ function AppProfileVisualizer({
                       <g filter="url(#tp3-shadow)" className="cursor-pointer"
                         onClick={() => setActiveSection("zpa")}
                         onMouseEnter={() => setHovered("zpa")} onMouseLeave={() => setHovered(null)}>
-                        <rect x="524" y="73" width="240" height="48" rx="8"
+                        <rect x="524" y="84" width="240" height="48" rx="8"
                           fill={zpaCtxOn && (zpaActive || hovered === "zpa") ? "#eef2ff" : "white"}
                           stroke={zpaBorderColor}
-                          strokeWidth={zpaCtxOn && zpaActive ? 2 : 1.5}
-                          strokeDasharray="5,3"/>
-                        <rect x="533" y="89" width="14" height="11" rx="2" fill="none" stroke={zpaIconColor} strokeWidth="1.3"/>
-                        <path d="M536 89 A4 4 0 0 1 544 89" fill="none" stroke={zpaIconColor} strokeWidth="1.3"/>
-                        <circle cx="540" cy="95" r="1.5" fill={zpaIconColor}/>
-                        <text x="554" y="91" fontSize="10" fontWeight="600" fill={zpaLabelColor}>ZPA Private Apps</text>
-                        <text x="554" y="106" fontSize="8.5" fill={zpaCtxOn ? "#6b7280" : "#d1d5db"}>ZPA-enrolled private access</text>
-                        {zpaCtxOn && <rect x="726" y="75" width="34" height="15" rx="4" fill="#eef2ff" stroke="#a5b4fc" strokeWidth="0.8"/>}
+                          strokeWidth={zpaCtxOn && zpaActive ? 2 : 1.5}/>
+                        <rect x="533" y="100" width="14" height="11" rx="2" fill="none" stroke={zpaIconColor} strokeWidth="1.3"/>
+                        <path d="M536 100 A4 4 0 0 1 544 100" fill="none" stroke={zpaIconColor} strokeWidth="1.3"/>
+                        <circle cx="540" cy="106" r="1.5" fill={zpaIconColor}/>
+                        <text x="554" y="102" fontSize="10" fontWeight="600" fill={zpaLabelColor}>ZPA Private Apps</text>
+                        <text x="554" y="117" fontSize="8.5" fill={zpaCtxOn ? "#6b7280" : "#d1d5db"}>ZPA-enrolled private access</text>
+                        {zpaCtxOn && <rect x="726" y="86" width="34" height="15" rx="4" fill="#eef2ff" stroke="#a5b4fc" strokeWidth="0.8"/>}
                         {zpaCtxOn
-                          ? <text x="743" y="85" fontSize="7.5" fill="#4f46e5" textAnchor="middle" className="pointer-events-none">active</text>
-                          : <text x="743" y="85" fontSize="7.5" fill="#d1d5db" textAnchor="middle" className="pointer-events-none">off</text>
+                          ? <text x="743" y="96" fontSize="7.5" fill="#4f46e5" textAnchor="middle" className="pointer-events-none">active</text>
+                          : <text x="743" y="96" fontSize="7.5" fill="#d1d5db" textAnchor="middle" className="pointer-events-none">off</text>
                         }
                       </g>
                     );
@@ -7162,23 +7164,22 @@ function AppProfileVisualizer({
 
                   {/* ── Local / Direct ───────────────────────────────────────── */}
                   <g filter="url(#tp3-shadow)" className="cursor-pointer"
-                    onClick={() => setActiveSection(tabs.find(t => t.group === "bypass")?.key ?? "process")}
+                    onClick={() => setActiveSection("local")}
                     onMouseEnter={() => setHovered("local")} onMouseLeave={() => setHovered(null)}>
-                    <rect x="524" y="156" width="240" height="48" rx="8"
+                    <rect x="524" y="142" width="240" height="48" rx="8"
                       fill={bypassActive || hovered === "local" ? "#fff7ed" : "white"}
                       stroke={localActive ? (bypassActive ? "#f97316" : "#fdba74") : "#e5e7eb"}
-                      strokeWidth={bypassActive ? 2 : 1.5}
-                      strokeDasharray="5,3"/>
+                      strokeWidth={bypassActive ? 2 : 1.5}/>
                   </g>
-                  <circle cx="538" cy="180" r="9" fill="none"
+                  <circle cx="538" cy="166" r="9" fill="none"
                     stroke={localActive ? "#f97316" : "#d1d5db"} strokeWidth="1.3" className="pointer-events-none"/>
-                  <ellipse cx="538" cy="180" rx="4.5" ry="9" fill="none"
+                  <ellipse cx="538" cy="166" rx="4.5" ry="9" fill="none"
                     stroke={localActive ? "#f97316" : "#d1d5db"} strokeWidth="1" className="pointer-events-none"/>
-                  <line x1="529" y1="180" x2="547" y2="180"
+                  <line x1="529" y1="166" x2="547" y2="166"
                     stroke={localActive ? "#f97316" : "#d1d5db"} strokeWidth="1" className="pointer-events-none"/>
-                  <text x="555" y="175" fontSize="10" fontWeight="600"
+                  <text x="555" y="161" fontSize="10" fontWeight="600"
                     fill={localActive ? "#c2410c" : "#9ca3af"} className="pointer-events-none">Local / Direct</text>
-                  <text x="555" y="189" fontSize="8" fill="#6b7280" className="pointer-events-none">{localSubtitle}</text>
+                  <text x="555" y="175" fontSize="8" fill="#6b7280" className="pointer-events-none">{localSubtitle}</text>
 
                   </g>{/* end translate(126, 0) */}
 
@@ -7188,13 +7189,13 @@ function AppProfileVisualizer({
                   <line x1="64" y1="217" x2="78" y2="217" stroke={tc} strokeWidth="2"/>
                   <text x="82" y="221" fontSize="8.5" fill="#9ca3af">ZIA tunnel</text>
                   <line x1="130" y1="217" x2="144" y2="217"
-                    stroke={localActive ? "#f97316" : "#d1d5db"} strokeWidth="2" strokeDasharray="4,3"/>
+                    stroke={localActive ? "#f97316" : "#d1d5db"} strokeWidth="2"/>
                   <text x="148" y="221" fontSize="8.5" fill="#9ca3af">
                     {pacEvaluated ? "PAC DIRECT" : "Local/direct"}
                   </text>
                   {data.zpaEnabled && (
                     <>
-                      <line x1="220" y1="217" x2="234" y2="217" stroke="#4f46e5" strokeWidth="2" strokeDasharray="5,3"/>
+                      <line x1="220" y1="217" x2="234" y2="217" stroke="#4f46e5" strokeWidth="2"/>
                       <text x="238" y="221" fontSize="8.5" fill="#9ca3af">ZPA</text>
                     </>
                   )}
@@ -7240,25 +7241,19 @@ function AppProfileVisualizer({
                 </div>
               )}
 
-              {activeSection === "tunnel" && data.tunnelRoutes.length > 0 && (
+              {activeSection === "tunnel" && data.tunnelRoutes.some(r => r.direction === "include") && (
                 <div className="overflow-x-auto rounded border border-gray-100">
                   <table className="min-w-full text-sm divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                       <tr>
                         <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">CIDR</th>
-                        <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Direction</th>
                         <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">IP Version</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-100">
-                      {data.tunnelRoutes.map((r, i) => (
-                        <tr key={i} className={r.direction === "exclude" ? "bg-orange-50/40" : ""}>
+                      {data.tunnelRoutes.filter(r => r.direction === "include").map((r, i) => (
+                        <tr key={i}>
                           <td className="px-3 py-1.5 font-mono text-xs">{r.cidr}</td>
-                          <td className="px-3 py-1.5">
-                            <span className={`px-1.5 py-0.5 rounded text-xs ${r.direction === "include" ? "bg-green-50 text-green-700" : "bg-orange-50 text-orange-700"}`}>
-                              {r.direction === "include" ? "→ ZIA" : "→ Local"}
-                            </span>
-                          </td>
                           <td className="px-3 py-1.5 text-gray-600 text-xs">{r.ipVersion}</td>
                         </tr>
                       ))}
@@ -7293,15 +7288,226 @@ function AppProfileVisualizer({
               )}
 
               {activeSection === "zpa" && (
-                <div className="bg-indigo-50 border border-indigo-200 rounded p-4 space-y-1">
-                  <p className="text-sm font-medium text-indigo-800">ZPA Private Access Configured</p>
-                  <p className="text-xs text-indigo-700">
-                    Private application traffic from ZPA-enrolled devices routes through a dedicated ZPA
-                    tunnel, separate from ZIA web traffic. Segment and application policies are managed
-                    in the ZPA portal.
-                  </p>
+                <div className="space-y-3">
+                  <div className="bg-indigo-50 border border-indigo-200 rounded p-3 space-y-2">
+                    <p className="text-sm font-medium text-indigo-800">ZPA Private Access</p>
+                    <div className="flex gap-4 text-xs">
+                      {(["on", "vpn", "off"] as const).map(ctx => (
+                        <div key={ctx} className="flex items-center gap-1.5">
+                          <span className={`w-2 h-2 rounded-full ${ctxZpaOn(ctx) ? "bg-indigo-500" : "bg-gray-300"}`}/>
+                          <span className="text-gray-600">
+                            {ctx === "on" ? "On network" : ctx === "vpn" ? "VPN" : "Off network"}:
+                          </span>
+                          <span className={ctxZpaOn(ctx) ? "text-indigo-700 font-medium" : "text-gray-400"}>
+                            {ctxZpaOn(ctx) ? "active" : "off"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {zpaApps && zpaApps.length > 0 && (() => {
+                    const summarize = zpaApps.length > 20;
+                    if (!summarize) {
+                      return (
+                        <div>
+                          <p className="text-xs font-medium text-gray-500 uppercase mb-1">Private Applications ({zpaApps.length})</p>
+                          <div className="overflow-x-auto rounded border border-gray-100">
+                            <table className="min-w-full text-sm divide-y divide-gray-200">
+                              <thead className="bg-gray-50">
+                                <tr>
+                                  <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                                  <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Domains / IPs</th>
+                                  <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Enabled</th>
+                                </tr>
+                              </thead>
+                              <tbody className="bg-white divide-y divide-gray-100">
+                                {zpaApps.map((app, i) => {
+                                  const domains = app.domain_names ?? app.domainNames ?? [];
+                                  return (
+                                    <tr key={i}>
+                                      <td className="px-3 py-1.5 font-medium text-xs">{app.name}</td>
+                                      <td className="px-3 py-1.5 font-mono text-xs text-gray-600">
+                                        {domains.length > 0 ? domains.join(", ") : <span className="text-gray-400">—</span>}
+                                      </td>
+                                      <td className="px-3 py-1.5">
+                                        <span className={`px-1.5 py-0.5 rounded text-xs ${app.enabled ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+                                          {app.enabled ? "yes" : "no"}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      );
+                    }
+                    // Summarize by 2nd-level domain
+                    const domainMap = new Map<string, number>();
+                    zpaApps.forEach(app => {
+                      const domains = app.domain_names ?? app.domainNames ?? [];
+                      const seen = new Set<string>();
+                      domains.forEach(d => {
+                        const parts = d.replace(/\/.*/, "").split(".");
+                        const sld = parts.length >= 2 ? parts.slice(-2).join(".") : d;
+                        if (!seen.has(sld)) { seen.add(sld); domainMap.set(sld, (domainMap.get(sld) ?? 0) + 1); }
+                      });
+                    });
+                    const summaryRows = [...domainMap.entries()].sort((a, b) => b[1] - a[1]);
+                    return (
+                      <div>
+                        <p className="text-xs font-medium text-gray-500 uppercase mb-1">
+                          Private Applications — {zpaApps.length} segments summarized by domain
+                        </p>
+                        <div className="overflow-x-auto rounded border border-gray-100">
+                          <table className="min-w-full text-sm divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Domain</th>
+                                <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">App segments</th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-100">
+                              {summaryRows.map(([sld, count], i) => (
+                                <tr key={i}>
+                                  <td className="px-3 py-1.5 font-mono text-xs">*.{sld}</td>
+                                  <td className="px-3 py-1.5 text-xs text-gray-600">{count}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  {zpaApps && zpaApps.length === 0 && (
+                    <p className="text-xs text-gray-400">No ZPA applications found. Run Import Config to pull ZPA application data.</p>
+                  )}
+                  {data.dnsRoutes.filter(r => r.direction === "include").length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 uppercase mb-1">Tunneled DNS Suffixes</p>
+                      <div className="overflow-x-auto rounded border border-gray-100">
+                        <table className="min-w-full text-sm divide-y divide-gray-200">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Suffix</th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-100">
+                            {data.dnsRoutes.filter(r => r.direction === "include").map((r, i) => (
+                              <tr key={i}>
+                                <td className="px-3 py-1.5 font-mono text-xs">{r.suffix}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
+
+              {activeSection === "local" && (() => {
+                const tunnelExclusions = data.tunnelRoutes.filter(r => r.direction === "exclude");
+                const hasAny = data.processBypasses.length > 0 || data.portBypasses.length > 0 ||
+                  data.vpnGatewayBypasses.length > 0 || tunnelExclusions.length > 0;
+                return (
+                  <div className="space-y-4">
+                    {!hasAny && <p className="text-xs text-gray-400">No local/direct bypass rules configured.</p>}
+                    {data.processBypasses.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-orange-700 uppercase mb-1">App Profile Bypasses (Process)</p>
+                        <div className="overflow-x-auto rounded border border-gray-100">
+                          <table className="min-w-full text-sm divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Process</th>
+                                <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Platform</th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-100">
+                              {data.processBypasses.map((pb, i) => (
+                                <tr key={i}>
+                                  <td className="px-3 py-1.5 font-mono text-xs">{pb.processName}</td>
+                                  <td className="px-3 py-1.5 text-gray-600 text-xs capitalize">{pb.platform}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                    {data.portBypasses.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-orange-700 uppercase mb-1">Port Bypasses</p>
+                        <div className="overflow-x-auto rounded border border-gray-100">
+                          <table className="min-w-full text-sm divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Port</th>
+                                <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Protocol</th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-100">
+                              {data.portBypasses.map((pb, i) => (
+                                <tr key={i}>
+                                  <td className="px-3 py-1.5 font-mono text-xs">{pb.port}</td>
+                                  <td className="px-3 py-1.5 text-gray-600 text-xs">{pb.protocol}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                    {data.vpnGatewayBypasses.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-orange-700 uppercase mb-1">VPN Gateway Bypasses</p>
+                        <div className="overflow-x-auto rounded border border-gray-100">
+                          <table className="min-w-full text-sm divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">Gateway</th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-100">
+                              {data.vpnGatewayBypasses.map((vb, i) => (
+                                <tr key={i}>
+                                  <td className="px-3 py-1.5 font-mono text-xs">{vb.gateway}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                    {tunnelExclusions.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-orange-700 uppercase mb-1">Tunnel Exclusions (CIDR)</p>
+                        <div className="overflow-x-auto rounded border border-gray-100">
+                          <table className="min-w-full text-sm divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">CIDR</th>
+                                <th className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 uppercase">IP Version</th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-100">
+                              {tunnelExclusions.map((r, i) => (
+                                <tr key={i}>
+                                  <td className="px-3 py-1.5 font-mono text-xs">{r.cidr}</td>
+                                  <td className="px-3 py-1.5 text-gray-600 text-xs">{r.ipVersion}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {activeSection === "process" && data.processBypasses.length > 0 && (
                 <div className="overflow-x-auto rounded border border-gray-100">
