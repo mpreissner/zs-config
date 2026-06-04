@@ -1276,6 +1276,10 @@ def _app_profiles_menu(client, tenant):
             break
 
 
+def _load_web_app_service_rows(tenant) -> list:
+    return _load_bypass_app_rows(tenant)
+
+
 def _load_web_policy_rows(tenant, search: str = None) -> list:
     from db.database import get_session
     from db.models import ZCCResource
