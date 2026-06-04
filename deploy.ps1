@@ -789,9 +789,9 @@ New-Item -ItemType Directory -Path (Join-Path $RepoDir "certs") -Force | Out-Nul
 
 # -- Ensure persistent Docker volumes exist -------------------------------------
 
+$existingVolumes = docker volume ls --quiet
 foreach ($vol in @("zs-config_zs-db", "zs-config_zs-plugins")) {
-    $exists = docker volume inspect $vol 2>$null
-    if (-not $exists) {
+    if ($existingVolumes -notcontains $vol) {
         Write-Host "Creating Docker volume: $vol"
         docker volume create $vol
     }
