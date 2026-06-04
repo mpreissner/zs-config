@@ -36,15 +36,6 @@ function Ensure-AdminPrivileges {
     }
 }
 
-function Ensure-OpenSshClient {
-    $cap = Get-WindowsCapability -Online -Name "OpenSSH.Client~~~~0.0.1.0" `
-               -ErrorAction SilentlyContinue
-    if ($cap -and $cap.State -ne "Installed") {
-        Write-Host "Installing OpenSSH Client..."
-        Add-WindowsCapability -Online -Name "OpenSSH.Client~~~~0.0.1.0" | Out-Null
-    }
-}
-
 function Ensure-HyperV {
     $hv = Get-WindowsFeature -Name Hyper-V
     if ($hv.Installed -eq $true) { return }
@@ -66,29 +57,11 @@ function Ensure-HyperV {
     }
 }
 
-function Ensure-SshKey {
-    $KeyDir  = Join-Path $env:APPDATA "zs-config\vm"
-    $KeyFile = Join-Path $KeyDir "id_ed25519"
-    $PubFile = Join-Path $KeyDir "id_ed25519.pub"
-
-    if (Test-Path $KeyFile) {
-        return (Get-Content $PubFile -Raw).Trim()
-    }
-
-    New-Item -ItemType Directory -Force -Path $KeyDir | Out-Null
-    & ssh-keygen -t ed25519 -N '""' -f $KeyFile -C "zs-config-deploy"
-    if ($LASTEXITCODE -ne 0) {
-        throw "ssh-keygen failed with exit code $LASTEXITCODE"
-    }
-    return (Get-Content $PubFile -Raw).Trim()
-}
-
 function New-SeedDisk {
-    param([string]$SshPublicKey)
-    # Use a FAT-VHD (SCSI disk) instead of a DVD-backed ISO.
-    # Hyper-V presents SCSI disks reliably; DVD drives (/dev/sr0) have a
-    # "Can't lookup blockdev" error at early boot on some Hyper-V setups
-    # that prevents cloud-init from reading the cidata label off the ISO.
+    param([string]$VmPassword)
+    # FAT-VHD (SCSI disk) seed for cloud-init.
+    # Delivers user creation, password, and package install.
+    # No SSH keys needed — user connects via the Hyper-V console.
 
     $KeyDir  = Join-Path $env:APPDATA "zs-config\vm"
     $SeedVhd = Join-Path $KeyDir "seed.vhdx"
@@ -101,11 +74,14 @@ function New-SeedDisk {
         "    groups: sudo`n" +
         "    shell: /bin/bash`n" +
         "    sudo: ALL=(ALL) NOPASSWD:ALL`n" +
-        "    ssh_authorized_keys:`n" +
-        "      - $SshPublicKey`n" +
+        "    lock_passwd: false`n" +
         "`n" +
-        "bootcmd:`n" +
-        "  - systemctl enable --now ssh`n" +
+        "chpasswd:`n" +
+        "  list: |`n" +
+        "    zsadmin:$VmPassword`n" +
+        "  expire: false`n" +
+        "`n" +
+        "ssh_pwauth: true`n" +
         "`n" +
         "package_update: true`n" +
         "package_upgrade: false`n" +
@@ -258,7 +234,7 @@ function Fix-CloudInitDatasource {
 }
 
 function Ensure-VM {
-    param([string]$SshPublicKey)
+    param([string]$VmPassword)
 
     $vm = Get-VM -Name "zs-config-host" -ErrorAction SilentlyContinue
     if ($vm) {
@@ -309,7 +285,7 @@ function Ensure-VM {
     Remove-Item $ExtractDir -Recurse -Force -ErrorAction SilentlyContinue
 
     Write-Host "Building cloud-init seed disk..."
-    $SeedDisk = New-SeedDisk -SshPublicKey $SshPublicKey
+    $SeedDisk = New-SeedDisk -VmPassword $VmPassword
 
     $SwitchName = Ensure-VmSwitch
 
@@ -363,67 +339,29 @@ function Wait-ForVmIp {
     throw "Timed out waiting for VM '$VmName' to get an IP address."
 }
 
-function Wait-ForSsh {
-    param([string]$Ip, [int]$TimeoutSeconds = 600)
-    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-    while ((Get-Date) -lt $deadline) {
-        try {
-            $tcp = New-Object System.Net.Sockets.TcpClient
-            $tcp.Connect($Ip, 22)
-            $tcp.Close()
-            return
-        } catch {}
-        Start-Sleep -Seconds 3
-    }
-    throw "Timed out waiting for SSH on $Ip."
-}
-
-function Wait-ForDocker {
-    param([string]$Ip, [int]$TimeoutSeconds = 180)
-    $KeyDir  = Join-Path $env:APPDATA "zs-config\vm"
-    $KeyFile = Join-Path $KeyDir "id_ed25519"
-    $SshOpts = @(
-        "-i", $KeyFile,
-        "-o", "StrictHostKeyChecking=no",
-        "-o", "UserKnownHostsFile=NUL",
-        "-o", "ConnectTimeout=10"
-    )
-    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-    while ((Get-Date) -lt $deadline) {
-        $result = & ssh @SshOpts "zsadmin@$Ip" "docker info" 2>&1
-        if ($LASTEXITCODE -eq 0) { return }
-        Start-Sleep -Seconds 5
-    }
-    throw "Timed out waiting for Docker Engine inside the VM."
-}
-
-function Invoke-Ssh {
-    param([string]$Ip, [string[]]$Cmd)
-    $KeyDir  = Join-Path $env:APPDATA "zs-config\vm"
-    $KeyFile = Join-Path $KeyDir "id_ed25519"
-    $SshOpts = @(
-        "-i", $KeyFile,
-        "-o", "StrictHostKeyChecking=no",
-        "-o", "UserKnownHostsFile=NUL",
-        "-o", "ConnectTimeout=10"
-    )
-    & ssh @SshOpts "zsadmin@$Ip" @Cmd
-    if ($LASTEXITCODE -ne 0) {
-        throw "SSH command failed (exit $LASTEXITCODE): $Cmd"
-    }
-}
-
 function Invoke-WindowsServerDeploy {
     param([string]$Branch)
 
     Write-Host "Windows Server detected. Using Hyper-V + Linux VM path."
 
     Ensure-AdminPrivileges
-    Ensure-OpenSshClient
     Ensure-HyperV
-    $PubKey = Ensure-SshKey
 
-    Ensure-VM -SshPublicKey $PubKey
+    # Load or generate the VM console password.
+    $KeyDir  = Join-Path $env:APPDATA "zs-config\vm"
+    $PwdFile = Join-Path $KeyDir "vm-password.txt"
+    New-Item -ItemType Directory -Force -Path $KeyDir | Out-Null
+
+    $existingVm = Get-VM -Name "zs-config-host" -ErrorAction SilentlyContinue
+    if ($existingVm -and (Test-Path $PwdFile)) {
+        $VmPasswd = (Get-Content $PwdFile -Raw).Trim()
+    } else {
+        $chars    = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        $VmPasswd = -join (1..14 | ForEach-Object { $chars[(Get-Random -Maximum $chars.Length)] })
+        [System.IO.File]::WriteAllText($PwdFile, $VmPasswd, [System.Text.Encoding]::ASCII)
+    }
+
+    Ensure-VM -VmPassword $VmPasswd
 
     $vm = Get-VM -Name "zs-config-host"
     if ($vm.State -ne "Running") {
@@ -431,25 +369,40 @@ function Invoke-WindowsServerDeploy {
         Write-Host "Starting VM 'zs-config-host'..."
     }
 
-    $VmIp = Wait-ForVmIp -VmName "zs-config-host"
-    Write-Host "VM IP: $VmIp"
+    # Try to get the IP; non-fatal if DHCP hasn't assigned one yet.
+    Write-Host "Waiting for VM network (up to 3 min)..."
+    $VmIp = $null
+    try {
+        $VmIp = Wait-ForVmIp -VmName "zs-config-host" -TimeoutSeconds 180
+        Write-Host "VM IP: $VmIp"
+    } catch {
+        Write-Host "Could not detect VM IP yet. Run 'ip addr' inside the console to find it."
+    }
 
-    Wait-ForSsh    -Ip $VmIp
-    Wait-ForDocker -Ip $VmIp
+    # Open the Hyper-V VM console.
+    Start-Process "vmconnect.exe" -ArgumentList "localhost", "zs-config-host"
 
-    $cloneCmd  = "git clone --branch $Branch $RepoUrl ~/zs-config 2>/dev/null || (cd ~/zs-config && git fetch origin && git checkout $Branch && git reset --hard origin/$Branch)"
-    $deployCmd = "chmod +x ~/zs-config/deploy.sh && ~/zs-config/deploy.sh $Branch --non-interactive"
-    Invoke-Ssh $VmIp $cloneCmd
-    Invoke-Ssh $VmIp $deployCmd
+    $accessUrl = if ($VmIp) { "http://${VmIp}:8000" } else { "http://<VM-IP>:8000" }
 
-    $KeyDir  = Join-Path $env:APPDATA "zs-config\vm"
-    $KeyFile = Join-Path $KeyDir "id_ed25519"
     Write-Host ""
-    Write-Host "Deployment complete. Access zs-config at:"
-    Write-Host "  http://${VmIp}:8000"
+    Write-Host "========================================================"
+    Write-Host " Console login : zsadmin"
+    Write-Host " Password      : $VmPasswd"
+    if ($VmIp) {
+    Write-Host " VM IP         : $VmIp"
+    }
+    Write-Host "========================================================"
     Write-Host ""
-    Write-Host "To manage the VM:"
-    Write-Host "  ssh -i $KeyFile zsadmin@$VmIp"
+    Write-Host "When the VM console shows a login prompt:"
+    Write-Host "  1. Log in with the credentials above."
+    Write-Host "  2. Wait for cloud-init to finish installing packages:"
+    Write-Host "       cloud-init status --wait"
+    Write-Host "  3. Run the deploy script:"
+    Write-Host ""
+    Write-Host "     curl -fsSL https://raw.githubusercontent.com/mpreissner/zs-config/$Branch/deploy.sh | bash"
+    Write-Host ""
+    Write-Host "Once deployed, zs-config will be available at:"
+    Write-Host "  $accessUrl"
 }
 
 if (Test-IsWindowsServer) {
