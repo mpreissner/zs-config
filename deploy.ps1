@@ -1,9 +1,9 @@
-# deploy.ps1 — Pull, build, and deploy zs-config on a Windows Docker host.
+# deploy.ps1 - Pull, build, and deploy zs-config on a Windows Docker host.
 #
 # Works in two modes:
-#   1. Standalone (fresh machine) — run the script directly; it will clone
+#   1. Standalone (fresh machine) - run the script directly; it will clone
 #      the repo into .\zs-config next to the script, then deploy from there.
-#   2. Inside the repo — run from an existing clone; it will pull and redeploy.
+#   2. Inside the repo - run from an existing clone; it will pull and redeploy.
 #
 # Usage:
 #   .\deploy.ps1 [branch]
@@ -20,12 +20,548 @@ $ErrorActionPreference = "Stop"
 $RepoUrl = "https://github.com/mpreissner/zs-config.git"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-# ── Preflight ─────────────────────────────────────────────────────────────────
+# -- Windows Server detection and Hyper-V provisioning -------------------------
 
-if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-    Write-Error "ERROR: docker is not installed or not in PATH."
+function Test-IsWindowsServer {
+    $caption = (Get-WmiObject Win32_OperatingSystem).Caption
+    return ($caption -match "Windows Server")
+}
+
+function Ensure-AdminPrivileges {
+    $id  = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $pri = New-Object Security.Principal.WindowsPrincipal($id)
+    if (-not $pri.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        Write-Error "ERROR: This script must be run as Administrator."
+        exit 1
+    }
+}
+
+function Ensure-HyperV {
+    $hv = Get-WindowsFeature -Name Hyper-V
+    if ($hv.Installed -eq $true) { return }
+
+    Write-Host "Installing Hyper-V (this may take a few minutes)..."
+    $result = Install-WindowsFeature -Name Hyper-V -IncludeManagementTools -Restart:$false
+
+    if ($result.ExitCode -eq "SuccessRestartRequired" -or $result.RestartNeeded -eq "Yes") {
+        Write-Host ""
+        Write-Host "Hyper-V has been installed. A system restart is required before provisioning"
+        Write-Host "the Linux VM."
+        Write-Host ""
+        Write-Host "After restarting, re-run this script:"
+        Write-Host "    .\deploy.ps1 $Branch"
+        Write-Host ""
+        Write-Host "The script will detect that Hyper-V is already installed and continue"
+        Write-Host "automatically."
+        exit 0
+    }
+}
+
+function New-SeedDisk {
+    param([string]$VmPassword)
+    # FAT-VHD (SCSI disk) seed for cloud-init.
+    # Delivers user creation, password, and package install.
+    # No SSH keys needed — user connects via the Hyper-V console.
+
+    $KeyDir  = Join-Path $env:APPDATA "zs-config\vm"
+    $SeedVhd = Join-Path $KeyDir "seed.vhdx"
+
+    $MetaData = "instance-id: zs-config-host-01`nlocal-hostname: zs-config-host"
+
+    $UserData = "#cloud-config`n" +
+        "users:`n" +
+        "  - name: zsadmin`n" +
+        "    groups: sudo`n" +
+        "    shell: /bin/bash`n" +
+        "    sudo: ALL=(ALL) NOPASSWD:ALL`n" +
+        "    lock_passwd: false`n" +
+        "`n" +
+        "chpasswd:`n" +
+        "  list: |`n" +
+        "    zsadmin:$VmPassword`n" +
+        "  expire: false`n" +
+        "`n" +
+        "ssh_pwauth: true`n" +
+        "`n" +
+        "package_update: true`n" +
+        "package_upgrade: false`n" +
+        "packages:`n" +
+        "  - docker.io`n" +
+        "  - docker-compose-v2`n" +
+        "  - openssh-server`n" +
+        "  - curl`n" +
+        "  - git`n" +
+        "`n" +
+        "runcmd:`n" +
+        "  - systemctl enable --now docker`n" +
+        "  - usermod -aG docker zsadmin`n" +
+        "  - systemctl enable --now ssh"
+
+    New-Item -ItemType Directory -Force -Path $KeyDir | Out-Null
+    if (Test-Path $SeedVhd) { Remove-Item $SeedVhd -Force }
+    New-VHD -Path $SeedVhd -SizeBytes 5MB -Fixed | Out-Null
+    $disk = Mount-VHD -Path $SeedVhd -PassThru | Get-Disk
+    Initialize-Disk -Number $disk.Number -PartitionStyle MBR
+    $part = New-Partition -DiskNumber $disk.Number -UseMaximumSize -AssignDriveLetter
+    Format-Volume -DriveLetter $part.DriveLetter -FileSystem FAT -NewFileSystemLabel "cidata" -Force | Out-Null
+    $drive = "$($part.DriveLetter):"
+    [System.IO.File]::WriteAllText("$drive\meta-data", $MetaData, [System.Text.Encoding]::ASCII)
+    [System.IO.File]::WriteAllText("$drive\user-data", $UserData,  [System.Text.Encoding]::ASCII)
+    Dismount-VHD -Path $SeedVhd
+    Write-Host "Cloud-init seed disk created."
+    return $SeedVhd
+}
+
+function Ensure-VmSwitch {
+    # Windows 10/11 creates this automatically; Windows Server does not.
+    $sw = Get-VMSwitch -Name "Default Switch" -ErrorAction SilentlyContinue
+    if ($sw) { return "Default Switch" }
+
+    # Reuse any existing external switch.
+    $sw = Get-VMSwitch -SwitchType External -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($sw) { Write-Host "Using existing VM switch: $($sw.Name)"; return $sw.Name }
+
+    # Create an external switch on the first connected physical NIC.
+    $nic = Get-NetAdapter | Where-Object { $_.Status -eq "Up" -and $_.Virtual -eq $false } |
+           Select-Object -First 1
+    if (-not $nic) { throw "No connected physical network adapter found to create a VM switch." }
+
+    Write-Host "Creating external VM switch on adapter '$($nic.Name)'..."
+    New-VMSwitch -Name "zs-config-external" -NetAdapterName $nic.Name -AllowManagementOS $true | Out-Null
+    return "zs-config-external"
+}
+
+function Remove-StaleVm {
+    $vm = Get-VM -Name "zs-config-host" -ErrorAction SilentlyContinue
+    if (-not $vm) { return }
+    Write-Host "Removing stale VM 'zs-config-host'..."
+    if ($vm.State -eq "Running") { Stop-VM -Name "zs-config-host" -TurnOff -Force }
+    Remove-VM -Name "zs-config-host" -Force
+}
+
+function Fix-CloudInitDatasource {
+    param([string]$OsDisk)
+    # The Ubuntu Azure cloud image ships with datasource_list: [Azure] only.
+    # On non-Azure Hyper-V cloud-init never finds our seed disk.
+    # Fix: patch the ESP's grub.cfg to pass ds=nocloud on the kernel command line,
+    # which forces cloud-init to use NoCloud regardless of the image's datasource_list.
+    Write-Host "Patching GRUB to force NoCloud datasource (ds=nocloud)..."
+
+    $diskNum    = $null
+    $espPartNum = $null
+    $tmpLetter  = $null
+
+    try {
+        $vhdDisk = Mount-VHD -Path $OsDisk -PassThru
+        $diskNum = $vhdDisk.DiskNumber
+        Start-Sleep -Seconds 2
+
+        $parts   = Get-Partition -DiskNumber $diskNum -ErrorAction Stop
+        $EspGuid = "{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}"
+
+        # Match by GPT type GUID or by the "System" type string (both are set on ESP).
+        $espPart = $parts | Where-Object {
+            $_.GptType -eq $EspGuid -or $_.Type -eq "System"
+        } | Select-Object -First 1
+        if (-not $espPart) {
+            Write-Host "Warning: EFI System Partition not found; skipping GRUB patch."
+            return
+        }
+
+        $used      = (Get-PSDrive -PSProvider FileSystem).Name
+        $available = [char[]](70..90) | Where-Object { ([string]$_) -notin $used }
+        if (-not $available) {
+            Write-Host "Warning: No free drive letters; skipping GRUB patch."
+            return
+        }
+        $tmpLetter  = [char]$available[0]
+        $espPartNum = $espPart.PartitionNumber
+        Set-Partition -DiskNumber $diskNum -PartitionNumber $espPartNum -NewDriveLetter $tmpLetter
+        Start-Sleep -Seconds 1
+        $espDrive = "${tmpLetter}:"
+
+        $grubDir = Join-Path $espDrive "EFI\ubuntu"
+        if (-not (Test-Path $grubDir)) {
+            Write-Host "Warning: EFI\ubuntu not found on ESP; skipping GRUB patch."
+            return
+        }
+
+        $grubCfgPath = Join-Path $grubDir "grub.cfg"
+
+        # Read existing grub.cfg to extract the ext4 filesystem UUID so we can
+        # continue to use search.fs_uuid (built into GRUB core, no insmod needed).
+        $existing = Get-Content $grubCfgPath -Raw -ErrorAction SilentlyContinue
+        $fsUuid   = $null
+        if ($existing -match 'search\.fs_uuid\s+([0-9a-fA-F-]+)\s+root') {
+            $fsUuid = $Matches[1].ToLower()
+        }
+
+        if ($fsUuid) {
+            $searchLine = "search.fs_uuid $fsUuid root"
+            $rootSpec   = "root=UUID=$fsUuid"
+        } else {
+            # Fallback: use GPT partition entry GUID (PARTUUID) of the largest non-system partition.
+            $MsrGuid  = "{e3c9e316-0b5c-4db8-817d-f92df00215ae}"
+            $rootPart = $parts |
+                        Where-Object { $_.GptType -ne $EspGuid -and $_.GptType -ne $MsrGuid } |
+                        Sort-Object Size -Descending | Select-Object -First 1
+            if (-not $rootPart -or -not $rootPart.Guid) {
+                Write-Host "Warning: Could not determine root partition identifier; skipping GRUB patch."
+                return
+            }
+            $rootPartuuid = $rootPart.Guid.TrimStart('{').TrimEnd('}').ToLower()
+            $searchLine   = "search --no-floppy --part-uuid --set=root $rootPartuuid"
+            $rootSpec     = "root=PARTUUID=$rootPartuuid"
+        }
+
+        $grubCfg = "$searchLine`n" +
+                   "linux (`$root)/boot/vmlinuz $rootSpec ro quiet ds=nocloud`n" +
+                   "initrd (`$root)/boot/initrd.img`n" +
+                   "boot"
+
+        [System.IO.File]::WriteAllText($grubCfgPath, $grubCfg, [System.Text.Encoding]::ASCII)
+        Write-Host "GRUB patched: kernel will boot with ds=nocloud."
+
+    } catch {
+        Write-Host "Warning: GRUB patch failed: $_"
+    } finally {
+        if ($null -ne $diskNum -and $null -ne $espPartNum -and $null -ne $tmpLetter) {
+            Remove-PartitionAccessPath -DiskNumber $diskNum -PartitionNumber $espPartNum `
+                -AccessPath "${tmpLetter}:\" -ErrorAction SilentlyContinue
+        }
+        Dismount-VHD -Path $OsDisk -ErrorAction SilentlyContinue
+    }
+}
+
+function Ensure-VM {
+    param([string]$VmPassword)
+
+    $vm = Get-VM -Name "zs-config-host" -ErrorAction SilentlyContinue
+    if ($vm) {
+        if ($vm.State -eq "Running") {
+            Write-Host "VM 'zs-config-host' is already running. Skipping provisioning."
+            return
+        }
+        Write-Host "VM 'zs-config-host' exists but is not running (state: $($vm.State)). Re-provisioning..."
+        Remove-StaleVm
+    }
+
+    $ImageUrl  = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64-azure.vhd.tar.gz"
+    $ExtractDir = Join-Path $env:TEMP "ubuntu-2404-extract"
+    $tgz        = Join-Path $env:TEMP "ubuntu-2404-cloud.tar.gz"
+    $vhdx       = Join-Path $env:TEMP "ubuntu-2404-cloud.vhdx"
+
+    New-Item -ItemType Directory -Force -Path $ExtractDir | Out-Null
+
+    Write-Host "Downloading Ubuntu 24.04 cloud image (this may take several minutes)..."
+    Invoke-WebRequest -Uri $ImageUrl -OutFile $tgz -UseBasicParsing
+
+    Write-Host "Extracting VHD from archive..."
+    & tar -xzf $tgz -C $ExtractDir
+    if ($LASTEXITCODE -ne 0) { throw "Failed to extract cloud image archive." }
+
+    $vhd = Get-ChildItem -Path $ExtractDir -Filter "*.vhd" -Recurse |
+           Select-Object -First 1 -ExpandProperty FullName
+    if (-not $vhd) { throw "Could not find .vhd file after extraction." }
+    Write-Host "Found: $vhd"
+
+    Write-Host "Clearing sparse flag on VHD (required for Convert-VHD)..."
+    & fsutil sparse setflag $vhd 0
+
+    Write-Host "Converting VHD to VHDX..."
+    Convert-VHD -Path $vhd -DestinationPath $vhdx -VHDType Dynamic
+
+    $VmDiskDir = "C:\HyperV\VMs\zs-config-host"
+    New-Item -ItemType Directory -Force -Path $VmDiskDir | Out-Null
+    $OsDisk = Join-Path $VmDiskDir "os.vhdx"
+    Write-Host "Copying VHDX to $OsDisk..."
+    Copy-Item $vhdx $OsDisk -Force
+    # Patch GRUB before resizing: Resize-VHD moves the secondary GPT header,
+    # which makes Get-Partition unreliable when the disk is remounted afterward.
+    Fix-CloudInitDatasource -OsDisk $OsDisk
+    Resize-VHD -Path $OsDisk -SizeBytes 42949672960
+
+    Remove-Item $tgz, $vhdx -ErrorAction SilentlyContinue
+    Remove-Item $ExtractDir -Recurse -Force -ErrorAction SilentlyContinue
+
+    Write-Host "Building cloud-init seed disk..."
+    $SeedDisk = New-SeedDisk -VmPassword $VmPassword
+
+    $SwitchName = Ensure-VmSwitch
+
+    Write-Host "Creating VM 'zs-config-host'..."
+    $vm = New-VM -Name "zs-config-host" `
+                 -Generation 2 `
+                 -MemoryStartupBytes 2GB `
+                 -VHDPath $OsDisk `
+                 -SwitchName $SwitchName
+
+    Set-VMProcessor -VMName "zs-config-host" -Count 2
+    Set-VMMemory    -VMName "zs-config-host" -DynamicMemoryEnabled $true `
+                    -MinimumBytes 512MB -MaximumBytes 4GB
+
+    Set-VMFirmware  -VMName "zs-config-host" -EnableSecureBoot Off
+
+    Set-VM -VMName "zs-config-host" -CheckpointType Disabled
+
+    # Remove the empty DVD drive Hyper-V may add by default (shows as /dev/sr0 in Linux).
+    Get-VMDvdDrive -VMName "zs-config-host" -ErrorAction SilentlyContinue |
+        Remove-VMDvdDrive -ErrorAction SilentlyContinue
+
+    # Attach seed disk as a SCSI hard disk (/dev/sdb inside the VM).
+    # A DVD-backed ISO would appear on /dev/sr0 which fails with
+    # "Can't lookup blockdev" on Hyper-V before cloud-init runs.
+    Add-VMHardDiskDrive -VMName "zs-config-host" -Path $SeedDisk
+    $osDrive = Get-VMHardDiskDrive -VMName "zs-config-host" |
+               Where-Object { $_.Path -eq $OsDisk } | Select-Object -First 1
+    Set-VMFirmware -VMName "zs-config-host" -BootOrder @($osDrive)
+
+    Write-Host "VM 'zs-config-host' provisioned."
+}
+
+function Wait-ForVmIp {
+    param([string]$VmName, [int]$TimeoutSeconds = 120)
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        $ip = (Get-VM -Name $VmName |
+               Get-VMNetworkAdapter |
+               Select-Object -ExpandProperty IPAddresses |
+               Where-Object { $_ -match "^\d+\.\d+\.\d+\.\d+$" -and
+                              $_ -notmatch "^169\." } |
+               Select-Object -First 1)
+        if ($ip) {
+            $KeyDir = Join-Path $env:APPDATA "zs-config\vm"
+            [System.IO.File]::WriteAllText((Join-Path $KeyDir "vm-ip.txt"), $ip)
+            return $ip
+        }
+        Start-Sleep -Seconds 3
+    }
+    throw "Timed out waiting for VM '$VmName' to get an IP address."
+}
+
+function Invoke-WindowsServerDeploy {
+    param([string]$Branch)
+
+    Write-Host "Windows Server detected. Using Hyper-V + Linux VM path."
+
+    Ensure-AdminPrivileges
+    Ensure-HyperV
+
+    # Load or generate the VM console password.
+    $KeyDir  = Join-Path $env:APPDATA "zs-config\vm"
+    $PwdFile = Join-Path $KeyDir "vm-password.txt"
+    New-Item -ItemType Directory -Force -Path $KeyDir | Out-Null
+
+    $existingVm = Get-VM -Name "zs-config-host" -ErrorAction SilentlyContinue
+    if ($existingVm -and (Test-Path $PwdFile)) {
+        $VmPasswd = (Get-Content $PwdFile -Raw).Trim()
+    } else {
+        $chars    = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        $VmPasswd = -join (1..14 | ForEach-Object { $chars[(Get-Random -Maximum $chars.Length)] })
+        [System.IO.File]::WriteAllText($PwdFile, $VmPasswd, [System.Text.Encoding]::ASCII)
+    }
+
+    Ensure-VM -VmPassword $VmPasswd
+
+    $vm = Get-VM -Name "zs-config-host"
+    if ($vm.State -ne "Running") {
+        Start-VM -Name "zs-config-host"
+        Write-Host "Starting VM 'zs-config-host'..."
+    }
+
+    # Try to get the IP; non-fatal if DHCP hasn't assigned one yet.
+    Write-Host "Waiting for VM network (up to 3 min)..."
+    $VmIp = $null
+    try {
+        $VmIp = Wait-ForVmIp -VmName "zs-config-host" -TimeoutSeconds 180
+        Write-Host "VM IP: $VmIp"
+    } catch {
+        Write-Host "Could not detect VM IP yet. Run 'ip addr' inside the console to find it."
+    }
+
+    # Open the Hyper-V VM console.
+    Start-Process "vmconnect.exe" -ArgumentList "localhost", "zs-config-host"
+
+    $accessUrl = if ($VmIp) { "http://${VmIp}:8000" } else { "http://<VM-IP>:8000" }
+
+    Write-Host ""
+    Write-Host "========================================================"
+    Write-Host " Console login : zsadmin"
+    Write-Host " Password      : $VmPasswd"
+    if ($VmIp) {
+    Write-Host " VM IP         : $VmIp"
+    }
+    Write-Host "========================================================"
+    Write-Host ""
+    Write-Host "When the VM console shows a login prompt:"
+    Write-Host "  1. Log in with the credentials above."
+    Write-Host "  2. Wait for cloud-init to finish installing packages:"
+    Write-Host "       cloud-init status --wait"
+    Write-Host "  3. Run the deploy script:"
+    Write-Host ""
+    Write-Host "     curl -fsSL https://raw.githubusercontent.com/mpreissner/zs-config/$Branch/deploy.sh | bash"
+    Write-Host ""
+    Write-Host "Once deployed, zs-config will be available at:"
+    Write-Host "  $accessUrl"
+}
+
+if (Test-IsWindowsServer) {
+    Invoke-WindowsServerDeploy -Branch $Branch
+    exit $LASTEXITCODE
+}
+
+# -- Desktop (Windows 11) helpers -----------------------------------------------
+
+function Test-CpuVirtualization {
+    # If a hypervisor is already active (Hyper-V, WSL2, etc.) virtualization is
+    # demonstrably working regardless of how the firmware flag is reported.
+    if ((Get-WmiObject Win32_ComputerSystem).HypervisorPresent) { return }
+
+    $virt = (Get-WmiObject Win32_Processor | Select-Object -First 1).VirtualizationFirmwareEnabled
+    if ($virt) { return }
+
+    Write-Host ""
+    Write-Host "ERROR: Hardware virtualization does not appear to be enabled on this system."
+    Write-Host ""
+    Write-Host "Docker Desktop requires Intel VT-x or AMD-V (SVM) to be enabled"
+    Write-Host "in your BIOS/UEFI firmware."
+    Write-Host ""
+    Write-Host "  1. Restart and enter BIOS/UEFI setup (Del, F2, or F10 at boot)."
+    Write-Host "  2. Locate 'Virtualization Technology', 'VT-x', or 'AMD-V' and enable it."
+    Write-Host "  3. Save settings and restart, then re-run this script."
+    Write-Host ""
+    Write-Host "If this machine is itself a VM, enable nested virtualization on the host."
     exit 1
 }
+
+function Wait-ForDockerDaemon {
+    param([int]$TimeoutSeconds = 120)
+    Write-Host "Waiting for Docker Desktop to become ready..."
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        $null = docker info 2>&1
+        if ($LASTEXITCODE -eq 0) { Write-Host "Docker is ready."; return }
+        Write-Host -NoNewline "."
+        Start-Sleep -Seconds 3
+    }
+    Write-Host ""
+    throw "Docker Desktop did not become ready within ${TimeoutSeconds}s. Start it manually and re-run."
+}
+
+function Ensure-DockerDesktop {
+    $ddExe = "${env:ProgramFiles}\Docker\Docker\Docker Desktop.exe"
+
+    # Daemon already running?
+    if (Get-Command docker -ErrorAction SilentlyContinue) {
+        $null = docker info 2>&1
+        if ($LASTEXITCODE -eq 0) { return }
+    }
+
+    # Installed but not started? Use Test-Path rather than Get-Command docker so
+    # this works even when docker.exe is not yet in the current session's PATH.
+    if (Test-Path $ddExe) {
+        Write-Host "Docker Desktop is installed but not running. Starting..."
+        Start-Process $ddExe
+        Write-Host ""
+        Wait-ForDockerDaemon
+        return
+    }
+
+    # Not installed - admin required for installation.
+    $id  = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $pri = New-Object Security.Principal.WindowsPrincipal($id)
+    if (-not $pri.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        Write-Error ("Docker Desktop is not installed. " +
+                     "Re-run this script as Administrator to install it automatically.")
+        exit 1
+    }
+
+    Write-Host "Docker Desktop not found. Installing..."
+
+    # Prefer winget (ships with Windows 11).
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+        Write-Host "Installing via winget..."
+        winget install Docker.DockerDesktop `
+            --silent --accept-package-agreements --accept-source-agreements
+        # Refresh PATH regardless of exit code; winget may have partially succeeded.
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
+                    [System.Environment]::GetEnvironmentVariable("Path","User")
+    }
+
+    # Direct download fallback if winget was unavailable or did not install the exe.
+    if (-not (Test-Path $ddExe)) {
+        # Architecture: 12 = ARM64, everything else treated as amd64.
+        $cpuArch = (Get-WmiObject Win32_Processor | Select-Object -First 1).Architecture
+        $archStr = if ($cpuArch -eq 12) { "arm64" } else { "amd64" }
+        $installer = Join-Path $env:TEMP "DockerDesktopInstaller.exe"
+        Write-Host "Downloading Docker Desktop ($archStr)..."
+        Invoke-WebRequest `
+            -Uri "https://desktop.docker.com/win/main/$archStr/Docker%20Desktop%20Installer.exe" `
+            -OutFile $installer -UseBasicParsing
+        Write-Host "Running installer (this may take a few minutes)..."
+        Start-Process -FilePath $installer -ArgumentList "install","--quiet","--accept-license" -Wait
+        Remove-Item $installer -ErrorAction SilentlyContinue
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
+                    [System.Environment]::GetEnvironmentVariable("Path","User")
+    }
+
+    if (-not (Test-Path $ddExe)) {
+        Write-Error ("Docker Desktop installation failed. " +
+                     "Install manually from https://docs.docker.com/desktop/install/windows-install/")
+        exit 1
+    }
+
+    # If WSL2 kernel or Virtual Machine Platform was just enabled, a reboot is required.
+    $rebootPending = Test-Path `
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending"
+    if (-not $rebootPending) {
+        $pendingOps = (Get-ItemProperty `
+            "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager" `
+            -Name PendingFileRenameOperations -ErrorAction SilentlyContinue).PendingFileRenameOperations
+        $rebootPending = ($null -ne $pendingOps -and $pendingOps.Count -gt 0)
+    }
+    if ($rebootPending) {
+        Write-Host ""
+        Write-Host "Docker Desktop was installed but a system restart is required"
+        Write-Host "(WSL2 kernel or Virtual Machine Platform was updated)."
+        Write-Host "Restart, then re-run this script."
+        exit 0
+    }
+
+    Start-Process $ddExe
+    Write-Host ""
+    Wait-ForDockerDaemon
+}
+
+function Ensure-Git {
+    if (Get-Command git -ErrorAction SilentlyContinue) { return }
+
+    $id  = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $pri = New-Object Security.Principal.WindowsPrincipal($id)
+    if (-not $pri.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        Write-Error ("Git is not installed. " +
+                     "Re-run this script as Administrator to install it automatically.")
+        exit 1
+    }
+
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+        Write-Host "Git not found. Installing via winget..."
+        winget install Git.Git --silent --accept-package-agreements --accept-source-agreements
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" +
+                    [System.Environment]::GetEnvironmentVariable("Path","User")
+    }
+
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        Write-Error "Git is not installed. Install from https://git-scm.com/ and re-run this script."
+        exit 1
+    }
+}
+
+# -- Preflight ------------------------------------------------------------------
+
+Test-CpuVirtualization
+Ensure-Git
+Ensure-DockerDesktop
 
 try {
     docker compose version | Out-Null
@@ -34,7 +570,7 @@ try {
     exit 1
 }
 
-# ── docker-compose.yml diff check ────────────────────────────────────────────
+# -- docker-compose.yml diff check ----------------------------------------------
 
 $script:DcBackup = $null
 
@@ -66,11 +602,11 @@ function Invoke-ComposeDiff {
 
     Write-Host ""
     Write-Host "docker-compose.yml differs from upstream (origin/$Branch):"
-    Write-Host "────────────────────────────────────────────────────────────"
+    Write-Host "------------------------------------------------------------"
     $ErrorActionPreference = "Continue"
     & git diff --no-index --src-prefix="local/" --dst-prefix="upstream/" $dcFile $tmpRemote
     $ErrorActionPreference = $savedPref
-    Write-Host "────────────────────────────────────────────────────────────"
+    Write-Host "------------------------------------------------------------"
     Write-Host ""
     Remove-Item $tmpRemote -ErrorAction SilentlyContinue
 
@@ -84,7 +620,7 @@ function Invoke-ComposeDiff {
             Write-Host "Local docker-compose.yml saved; will be restored after pull."
         }
     } else {
-        Write-Host "Non-interactive — using upstream docker-compose.yml."
+        Write-Host "Non-interactive - using upstream docker-compose.yml."
     }
     Write-Host ""
 }
@@ -98,7 +634,7 @@ function Restore-Compose {
     }
 }
 
-# ── Clone if not already inside the repo ─────────────────────────────────────
+# -- Clone if not already inside the repo --------------------------------------
 
 $IsRepo = $false
 try {
@@ -132,16 +668,18 @@ if ($IsRepo) {
     }
 }
 
-# ── Ensure JWT_SECRET is set ──────────────────────────────────────────────────
+# -- Ensure JWT_SECRET is set ---------------------------------------------------
 
 $EnvFile = Join-Path $RepoDir ".env"
 $JwtSecret = $null
+$BindAddr  = $null
+$SslDomain = $null
 
 if (Test-Path $EnvFile) {
     foreach ($line in Get-Content $EnvFile) {
-        if ($line -match "^JWT_SECRET=(.+)$") {
-            $JwtSecret = $Matches[1]
-        }
+        if ($line -match "^JWT_SECRET=(.+)$")    { $JwtSecret = $Matches[1] }
+        if ($line -match "^BIND_ADDR=(.+)$")     { $BindAddr  = $Matches[1] }
+        if ($line -match "^ZS_SSL_DOMAIN=(.+)$") { $SslDomain = $Matches[1] }
     }
 }
 
@@ -150,22 +688,69 @@ if (-not $JwtSecret) {
     [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
     $JwtSecret = ($bytes | ForEach-Object { $_.ToString("x2") }) -join ""
     Add-Content -Path $EnvFile -Value "JWT_SECRET=$JwtSecret"
-    Write-Host "Generated JWT_SECRET and saved to $EnvFile — keep this file safe."
+    Write-Host "Generated JWT_SECRET and saved to $EnvFile - keep this file safe."
 }
 
 $env:JWT_SECRET = $JwtSecret
 
-# ── Ensure persistent Docker volumes exist ────────────────────────────────────
+# -- Network binding ------------------------------------------------------------
 
+if (-not $BindAddr) {
+    Write-Host ""
+    Write-Host "Network binding:"
+    Write-Host "  [1] Localhost only - 127.0.0.1 (default, single machine)"
+    Write-Host "  [2] All interfaces - 0.0.0.0   (server / remote access)"
+    $bindChoice = Read-Host "Choice [1/2, default 1]"
+    if ($bindChoice -eq "2") { $BindAddr = "0.0.0.0" } else { $BindAddr = "127.0.0.1" }
+    Add-Content -Path $EnvFile -Value "BIND_ADDR=$BindAddr"
+    Write-Host "Network binding set to $BindAddr - saved to .env."
+    Write-Host ""
+}
+
+$env:BIND_ADDR = $BindAddr
+
+# -- SSL certificate (optional) -------------------------------------------------
+
+if (-not $SslDomain) {
+    Write-Host ""
+    Write-Host "SSL certificate (optional):"
+    Write-Host "  Skip to use HTTP on port 8000, or provide a cert to enable HTTPS on port 8443."
+    $sslChoice = Read-Host "Configure SSL now? [y/N]"
+    if ($sslChoice -match "^[Yy]$") {
+        $SslDomain = Read-Host "Domain (CN/SAN on the cert, e.g. myapp.company.com)"
+        $certSrc   = Read-Host "Path to certificate file (PEM - leaf + CA chain)"
+        $keySrc    = Read-Host "Path to private key file (PEM)"
+
+        if (-not (Test-Path $certSrc)) { Write-Error "Certificate file not found: $certSrc"; exit 1 }
+        if (-not (Test-Path $keySrc))  { Write-Error "Key file not found: $keySrc"; exit 1 }
+
+        $certsDir = Join-Path $RepoDir "certs"
+        New-Item -ItemType Directory -Path $certsDir -Force | Out-Null
+        Copy-Item $certSrc (Join-Path $certsDir "cert.pem") -Force
+        Copy-Item $keySrc  (Join-Path $certsDir "key.pem")  -Force
+
+        Add-Content -Path $EnvFile -Value "ZS_SSL_DOMAIN=$SslDomain"
+        Write-Host "SSL configured for domain $SslDomain - cert files copied to $certsDir"
+        Write-Host ""
+    }
+}
+
+if ($SslDomain) { $env:ZS_SSL_DOMAIN = $SslDomain }
+
+# Always ensure certs/ exists so the bind mount never fails on a fresh clone.
+New-Item -ItemType Directory -Path (Join-Path $RepoDir "certs") -Force | Out-Null
+
+# -- Ensure persistent Docker volumes exist -------------------------------------
+
+$existingVolumes = docker volume ls --quiet
 foreach ($vol in @("zs-config_zs-db", "zs-config_zs-plugins")) {
-    $exists = docker volume inspect $vol 2>$null
-    if (-not $exists) {
+    if ($existingVolumes -notcontains $vol) {
         Write-Host "Creating Docker volume: $vol"
         docker volume create $vol
     }
 }
 
-# ── Inject host trust store ───────────────────────────────────────────────────
+# -- Inject host trust store ----------------------------------------------------
 # Exports trusted root certs into docker/ca-bundle.pem so the image includes
 # any corporate SSL-inspection CAs present on this machine.  Cleared in the
 # finally block so the file is never committed with real cert content.
@@ -186,12 +771,12 @@ try {
     $certCount = (Select-String -Path $Bundle -Pattern "BEGIN CERTIFICATE" -ErrorAction SilentlyContinue).Count
     Write-Host "  Exported $certCount certificates"
 
-    # ── Build ─────────────────────────────────────────────────────────────────
+    # -- Build -------------------------------------------------------------------
 
     Write-Host "Building image..."
     docker compose build
 
-    # ── Deploy ────────────────────────────────────────────────────────────────
+    # -- Deploy ------------------------------------------------------------------
 
     Write-Host "Stopping existing container..."
     docker compose down
@@ -199,7 +784,7 @@ try {
     Write-Host "Starting container..."
     docker compose up -d
 
-    # ── Health check ──────────────────────────────────────────────────────────
+    # -- Health check ------------------------------------------------------------
 
     Write-Host "Waiting for health check..."
     $ready = $false
@@ -218,7 +803,12 @@ try {
     Write-Host ""
     if ($ready) {
         Write-Host ""
-        Write-Host "zs-config is running at http://localhost:8000"
+        if ($SslDomain) {
+            Write-Host "zs-config is running at https://${SslDomain}:8443"
+            Write-Host "(HTTP on port 8000 redirects to HTTPS)"
+        } else {
+            Write-Host "zs-config is running at http://localhost:8000"
+        }
         Write-Host ""
         docker compose logs --tail=5
     } else {

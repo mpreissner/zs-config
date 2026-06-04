@@ -19,15 +19,50 @@ BRANCH="${1:-main}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DC_BACKUP=""
 
+NON_INTERACTIVE=0
+for arg in "$@"; do
+    case "$arg" in
+        --non-interactive) NON_INTERACTIVE=1 ;;
+    esac
+done
+
 # ── Preflight ─────────────────────────────────────────────────────────────────
 
+_install_pkg() {
+    local pkg="$1"
+    if command -v apt-get &>/dev/null; then
+        sudo apt-get install -y "$pkg"
+    elif command -v dnf &>/dev/null; then
+        sudo dnf install -y "$pkg"
+    elif command -v yum &>/dev/null; then
+        sudo yum install -y "$pkg"
+    elif command -v brew &>/dev/null; then
+        brew install "$pkg"
+    else
+        echo "ERROR: Cannot install $pkg — no supported package manager found (apt/dnf/yum/brew)." >&2
+        exit 1
+    fi
+}
+
+if ! command -v git &>/dev/null; then
+    echo "git not found. Installing..."
+    _install_pkg git
+fi
+
 if ! command -v docker &>/dev/null; then
-    echo "ERROR: docker is not installed or not in PATH." >&2
-    exit 1
+    if [[ "$(uname)" == "Darwin" ]]; then
+        echo "ERROR: Docker Desktop is not running or not installed." >&2
+        echo "Install from https://docs.docker.com/desktop/install/mac-install/ and start it, then re-run." >&2
+        exit 1
+    fi
+    echo "docker not found. Installing via get.docker.com..."
+    curl -fsSL https://get.docker.com | sh
+    sudo usermod -aG docker "$USER" 2>/dev/null || true
+    sudo systemctl enable --now docker 2>/dev/null || true
 fi
 
 if ! docker compose version &>/dev/null; then
-    echo "ERROR: docker compose (v2) is required." >&2
+    echo "ERROR: docker compose (v2) is required. Install Docker Engine 20.10+ or add the Compose plugin." >&2
     exit 1
 fi
 
@@ -60,7 +95,7 @@ _compose_diff() {
     echo ""
     rm -f "$tmp_remote"
 
-    if [[ -t 0 ]]; then
+    if [[ -t 0 ]] && [[ "$NON_INTERACTIVE" -eq 0 ]]; then
         echo "  [1] Use upstream version (recommended)"
         echo "  [2] Keep my local version"
         read -r -p "Choice [1/2, default 1]: " _dc_choice
@@ -138,7 +173,10 @@ fi
 # 0.0.0.0   = all interfaces (required for server/remote access)
 
 if [[ -z "${BIND_ADDR:-}" ]]; then
-    if [[ -t 0 ]]; then
+    if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+        BIND_ADDR="0.0.0.0"
+        echo "Non-interactive — network binding set to ${BIND_ADDR}."
+    elif [[ -t 0 ]]; then
         echo ""
         echo "Network binding:"
         echo "  [1] Localhost only — 127.0.0.1 (default, single machine)"
@@ -160,7 +198,7 @@ fi
 # ── SSL certificate (optional) ────────────────────────────────────────────────
 # If ZS_SSL_DOMAIN is already set (from .env or environment), skip prompting.
 
-if [[ -z "${ZS_SSL_DOMAIN:-}" ]] && [[ -t 0 ]]; then
+if [[ -z "${ZS_SSL_DOMAIN:-}" ]] && [[ -t 0 ]] && [[ "$NON_INTERACTIVE" -eq 0 ]]; then
     echo ""
     echo "SSL certificate (optional):"
     echo "  Skip to use HTTP on port 8000, or provide a cert to enable HTTPS on port 8443."
@@ -225,9 +263,14 @@ if [[ "$(uname)" == "Darwin" ]]; then
     security find-certificate -a -p \
         "$HOME/Library/Keychains/login.keychain-db" >> "$BUNDLE" 2>/dev/null || true
 else
-    # On Linux, copy the host system store (includes any corp CAs installed there)
-    [[ -f /etc/ssl/certs/ca-certificates.crt ]] && \
-        cp /etc/ssl/certs/ca-certificates.crt "$BUNDLE" || true
+    # On Linux, copy the host CA bundle (path varies by distro).
+    # Debian/Ubuntu: /etc/ssl/certs/ca-certificates.crt
+    # RHEL/Fedora/Rocky: /etc/pki/tls/certs/ca-bundle.crt
+    if [[ -f /etc/ssl/certs/ca-certificates.crt ]]; then
+        cp /etc/ssl/certs/ca-certificates.crt "$BUNDLE"
+    elif [[ -f /etc/pki/tls/certs/ca-bundle.crt ]]; then
+        cp /etc/pki/tls/certs/ca-bundle.crt "$BUNDLE"
+    fi
 fi
 
 # ── Build ─────────────────────────────────────────────────────────────────────

@@ -49,6 +49,7 @@ def zia_menu():
                 questionary.Choice("URL Categories", value="url_categories"),
                 questionary.Choice("Security Policy Settings", value="security_policy"),
                 questionary.Choice("URL Lookup", value="url_lookup"),
+                questionary.Choice("PAC Files", value="pac_files"),
                 questionary.Separator("── Network Security ──"),
                 questionary.Choice("Firewall Policy", value="firewall"),
                 questionary.Choice("SSL Inspection", value="ssl"),
@@ -84,6 +85,8 @@ def zia_menu():
             security_policy_menu(client, tenant)
         elif choice == "url_lookup":
             _url_lookup(client, tenant)
+        elif choice == "pac_files":
+            pac_files_menu(client, tenant)
         elif choice == "firewall":
             firewall_policy_menu(client, tenant)
         elif choice == "ssl":
@@ -244,6 +247,394 @@ def _url_lookup(client, tenant):
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
+
+
+# ------------------------------------------------------------------
+# PAC Files
+# ------------------------------------------------------------------
+
+def pac_files_menu(client, tenant):
+    from services.zia_service import ZIAService
+
+    while True:
+        render_banner()
+        svc = ZIAService(client, tenant_id=tenant.id)
+        with console.status("[cyan]Loading PAC files...[/cyan]"):
+            pac_files = svc.list_pac_files()
+
+        # Display summary table
+        if pac_files:
+            table = Table(title=f"PAC Files ({len(pac_files)} total)", show_lines=False)
+            table.add_column("ID", style="dim")
+            table.add_column("Name")
+            table.add_column("Description")
+            table.add_column("Domain")
+            for p in pac_files:
+                table.add_row(
+                    str(p.get("id") or p.get("Id") or "—"),
+                    p.get("name") or "—",
+                    (p.get("description") or "")[:50] or "—",
+                    p.get("domain") or "—",
+                )
+            console.print(table)
+
+        choices = []
+        for p in pac_files:
+            label = p.get("name") or str(p.get("id", ""))
+            if p.get("editable") is False:
+                label = f"{label} [read-only]"
+            choices.append(questionary.Choice(label, value=p))
+        choices.append(questionary.Separator())
+        choices.append(questionary.Choice("Create PAC File", value="create"))
+        choices.append(questionary.Choice("<- Back", value="back"))
+
+        choice = questionary.select(
+            "PAC Files",
+            choices=choices,
+            use_indicator=True,
+        ).ask()
+
+        if choice is None or choice == "back":
+            break
+        elif choice == "create":
+            _create_pac_file(client, tenant)
+        elif isinstance(choice, dict):
+            pac_file_detail_menu(client, tenant, choice)
+
+
+def pac_file_detail_menu(client, tenant, pac):
+    from services.zia_service import ZIAService
+
+    while True:
+        render_banner()
+        svc = ZIAService(client, tenant_id=tenant.id)
+        pac_id = pac.get("id") or pac.get("Id")
+        pac_name = pac.get("name") or str(pac_id)
+        editable = pac.get("editable", True)
+
+        with console.status("[cyan]Fetching versions...[/cyan]"):
+            versions = svc.get_pac_file_versions(pac_id)
+
+        console.print(f"\n[bold]PAC File: {pac_name}[/bold]")
+        if pac.get("description"):
+            console.print(f"[dim]Description: {pac['description']}[/dim]")
+        if pac.get("domain"):
+            console.print(f"[dim]Domain: {pac['domain']}[/dim]")
+        if not editable:
+            console.print("[yellow]This PAC file is read-only (Zscaler-managed).[/yellow]")
+
+        if versions:
+            vtable = Table(title="Versions", show_lines=False)
+            vtable.add_column("Version", style="dim")
+            vtable.add_column("Status")
+            vtable.add_column("Verification")
+            vtable.add_column("Commit Message")
+            vtable.add_column("Last Modified")
+            for v in versions:
+                lmt = v.get("last_modified_time") or v.get("lastModifiedTime")
+                lmt_str = str(lmt) if lmt else "—"
+                vtable.add_row(
+                    str(v.get("pac_version") or v.get("pacVersion") or "—"),
+                    v.get("pac_version_status") or v.get("pacVersionStatus") or "—",
+                    v.get("pac_verification_status") or v.get("pacVerificationStatus") or "—",
+                    (v.get("pac_commit_message") or v.get("pacCommitMessage") or "")[:50] or "—",
+                    lmt_str,
+                )
+            console.print(vtable)
+
+            # Show deployed version's PAC content
+            deployed = next(
+                (v for v in versions if (v.get("pac_version_status") or v.get("pacVersionStatus")) == "DEPLOYED"),
+                None,
+            )
+            if deployed:
+                content = deployed.get("pac_content") or deployed.get("pacContent") or ""
+                if content:
+                    from rich.panel import Panel
+                    lines = content.splitlines()
+                    if len(lines) > 40:
+                        from cli.scroll_view import render_rich_to_lines, scroll_view
+                        from cli.banner import capture_banner
+                        panel = Panel(content, title="Deployed PAC Content", expand=False)
+                        scroll_view(render_rich_to_lines(panel), header_ansi=capture_banner())
+                    else:
+                        from rich.panel import Panel
+                        console.print(Panel(content, title="Deployed PAC Content", expand=False))
+        else:
+            console.print("[yellow]No versions found.[/yellow]")
+
+        action_choices = []
+        if editable:
+            action_choices.append(questionary.Choice("Edit (push new version)", value="edit"))
+            action_choices.append(questionary.Choice("Delete PAC File", value="delete"))
+        action_choices.append(questionary.Choice("<- Back", value="back"))
+
+        action = questionary.select(
+            "Action:",
+            choices=action_choices,
+            use_indicator=True,
+        ).ask()
+
+        if action is None or action == "back":
+            break
+        elif action == "edit":
+            _edit_pac_file(client, tenant, pac, versions)
+        elif action == "delete":
+            deleted = _delete_pac_file(client, tenant, pac)
+            if deleted:
+                break
+
+
+def _get_pac_content_from_user(prompt: str, current_content: str = "") -> str:
+    """Prompt the user for PAC content.
+
+    Preference order:
+    1. If $EDITOR is set, write current_content to a temp file, open the editor, read back.
+    2. Otherwise prompt for a file path or inline content:
+       - If the value ends with .pac or .js and the path exists, read from file.
+       - Otherwise treat the value as inline content.
+    """
+    import os
+    import tempfile
+    import subprocess
+
+    editor = os.environ.get("EDITOR", "")
+    if editor:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".js", delete=False) as tf:
+            tf.write(current_content)
+            tmp_path = tf.name
+        try:
+            subprocess.call([editor, tmp_path])
+            with open(tmp_path) as fh:
+                content = fh.read()
+        except Exception as exc:
+            console.print(f"[red]Editor error: {exc}[/red]")
+            content = ""
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        return content
+
+    # No $EDITOR — ask for file path or inline paste
+    console.print("[dim]Tip: set $EDITOR for a better editing experience.[/dim]")
+    console.print(f"[dim]{prompt}[/dim]")
+    raw = questionary.text("PAC content file path (or paste):").ask()
+    if raw is None:
+        return current_content
+    raw = raw.strip()
+    if not raw:
+        return current_content
+    # Resolve file path if it looks like a .pac/.js file
+    if (raw.endswith(".pac") or raw.endswith(".js")) and __import__("os").path.isfile(raw):
+        try:
+            with open(raw) as fh:
+                return fh.read()
+        except Exception as exc:
+            console.print(f"[red]Could not read file: {exc}[/red]")
+            return current_content
+    return raw
+
+
+def _create_pac_file(client, tenant):
+    from services.zia_service import ZIAService
+
+    console.print("\n[bold]Create PAC File[/bold]")
+
+    name = questionary.text("Name (required):").ask()
+    if not name or not name.strip():
+        return
+    name = name.strip()
+
+    description = questionary.text("Description (optional):").ask()
+    if description is None:
+        return
+    description = description.strip() or None
+
+    domain = questionary.text("Domain (optional):").ask()
+    if domain is None:
+        return
+    domain = domain.strip() or None
+
+    pac_commit_message = questionary.text(
+        "Commit message:", default="Initial version"
+    ).ask()
+    if not pac_commit_message or not pac_commit_message.strip():
+        return
+    pac_commit_message = pac_commit_message.strip()
+
+    pac_content = _get_pac_content_from_user("Enter or paste PAC content:")
+    if not pac_content or not pac_content.strip():
+        console.print("[red]PAC content is required.[/red]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    svc = ZIAService(client, tenant_id=tenant.id)
+
+    # Validate before submit
+    pac_verification_status = "VERIFY_NOERR"
+    try:
+        with console.status("[cyan]Validating PAC content...[/cyan]"):
+            val_result = svc.validate_pac_file_content(pac_content)
+        if not val_result.get("success"):
+            err_count = val_result.get("error_count") or val_result.get("errorCount") or 0
+            msg = val_result.get("message") or ""
+            console.print(f"[yellow]Validation failed — {err_count} error(s): {msg}[/yellow]")
+            proceed = questionary.confirm("Proceed anyway?", default=False).ask()
+            if not proceed:
+                return
+            pac_verification_status = "NOVERIFY"
+    except Exception as exc:
+        console.print(f"[yellow]Validation request failed: {exc}[/yellow]")
+        proceed = questionary.confirm("Proceed without validation?", default=False).ask()
+        if not proceed:
+            return
+        pac_verification_status = "NOVERIFY"
+
+    config = {
+        "name": name,
+        "pac_content": pac_content,
+        "pac_commit_message": pac_commit_message,
+        "pac_verification_status": pac_verification_status,
+        "pac_version_status": "DEPLOYED",
+    }
+    if description:
+        config["description"] = description
+    if domain:
+        config["domain"] = domain
+
+    try:
+        result = svc.create_pac_file(config)
+        console.print(
+            f"[green]PAC file '{result.get('name', name)}' created (ID: {result.get('id', '?')}).[/green]"
+        )
+        _zia_changed()
+    except Exception as exc:
+        console.print(f"[red]Error: {exc}[/red]")
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def _edit_pac_file(client, tenant, pac, versions=None):
+    from services.zia_service import ZIAService
+
+    pac_id = pac.get("id") or pac.get("Id")
+    pac_name = pac.get("name") or str(pac_id)
+
+    console.print(f"\n[bold]Edit PAC File: {pac_name}[/bold]")
+
+    svc = ZIAService(client, tenant_id=tenant.id)
+
+    if versions is None:
+        with console.status("[cyan]Fetching versions...[/cyan]"):
+            versions = svc.get_pac_file_versions(pac_id)
+
+    # Resolve current deployed version
+    deployed = next(
+        (v for v in versions if (v.get("pac_version_status") or v.get("pacVersionStatus")) == "DEPLOYED"),
+        None,
+    )
+    if deployed is None and versions:
+        deployed = max(versions, key=lambda v: v.get("pac_version") or v.get("pacVersion") or 0)
+
+    if deployed is None:
+        console.print("[red]No versions found for this PAC file.[/red]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    current_version = deployed.get("pac_version") or deployed.get("pacVersion")
+    current_content = deployed.get("pac_content") or deployed.get("pacContent") or ""
+
+    name = questionary.text("Name:", default=pac.get("name") or "").ask()
+    if name is None:
+        return
+    name = name.strip() or pac.get("name") or pac_name
+
+    description = questionary.text(
+        "Description:", default=pac.get("description") or ""
+    ).ask()
+    if description is None:
+        return
+    description = description.strip() or None
+
+    pac_commit_message = questionary.text("Commit message (required):").ask()
+    if not pac_commit_message or not pac_commit_message.strip():
+        return
+    pac_commit_message = pac_commit_message.strip()
+
+    pac_content = _get_pac_content_from_user(
+        "Edit PAC content (press Enter to open in $EDITOR or enter file path):",
+        current_content=current_content,
+    )
+    if not pac_content or not pac_content.strip():
+        console.print("[red]PAC content is required.[/red]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return
+
+    # Validate
+    pac_verification_status = "VERIFY_NOERR"
+    try:
+        with console.status("[cyan]Validating PAC content...[/cyan]"):
+            val_result = svc.validate_pac_file_content(pac_content)
+        if not val_result.get("success"):
+            err_count = val_result.get("error_count") or val_result.get("errorCount") or 0
+            msg = val_result.get("message") or ""
+            console.print(f"[yellow]Validation failed — {err_count} error(s): {msg}[/yellow]")
+            proceed = questionary.confirm("Proceed anyway?", default=False).ask()
+            if not proceed:
+                return
+            pac_verification_status = "NOVERIFY"
+    except Exception as exc:
+        console.print(f"[yellow]Validation request failed: {exc}[/yellow]")
+        proceed = questionary.confirm("Proceed without validation?", default=False).ask()
+        if not proceed:
+            return
+        pac_verification_status = "NOVERIFY"
+
+    config = {
+        "name": name,
+        "pac_content": pac_content,
+        "pac_commit_message": pac_commit_message,
+        "pac_verification_status": pac_verification_status,
+        "pac_version_status": "DEPLOYED",
+    }
+    if description:
+        config["description"] = description
+
+    try:
+        svc.update_pac_file_content(pac_id, current_version, config)
+        console.print("[green]New PAC file version pushed successfully.[/green]")
+        _zia_changed()
+    except Exception as exc:
+        console.print(f"[red]Error: {exc}[/red]")
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
+
+
+def _delete_pac_file(client, tenant, pac) -> bool:
+    """Delete a PAC file. Returns True if deleted (so the caller can exit the detail loop)."""
+    from services.zia_service import ZIAService
+
+    pac_id = pac.get("id") or pac.get("Id")
+    pac_name = pac.get("name") or str(pac_id)
+
+    confirmed = questionary.confirm(
+        f"Delete PAC file '{pac_name}' and ALL its versions? This cannot be undone.",
+        default=False,
+    ).ask()
+    if not confirmed:
+        return False
+
+    svc = ZIAService(client, tenant_id=tenant.id)
+    try:
+        svc.delete_pac_file(pac_id, pac_name)
+        console.print(f"[green]PAC file '{pac_name}' deleted.[/green]")
+        _zia_changed()
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return True
+    except Exception as exc:
+        console.print(f"[red]Error: {exc}[/red]")
+        questionary.press_any_key_to_continue("Press any key to continue...").ask()
+        return False
 
 
 # ------------------------------------------------------------------

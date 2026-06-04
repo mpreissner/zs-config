@@ -91,8 +91,23 @@ async def lifespan(app: FastAPI):
     from services.scheduled_task_service import start_scheduler, stop_scheduler
     start_scheduler()
 
+    from services.update_notify_service import check_and_notify
+    from datetime import datetime, timedelta
+    from apscheduler.schedulers.background import BackgroundScheduler as _BS
+    from apscheduler.triggers.interval import IntervalTrigger
+    _update_scheduler = _BS()
+    _update_scheduler.add_job(
+        check_and_notify,
+        IntervalTrigger(hours=24),
+        id="update_notify_daily",
+        replace_existing=True,
+        next_run_time=datetime.now() + timedelta(hours=24),
+    )
+    _update_scheduler.start()
+
     yield
 
+    _update_scheduler.shutdown(wait=False)
     stop_scheduler()
 
 

@@ -293,6 +293,32 @@ def delete_tenant(tenant_id: int, user: AuthUser = Depends(require_admin)):
     )])
 
 
+def _get_zcc_import_client(tenant_id: int):
+    """Build auth + ZCCClient pair for a tenant by ID."""
+    from db.database import get_session
+    from db.models import TenantConfig
+    from lib.auth import ZscalerAuth
+    from lib.zcc_client import ZCCClient
+    from services.config_service import decrypt_secret
+
+    with get_session() as session:
+        t = session.query(TenantConfig).filter_by(id=tenant_id, is_active=True).first()
+        if not t:
+            raise HTTPException(status_code=404, detail="Tenant not found")
+        zidentity = t.zidentity_base_url
+        client_id = t.client_id
+        secret = decrypt_secret(t.client_secret_enc)
+        oneapi = t.oneapi_base_url
+        govcloud = t.govcloud
+        zia_cloud = t.zia_cloud
+        zia_tenant_id = t.zia_tenant_id
+        name = t.name
+
+    auth = ZscalerAuth(zidentity, client_id, secret, govcloud=govcloud)
+    client = ZCCClient(auth, oneapi, zia_cloud, zia_tenant_id)
+    return client, name
+
+
 def _get_import_client(tenant_id: int):
     """Build auth + client pair for a tenant by ID."""
     from db.database import get_session
@@ -425,6 +451,54 @@ def import_zpa(tenant_id: int, user: AuthUser = Depends(require_auth)):
             store.fail(job_id, str(exc))
             _write_audit([dict(
                 tenant_id=tenant_id, product="ZPA", operation="import",
+                action="CREATE", status="FAILURE",
+                resource_type="tenant", resource_name=tenant_name,
+                error_message=str(exc), timestamp=datetime.utcnow(),
+            )])
+
+    threading.Thread(target=run, daemon=True).start()
+    return {"job_id": job_id}
+
+
+@router.post("/{tenant_id}/import/zcc", status_code=202)
+def import_zcc(tenant_id: int, user: AuthUser = Depends(require_auth)):
+    import threading
+    from api.jobs import store
+
+    if user.role != "admin":
+        check_tenant_access(tenant_id, user)
+    client, tenant_name = _get_zcc_import_client(tenant_id)
+    job_id = store.create()
+
+    def run():
+        from services.zcc_import_service import ZCCImportService
+
+        def on_progress(resource_type: str, done: int, total: int):
+            store.append(job_id, {
+                "type": "progress", "phase": "import",
+                "resource_type": resource_type, "done": done, "total": total,
+            })
+
+        try:
+            sync_log = ZCCImportService(client, tenant_id=tenant_id).run(progress_callback=on_progress)
+            store.complete(job_id, {
+                "status": sync_log.status,
+                "resources_synced": sync_log.resources_synced,
+                "resources_updated": sync_log.resources_updated,
+                "error_message": sync_log.error_message,
+            })
+            _write_audit([dict(
+                tenant_id=tenant_id, product="ZCC", operation="import",
+                action="CREATE", status=sync_log.status,
+                resource_type="tenant", resource_name=tenant_name,
+                details={"resources_synced": sync_log.resources_synced,
+                         "resources_updated": sync_log.resources_updated},
+                timestamp=datetime.utcnow(),
+            )])
+        except Exception as exc:
+            store.fail(job_id, str(exc))
+            _write_audit([dict(
+                tenant_id=tenant_id, product="ZCC", operation="import",
                 action="CREATE", status="FAILURE",
                 resource_type="tenant", resource_name=tenant_name,
                 error_message=str(exc), timestamp=datetime.utcnow(),

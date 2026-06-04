@@ -681,3 +681,114 @@ export async function syncFirewallRulesFromCsv(
   if (!res.ok) throw new Error("Sync failed");
   return res.json();
 }
+
+// ── PAC Files ─────────────────────────────────────────────────────────────────
+
+export interface PacFile {
+  id: number;
+  name: string;
+  description?: string;
+  domain?: string;
+  pacUrl?: string;
+  pacSubURL?: string;
+  pacVersion?: number;
+  pacVersionStatus?: string;
+  editable?: boolean;
+  lastModifiedTime?: number;
+}
+
+export interface PacFileVersion {
+  id: number;
+  name: string;
+  pacVersion: number;
+  pacVersionStatus: string;
+  pacVerificationStatus: string;
+  pacContent?: string;
+  pacCommitMessage?: string;
+  lastModifiedTime?: number;
+  lastModifiedBy?: { id: number; name: string };
+}
+
+export interface PacFileValidationResult {
+  success: boolean;
+  message?: string;
+  errorCount?: number;
+  warningCount?: number;
+}
+
+export interface PacFileCreatePayload {
+  name: string;
+  description: string;
+  pac_commit_message: string;
+  domain?: string;
+  pac_content: string;
+  pac_verification_status?: string;
+  pac_version_status?: string;
+}
+
+export interface PacFileUpdatePayload {
+  name: string;
+  description: string;
+  pac_commit_message: string;
+  pac_content: string;
+  pac_verification_status?: string;
+  pac_version_status?: string;
+}
+
+export const fetchPacFiles = (tenant: string): Promise<PacFile[]> =>
+  apiFetch<PacFile[]>(`${base(tenant)}/pac-files`);
+
+export const fetchPacFileVersions = (tenant: string, pacId: number): Promise<PacFileVersion[]> =>
+  apiFetch<PacFileVersion[]>(`${base(tenant)}/pac-files/${pacId}/versions`);
+
+export const validatePacFileContent = (
+  tenant: string,
+  pacContent: string
+): Promise<PacFileValidationResult> =>
+  apiFetch<PacFileValidationResult>(`${base(tenant)}/pac-files/validate`, {
+    method: "POST",
+    body: JSON.stringify({ pac_content: pacContent }),
+  });
+
+export const createPacFile = (
+  tenant: string,
+  payload: PacFileCreatePayload
+): Promise<PacFile> =>
+  apiFetch<PacFile>(`${base(tenant)}/pac-files`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+export const updatePacFile = (
+  tenant: string,
+  pacId: number,
+  payload: PacFileUpdatePayload
+): Promise<PacFile> =>
+  apiFetch<PacFile>(`${base(tenant)}/pac-files/${pacId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+
+export const deletePacFile = (
+  tenant: string,
+  pacId: number
+): Promise<{ deleted: boolean }> =>
+  apiFetch<{ deleted: boolean }>(`${base(tenant)}/pac-files/${pacId}`, {
+    method: "DELETE",
+  });
+
+export const fetchOrgDomains = (tenant: string): Promise<string[]> =>
+  apiFetch<string[]>(`${base(tenant)}/org-domains`);
+
+export interface SubCloud {
+  id: number;
+  name: string;
+}
+
+export interface SubCloudsResult {
+  subclouds: SubCloud[];
+  zia_cloud: string;
+}
+
+export const fetchSubClouds = (tenant: string): Promise<SubCloudsResult> =>
+  apiFetch<SubCloudsResult>(`${base(tenant)}/sub-clouds`);

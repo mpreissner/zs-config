@@ -49,12 +49,25 @@ _DEFAULTS = {
     "fips_mode":                  "false",
     "key_rotation_interval_days": "0",
     "key_last_rotated_at":        "",
+    # Update notifications
+    "update_notify_enabled":      "false",
+    "update_notify_email":        "",
+    "smtp_host":                  "",
+    "smtp_port":                  "587",
+    "smtp_username":              "",
+    "smtp_password":              "",
+    "smtp_from_address":          "",
+    "smtp_tls":                   "true",
 }
 
 _KEYS = set(_DEFAULTS.keys())
 
 
 def _coerce(raw: dict) -> dict:
+    try:
+        smtp_port = int(raw["smtp_port"])
+    except (ValueError, KeyError):
+        smtp_port = 587
     return {
         "access_token_ttl":           int(raw["access_token_ttl"]),
         "refresh_token_ttl":          int(raw["refresh_token_ttl"]),
@@ -71,6 +84,14 @@ def _coerce(raw: dict) -> dict:
         "fips_mode":                  raw["fips_mode"] == "true",
         "key_rotation_interval_days": int(raw["key_rotation_interval_days"]),
         "key_last_rotated_at":        raw["key_last_rotated_at"] or None,
+        "update_notify_enabled":      raw.get("update_notify_enabled", "false") == "true",
+        "update_notify_email":        raw.get("update_notify_email", ""),
+        "smtp_host":                  raw.get("smtp_host", ""),
+        "smtp_port":                  smtp_port,
+        "smtp_username":              raw.get("smtp_username", ""),
+        "smtp_password":              raw.get("smtp_password", ""),
+        "smtp_from_address":          raw.get("smtp_from_address", ""),
+        "smtp_tls":                   raw.get("smtp_tls", "true") == "true",
     }
 
 
@@ -93,6 +114,14 @@ class SettingsPatch(BaseModel):
     encryption_algorithm:       Optional[str] = None
     fips_mode:                  Optional[bool] = None
     key_rotation_interval_days: Optional[int] = None
+    update_notify_enabled:      Optional[bool] = None
+    update_notify_email:        Optional[str] = None
+    smtp_host:                  Optional[str] = None
+    smtp_port:                  Optional[int] = None
+    smtp_username:              Optional[str] = None
+    smtp_password:              Optional[str] = None
+    smtp_from_address:          Optional[str] = None
+    smtp_tls:                   Optional[bool] = None
 
 
 @router.get("/api/v1/system/settings", tags=["System"])
@@ -106,3 +135,32 @@ def patch_settings(body: SettingsPatch, _: AuthUser = Depends(require_admin)):
         if k in _KEYS:
             set_setting(k, str(v).lower() if isinstance(v, bool) else str(v))
     return _coerce(_load())
+
+
+@router.post("/api/v1/system/update-notify/test", tags=["System"])
+def test_update_notify(_: AuthUser = Depends(require_admin)):
+    from services.update_notify_service import send_test_email
+    from fastapi import HTTPException
+
+    raw = _load()
+    to_addr = raw.get("update_notify_email", "")
+    host = raw.get("smtp_host", "")
+    if not to_addr or not host:
+        raise HTTPException(status_code=400, detail="update_notify_email and smtp_host must be configured first.")
+    try:
+        port = int(raw.get("smtp_port", "587"))
+    except ValueError:
+        port = 587
+    try:
+        send_test_email(
+            host=host,
+            port=port,
+            username=raw.get("smtp_username", ""),
+            password=raw.get("smtp_password", ""),
+            from_addr=raw.get("smtp_from_address", ""),
+            to_addr=to_addr,
+            use_tls=raw.get("smtp_tls", "true") == "true",
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return {"sent": True}

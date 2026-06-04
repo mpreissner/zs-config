@@ -1,0 +1,6 @@
+# Force LF line endings for files that run inside Linux containers or Unix shells.
+# Without this, git on Windows (core.autocrlf=true) converts these to CRLF on
+# checkout, which breaks shebangs and shell interpreters inside the container.
+*.sh        text eol=lf
+*.py        text eol=lf
+Dockerfile  text eol=lf

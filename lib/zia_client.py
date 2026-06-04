@@ -122,6 +122,20 @@ class ZIAClient:
         """Direct HTTP DELETE to the ZIA API."""
         self._zia_request("DELETE", path)
 
+    def get_org_domains(self) -> List[str]:
+        """Return the list of domains registered with this ZIA organization."""
+        try:
+            data = self.zia_get("/zia/api/v1/orgInformation/lite")
+            domains = data.get("domains", [])
+            return [d for d in domains if isinstance(d, str) and d]
+        except Exception:
+            return []
+
+    def list_org_info(self) -> List[Dict]:
+        """Wrap org information singleton as a one-element list for import compatibility."""
+        data = self.zia_get("/zia/api/v1/orgInformation/lite")
+        return [{"id": 1, "name": "org_info", **data}]
+
     # ------------------------------------------------------------------
     # Activation
     # ------------------------------------------------------------------
@@ -1364,6 +1378,13 @@ class ZIAClient:
         )
         _unwrap(result, resp, err)
 
+    def list_sub_clouds(self) -> List[Dict]:
+        if self._govcloud:
+            data = self.zia_get("/zia/api/v1/subclouds")
+            return data if isinstance(data, list) else []
+        result, resp, err = self._sdk.zia.sub_clouds.list_sub_clouds()
+        return _to_dicts(_unwrap(result, resp, err))
+
     def list_gre_tunnels(self) -> List[Dict]:
         if self._govcloud:
             data = self.zia_get("/zia/api/v1/greTunnels")
@@ -1492,3 +1513,78 @@ class ZIAClient:
 
     def delete_tenancy_restriction_profile(self, rule_id: str) -> None:
         self.zia_delete(f"{self._TENANCY_PATH}/{rule_id}")
+
+    # ------------------------------------------------------------------
+    # PAC Files
+    # ------------------------------------------------------------------
+
+    def list_pac_files(self) -> List[Dict]:
+        """List all PAC files without content (filter=pac_content omits the script body)."""
+        data = self.zia_get("/zia/api/v1/pacFiles?filter=pac_content")
+        return data if isinstance(data, list) else []
+
+    def get_pac_file_versions(self, pac_id: int) -> List[Dict]:
+        """Return all versions of a PAC file by ID."""
+        data = self.zia_get(f"/zia/api/v1/pacFiles/{pac_id}/version")
+        return data if isinstance(data, list) else []
+
+    def validate_pac_file_content(self, pac_content: str) -> Dict:
+        """POST raw PAC script for syntax validation via the SDK.
+
+        The ZIA validate endpoint requires no Content-Type header; the SDK handles
+        this correctly by stripping Content-Type for /pacFiles/validate requests.
+        Returns validation result dict with keys: success, message, severity,
+        warningCount, errorCount, messages.
+        """
+        result, _resp, err = self._sdk.zia.pac_files.validate_pac_file(pac_content)
+        if err:
+            raise RuntimeError(str(err))
+        raw = _to_dict(result)
+        # Normalise snake_case SDK fields to the camelCase the frontend expects.
+        return {
+            "success": raw.get("success"),
+            "message": raw.get("message"),
+            "severity": raw.get("severity"),
+            "errorCount": raw.get("error_count", raw.get("errorCount")),
+            "warningCount": raw.get("warning_count", raw.get("warningCount")),
+            "messages": raw.get("messages", []),
+        }
+
+    def create_pac_file(self, config: Dict) -> Dict:
+        """Create a new PAC file.
+
+        Uses direct HTTP (zia_post) to bypass the broken SDK add_pac_file method
+        which internally calls validate_pac_file with an incorrect keyword argument.
+        config must include: name, pac_content, pac_version_status,
+        pac_verification_status, pac_commit_message.
+        """
+        from zscaler.helpers import convert_keys_to_camel_case
+        return self.zia_post("/zia/api/v1/pacFiles", convert_keys_to_camel_case(config))
+
+    def update_pac_file_content(self, pac_id: int, pac_version: int, config: Dict) -> Dict:
+        """Push a new version of a PAC file (clone operation).
+
+        Uses direct HTTP to bypass the broken SDK clone_pac_file method.
+        Automatically handles the 10-version limit: if the PAC file already has
+        10 versions, appends ?deleteVersion=<oldest-non-LKG-version> to the URL.
+        Raises RuntimeError if all 10 versions are marked Last Known Good.
+        """
+        from zscaler.helpers import convert_keys_to_camel_case
+        versions = self.get_pac_file_versions(pac_id)
+        path = f"/zia/api/v1/pacFiles/{pac_id}/version/{pac_version}"
+        if len(versions) >= 10:
+            candidates = sorted(
+                [v for v in versions if v.get("pacVersionStatus") != "LKG"],
+                key=lambda v: v.get("pacVersion", 0),
+            )
+            if not candidates:
+                raise RuntimeError(
+                    "PAC file has 10 versions and all are marked Last Known Good. "
+                    "Remove an LKG designation in the ZIA portal before adding a new version."
+                )
+            path += f"?deleteVersion={candidates[0]['pacVersion']}"
+        return self.zia_post(path, convert_keys_to_camel_case(config))
+
+    def delete_pac_file(self, pac_id: int) -> None:
+        """Delete a PAC file and all its versions."""
+        self.zia_delete(f"/zia/api/v1/pacFiles/{pac_id}")

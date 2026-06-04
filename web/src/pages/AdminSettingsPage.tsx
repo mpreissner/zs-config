@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchSettings, patchSettings, SystemSettings, fetchSystemInfo } from "../api/system";
+import { fetchSettings, patchSettings, SystemSettings, fetchSystemInfo, sendTestUpdateEmail } from "../api/system";
 import { importDatabase, ImportDbResult, clearData, ClearDataResult, rotateKey, RotateKeyResult } from "../api/admin";
 import { fetchTenants, Tenant } from "../api/tenants";
 import {
@@ -335,6 +335,9 @@ export default function AdminSettingsPage() {
           </div>
         </FieldRow>
       </SectionCard>
+
+      {/* ── Updates ───────────────────────────────────────────────────────── */}
+      <UpdatesSection draft={draft} set={set} />
 
       {/* ── Database Maintenance ──────────────────────────────────────────── */}
       <DatabaseMaintenanceCard draft={draft} set={set} />
@@ -723,6 +726,128 @@ function SSLTlsSection() {
             </div>
           )}
         </div>
+      )}
+    </SectionCard>
+  );
+}
+
+// ── Updates section ───────────────────────────────────────────────────────────
+
+function UpdatesSection({
+  draft,
+  set,
+}: {
+  draft: SystemSettings;
+  set: <K extends keyof SystemSettings>(key: K, value: SystemSettings[K]) => void;
+}) {
+  const [testState, setTestState] = useState<"idle" | "sending" | "ok" | "error">("idle");
+  const [testError, setTestError] = useState<string | null>(null);
+
+  async function handleTest() {
+    setTestState("sending");
+    setTestError(null);
+    try {
+      await sendTestUpdateEmail();
+      setTestState("ok");
+      setTimeout(() => setTestState("idle"), 3000);
+    } catch (e: unknown) {
+      setTestError(e instanceof Error ? e.message : "Failed to send test email");
+      setTestState("error");
+    }
+  }
+
+  const smtpComplete = !!draft.update_notify_email && !!draft.smtp_host;
+
+  return (
+    <SectionCard title="Updates">
+      <FieldRow
+        label="Daily update check"
+        hint="Check PyPI once per day and send an email when a new version is available."
+      >
+        <Toggle
+          checked={draft.update_notify_enabled}
+          onChange={(v) => set("update_notify_enabled", v)}
+        />
+      </FieldRow>
+
+      {draft.update_notify_enabled && (
+        <>
+          <FieldRow label="Notify email" hint="Address that receives update alerts.">
+            <TextInput
+              value={draft.update_notify_email}
+              onChange={(v) => set("update_notify_email", v)}
+              placeholder="admin@example.com"
+            />
+          </FieldRow>
+
+          <FieldRow label="SMTP host">
+            <TextInput
+              value={draft.smtp_host}
+              onChange={(v) => set("smtp_host", v)}
+              placeholder="smtp.example.com"
+            />
+          </FieldRow>
+
+          <FieldRow label="SMTP port">
+            <NumberInput
+              value={draft.smtp_port}
+              onChange={(v) => set("smtp_port", v)}
+              min={1}
+              max={65535}
+            />
+          </FieldRow>
+
+          <FieldRow label="Username" hint="Leave blank if the server requires no authentication.">
+            <TextInput
+              value={draft.smtp_username}
+              onChange={(v) => set("smtp_username", v)}
+              placeholder="user@example.com"
+            />
+          </FieldRow>
+
+          <FieldRow label="Password">
+            <input
+              type="password"
+              value={draft.smtp_password}
+              onChange={(e) => set("smtp_password", e.target.value)}
+              placeholder="••••••••"
+              className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+            />
+          </FieldRow>
+
+          <FieldRow label="From address" hint="Defaults to the username if left blank.">
+            <TextInput
+              value={draft.smtp_from_address}
+              onChange={(v) => set("smtp_from_address", v)}
+              placeholder="zs-config@example.com"
+            />
+          </FieldRow>
+
+          <FieldRow label="Use TLS" hint="STARTTLS on port 587; implicit TLS on port 465.">
+            <Toggle
+              checked={draft.smtp_tls}
+              onChange={(v) => set("smtp_tls", v)}
+            />
+          </FieldRow>
+
+          <FieldRow label="Test">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleTest}
+                disabled={!smtpComplete || testState === "sending"}
+                className="px-4 py-2 text-sm font-medium rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 disabled:opacity-50 transition-colors"
+              >
+                {testState === "sending" ? "Sending…" : "Send Test Email"}
+              </button>
+              {testState === "ok" && <span className="text-sm text-green-600 font-medium">Sent</span>}
+              {testState === "error" && <span className="text-sm text-red-600">{testError}</span>}
+            </div>
+            {!smtpComplete && (
+              <p className="text-xs text-gray-400 mt-1">Save your settings first, then send a test.</p>
+            )}
+          </FieldRow>
+        </>
       )}
     </SectionCard>
   );

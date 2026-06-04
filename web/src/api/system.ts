@@ -30,6 +30,14 @@ export interface SystemSettings {
   fips_mode: boolean;
   key_rotation_interval_days: number;
   key_last_rotated_at: string | null;
+  update_notify_enabled: boolean;
+  update_notify_email: string;
+  smtp_host: string;
+  smtp_port: number;
+  smtp_username: string;
+  smtp_password: string;
+  smtp_from_address: string;
+  smtp_tls: boolean;
 }
 
 export function fetchSystemInfo(): Promise<SystemInfo> {
@@ -49,4 +57,8 @@ export function patchSettings(patch: Partial<SystemSettings>): Promise<SystemSet
     method: "PATCH",
     body: JSON.stringify(patch),
   });
+}
+
+export function sendTestUpdateEmail(): Promise<{ sent: boolean }> {
+  return apiFetch<{ sent: boolean }>("/api/v1/system/update-notify/test", { method: "POST" });
 }

@@ -51,12 +51,20 @@ curl -fsSL https://raw.githubusercontent.com/mpreissner/zs-config/main/deploy.sh
 bash deploy.sh
 ```
 
-**Windows (PowerShell, run as Administrator):**
+**Windows 11 (PowerShell, run as Administrator):**
+
+Open **PowerShell as Administrator** (Start → search "PowerShell" → right-click → Run as administrator), then run:
 
 ```powershell
 Invoke-WebRequest -Uri https://raw.githubusercontent.com/mpreissner/zs-config/main/deploy.ps1 -OutFile deploy.ps1
-.\deploy.ps1
+powershell -ExecutionPolicy Bypass -File .\deploy.ps1
 ```
+
+> Windows 11 blocks downloaded scripts by default. The `-ExecutionPolicy Bypass` flag overrides this for the current run only — it does not change your system policy.
+
+On first run the script will automatically install Git and Docker Desktop if they are missing. A system restart may be required if Docker Desktop's WSL2 backend needs to be enabled; the script will prompt you and exit cleanly if so — just restart and run the second line again.
+
+**Subsequent deploys** (pull latest and rebuild): re-run the second line from the repo directory.
 
 Both scripts clone the repo if needed, generate a `JWT_SECRET`, create persistent Docker volumes, build the image, and run a health check.
 
@@ -68,7 +76,7 @@ docker compose logs | grep "Initial password"
 
 You will be prompted to set a permanent password on first login.
 
-**Subsequent deploys** (pull latest and rebuild): just run `./deploy.sh` or `.\deploy.ps1` again.
+**Subsequent deploys (Linux/macOS):** just run `./deploy.sh` again.
 
 ### HTTPS / SSL (optional)
 

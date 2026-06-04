@@ -89,6 +89,12 @@ RESOURCE_DEFINITIONS: List[ResourceDef] = [
     ResourceDef("vpn_credential", "list_vpn_credentials", id_field="id"),
     ResourceDef("gre_tunnel",     "list_gre_tunnels",     id_field="id"),
     ResourceDef("sublocation",    "list_sublocations",    id_field="id"),
+    # Traffic Forwarding — subclouds imported for PAC file generator.
+    ResourceDef("sub_cloud", "list_sub_clouds", id_field="id", name_field="name"),
+    # PAC Files — metadata only (pac_content excluded via filter=pac_content in list_pac_files).
+    ResourceDef("pac_file", "list_pac_files", id_field="id", name_field="name"),
+    # Org info singleton — stored so domain dropdown doesn't require a live API call.
+    ResourceDef("org_info", "list_org_info", id_field="id", name_field="name"),
 ]
 
 

@@ -225,6 +225,73 @@ class ZCCService:
         return result
 
     # ------------------------------------------------------------------
+    # Fail Open Policy
+    # ------------------------------------------------------------------
+
+    def list_fail_open_policies(self) -> List[Dict]:
+        result = self.client.list_fail_open_policies()
+        audit_service.log(
+            product="ZCC",
+            operation="list_fail_open_policies",
+            action="READ",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="fail_open_policy",
+            details={"count": len(result)},
+        )
+        return result
+
+    # ------------------------------------------------------------------
+    # Web Privacy
+    # ------------------------------------------------------------------
+
+    def get_web_privacy(self) -> Dict:
+        result = self.client.get_web_privacy()
+        audit_service.log(
+            product="ZCC",
+            operation="get_web_privacy",
+            action="READ",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="web_privacy",
+        )
+        return result
+
+    # ------------------------------------------------------------------
+    # Company Info
+    # ------------------------------------------------------------------
+
+    def list_company_info(self) -> List[Dict]:
+        result = self.client.list_company_info()
+        audit_service.log(
+            product="ZCC",
+            operation="list_company_info",
+            action="READ",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="company_info",
+            details={"count": len(result)},
+        )
+        return result
+
+    # ------------------------------------------------------------------
+    # Admin Roles
+    # ------------------------------------------------------------------
+
+    def list_admin_roles(self) -> List[Dict]:
+        result = self.client.list_admin_roles()
+        audit_service.log(
+            product="ZCC",
+            operation="list_admin_roles",
+            action="READ",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="admin_role",
+            details={"count": len(result)},
+        )
+        return result
+
+    # ------------------------------------------------------------------
     # Web Policies (App Profiles)
     # ------------------------------------------------------------------
 

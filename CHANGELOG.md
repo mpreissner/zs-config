@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [3.3.0] - 2026-06-04
+
+### Added
+
+- **ZCC traffic profile visualizer** — interactive SVG pipeline diagram in the web UI showing how a ZCC app profile routes traffic across On/VPN/Off Trusted Network contexts. The diagram renders a three-stage layout (network context → forwarding profile → ZIA/ZPA/Local destination) with live forwarding-profile fork lines. Arrows and trunk lines to inactive destinations (ZPA disabled, no local/direct rules) are hidden entirely. An app-profile bypass line routes around inactive destinations and attaches to the Local node with an upward arrowhead.
+- **ZCC ZPA app panel** — selecting the ZPA destination in the traffic profile visualizer populates a detail table with private application data pulled from the ZPA tenant. When more than 20 app segments exist the view collapses to a 2nd-level domain summary to avoid unbounded lists for large enterprise deployments.
+- **ZCC configuration snapshot and restore** — capture named snapshots of the full ZCC configuration from the web UI or TUI. Snapshots support field-level diff against live state and selective restore with dry-run preview. Restores execute dependency-ordered creates, updates, and deletes across all ZCC resource types.
+- **ZCC extended resource types** — admin roles, fail-open policies, web privacy settings, predefined and custom IP apps, and process apps are now imported, stored, and exposed through both the web API and the TUI.
+- **ZCC app profile expansion** — the TUI app profile view now shows enriched inline details including forwarding profile, ZPA status, PAC configuration, bypass rules, tunnel routes, DNS routes, and target user/group/department assignments.
+- **Update notifications** — Admin → Settings → Updates adds a daily PyPI version check with SMTP email alerts. When a new version is available, the alert email includes the current and latest versions and the one-line command to re-run the deployment script. Requires an email address and SMTP server. A "Send Test Email" button validates the configuration immediately. No new container dependencies — `smtplib` is Python stdlib.
+
+### Fixed
+
+- **ZCC traffic profile — tunnel routes table** — the Tunnel Routes tab now shows only `include`-direction entries. Exclude entries (ZIA split-tunnel bypass ranges) are no longer listed. The tab count and table filter both apply the same predicate.
+- **ZCC traffic profile — destination node alignment** — ZIA, ZPA, and Local destination nodes are now vertically centered at the same Y positions as their corresponding network context nodes (On=50, VPN=108, Off=166), replacing the previous uneven spacing.
+
+---
+
 ## [3.2.0] - 2026-06-01
 
 ### Added

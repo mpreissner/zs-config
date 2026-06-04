@@ -831,3 +831,152 @@ def delete_snapshot(
             _delete(snapshot_id, session)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ------------------------------------------------------------------
+# Organization
+# ------------------------------------------------------------------
+
+@router.get("/{tenant}/sub-clouds")
+def get_sub_clouds(tenant: str, user: AuthUser = Depends(require_auth)):
+    """Return subclouds and detected ZIA cloud name; reads from local DB when available."""
+    from services.config_service import get_tenant
+    from api.dependencies import check_tenant_access
+    t = get_tenant(tenant)
+    if not t:
+        raise HTTPException(status_code=404, detail=f"Tenant '{tenant}' not found")
+    check_tenant_access(t.id, user)
+    try:
+        svc = _get_service(tenant, user)
+        return {"subclouds": svc.get_sub_clouds(), "zia_cloud": t.zia_cloud or ""}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{tenant}/org-domains")
+def get_org_domains(tenant: str, user: AuthUser = Depends(require_auth)):
+    """Return org domains; reads from local DB when available, falls back to live API."""
+    try:
+        return _get_service(tenant, user).get_org_domains()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ------------------------------------------------------------------
+# PAC Files
+# ------------------------------------------------------------------
+
+class PacFileCreateRequest(BaseModel):
+    name: str
+    description: str
+    pac_commit_message: str
+    domain: Optional[str] = None
+    pac_content: str
+    pac_verification_status: str = "VERIFY_NOERR"
+    pac_version_status: str = "DEPLOYED"
+
+
+class PacFileUpdateRequest(BaseModel):
+    name: str
+    description: str
+    pac_commit_message: str
+    pac_content: str
+    pac_verification_status: str = "VERIFY_NOERR"
+    pac_version_status: str = "DEPLOYED"
+
+
+class PacFileValidateRequest(BaseModel):
+    pac_content: str
+
+
+@router.get("/{tenant}/pac-files")
+def list_pac_files(tenant: str, user: AuthUser = Depends(require_auth)):
+    """List PAC files (DB-first; metadata only, no pac_content)."""
+    return _get_service(tenant, user).list_pac_files()
+
+
+@router.get("/{tenant}/pac-files/{pac_id}/versions")
+def get_pac_file_versions(tenant: str, pac_id: int, user: AuthUser = Depends(require_auth)):
+    """Fetch all versions of a PAC file live from the API (includes pac_content)."""
+    try:
+        return _get_service(tenant, user).get_pac_file_versions(pac_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{tenant}/pac-files/validate")
+def validate_pac_file(tenant: str, body: PacFileValidateRequest, user: AuthUser = Depends(require_auth)):
+    """Validate PAC file content syntax. Does not write to DB or require activation."""
+    import logging as _logging
+    try:
+        return _get_service(tenant, user).validate_pac_file_content(body.pac_content)
+    except Exception as e:
+        _logging.getLogger(__name__).error("PAC validate error: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{tenant}/pac-files")
+def create_pac_file(tenant: str, body: PacFileCreateRequest, user: AuthUser = Depends(require_auth)):
+    """Create a new PAC file."""
+    try:
+        config = body.model_dump(exclude_none=True)
+        return _get_service(tenant, user).create_pac_file(config)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/{tenant}/pac-files/{pac_id}")
+def update_pac_file(tenant: str, pac_id: int, body: PacFileUpdateRequest, user: AuthUser = Depends(require_auth)):
+    """Push a new version of a PAC file (clone operation).
+
+    Resolves the current deployed version number automatically before calling
+    update_pac_file_content.
+    """
+    try:
+        svc = _get_service(tenant, user)
+        # Resolve PAC file from DB list — editable flag lives at the top-level
+        # PAC file record, not in per-version objects
+        pac_files = svc.list_pac_files()
+        pac = next((p for p in pac_files if str(p.get("id", "")) == str(pac_id)), None)
+        if pac is None:
+            raise HTTPException(status_code=404, detail=f"PAC file {pac_id} not found")
+        if pac.get("editable") is False:
+            raise HTTPException(status_code=400, detail="This PAC file is not editable")
+        # Resolve current deployed version
+        versions = svc.get_pac_file_versions(pac_id)
+        if not versions:
+            raise HTTPException(status_code=404, detail=f"PAC file {pac_id} has no versions")
+        deployed = next(
+            (v for v in versions if v.get("pacVersionStatus") == "DEPLOYED"),
+            None,
+        )
+        if deployed is None:
+            deployed = max(versions, key=lambda v: v.get("pacVersion", 0))
+        current_version = deployed["pacVersion"]
+        config = body.model_dump(exclude_none=True)
+        return svc.update_pac_file_content(pac_id, current_version, config)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{tenant}/pac-files/{pac_id}")
+def delete_pac_file(tenant: str, pac_id: int, user: AuthUser = Depends(require_auth)):
+    """Delete a PAC file and all its versions."""
+    try:
+        svc = _get_service(tenant, user)
+        # Resolve PAC file from DB list — editable flag lives at the top-level
+        # PAC file record, not in per-version objects
+        pac_files = svc.list_pac_files()
+        pac = next((p for p in pac_files if str(p.get("id", "")) == str(pac_id)), None)
+        if pac is None:
+            raise HTTPException(status_code=404, detail=f"PAC file {pac_id} not found")
+        if pac.get("editable") is False:
+            raise HTTPException(status_code=400, detail="This PAC file is not editable")
+        svc.delete_pac_file(pac_id, pac.get("name", ""))
+        return {"deleted": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
