@@ -44,6 +44,12 @@ class TenantConfig(Base):
     zpa_resources = relationship("ZPAResource", back_populates="tenant", lazy="select")
     zia_resources = relationship("ZIAResource", back_populates="tenant", lazy="select")
     zcc_resources = relationship("ZCCResource", back_populates="tenant", lazy="select")
+    zcc_snapshots = relationship(
+        "ZCCSnapshot",
+        back_populates="tenant",
+        cascade="all, delete-orphan",
+        lazy="select",
+    )
     sync_logs = relationship("SyncLog", back_populates="tenant", lazy="select")
     restore_points = relationship("RestorePoint", back_populates="tenant",
                                   cascade="all, delete-orphan", lazy="select")
@@ -296,6 +302,59 @@ class ZCCResource(Base):
 
     def __repr__(self) -> str:
         return f"<ZCCResource type={self.resource_type!r} name={self.name!r} id={self.zcc_id!r}>"
+
+
+class ZCCSnapshot(Base):
+    """Point-in-time snapshot of a tenant's ZCC configuration.
+
+    Items are stored in ZCCSnapshotItem (one row per resource). resource_count
+    is denormalized at creation time so list queries do not need a join.
+    """
+
+    __tablename__ = "zcc_snapshots"
+
+    id             = Column(Integer, primary_key=True)
+    tenant_id      = Column(Integer, ForeignKey("tenant_configs.id"), nullable=False)
+    label          = Column(String(255), nullable=False)
+    note           = Column(Text, nullable=True)
+    created_at     = Column(DateTime, default=datetime.utcnow, nullable=False)
+    resource_count = Column(Integer, default=0, nullable=False)
+
+    tenant = relationship("TenantConfig", back_populates="zcc_snapshots")
+    items  = relationship(
+        "ZCCSnapshotItem",
+        back_populates="snapshot",
+        cascade="all, delete-orphan",
+        lazy="select",
+    )
+
+    def __repr__(self) -> str:
+        return f"<ZCCSnapshot id={self.id} label={self.label!r} resources={self.resource_count}>"
+
+
+class ZCCSnapshotItem(Base):
+    """One resource captured inside a ZCCSnapshot.
+
+    raw_config is copied verbatim from ZCCResource.raw_config at snapshot time.
+    """
+
+    __tablename__ = "zcc_snapshot_items"
+
+    id            = Column(Integer, primary_key=True)
+    snapshot_id   = Column(Integer, ForeignKey("zcc_snapshots.id", ondelete="CASCADE"),
+                           nullable=False)
+    resource_type = Column(String(64), nullable=False)
+    zcc_id        = Column(String(255), nullable=False)
+    name          = Column(String(512), nullable=True)
+    raw_config    = Column(JSON, nullable=False)
+
+    snapshot = relationship("ZCCSnapshot", back_populates="items")
+
+    def __repr__(self) -> str:
+        return (
+            f"<ZCCSnapshotItem type={self.resource_type!r} "
+            f"name={self.name!r} zcc_id={self.zcc_id!r}>"
+        )
 
 
 class AppSettings(Base):
