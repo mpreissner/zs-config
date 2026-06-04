@@ -460,10 +460,15 @@ if (Test-IsWindowsServer) {
 # -- Desktop (Windows 11) helpers -----------------------------------------------
 
 function Test-CpuVirtualization {
+    # If a hypervisor is already active (Hyper-V, WSL2, etc.) virtualization is
+    # demonstrably working regardless of how the firmware flag is reported.
+    if ((Get-WmiObject Win32_ComputerSystem).HypervisorPresent) { return }
+
     $virt = (Get-WmiObject Win32_Processor | Select-Object -First 1).VirtualizationFirmwareEnabled
     if ($virt) { return }
+
     Write-Host ""
-    Write-Host "ERROR: Hardware virtualization is not enabled on this system."
+    Write-Host "ERROR: Hardware virtualization does not appear to be enabled on this system."
     Write-Host ""
     Write-Host "Docker Desktop requires Intel VT-x or AMD-V (SVM) to be enabled"
     Write-Host "in your BIOS/UEFI firmware."
