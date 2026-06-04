@@ -83,11 +83,15 @@ function Ensure-SshKey {
     return (Get-Content $PubFile -Raw).Trim()
 }
 
-function New-SeedIso {
+function New-SeedDisk {
     param([string]$SshPublicKey)
+    # Use a FAT-VHD (SCSI disk) instead of a DVD-backed ISO.
+    # Hyper-V presents SCSI disks reliably; DVD drives (/dev/sr0) have a
+    # "Can't lookup blockdev" error at early boot on some Hyper-V setups
+    # that prevents cloud-init from reading the cidata label off the ISO.
 
     $KeyDir  = Join-Path $env:APPDATA "zs-config\vm"
-    $SeedIso = Join-Path $KeyDir "seed.iso"
+    $SeedVhd = Join-Path $KeyDir "seed.vhdx"
 
     $MetaData = "instance-id: zs-config-host-01`nlocal-hostname: zs-config-host"
 
@@ -117,43 +121,9 @@ function New-SeedIso {
         "  - usermod -aG docker zsadmin`n" +
         "  - systemctl enable --now ssh"
 
-    # Try IMAPI2 first.
-    # AddTree requires a directory path; write seed files to a temp dir so the
-    # names in the ISO are exactly "meta-data" and "user-data".
-    # FileSystemsToCreate = 3 => ISO9660 + Joliet (cloud-init reads both).
-    $TmpSeedDir = Join-Path $env:TEMP "zs-cloudinit-$(Get-Random)"
-    try {
-        New-Item -ItemType Directory -Force -Path $TmpSeedDir | Out-Null
-        [System.IO.File]::WriteAllText("$TmpSeedDir\meta-data", $MetaData, [System.Text.Encoding]::ASCII)
-        [System.IO.File]::WriteAllText("$TmpSeedDir\user-data", $UserData,  [System.Text.Encoding]::ASCII)
-
-        $fsi = New-Object -ComObject IMAPI2FS.MsftFileSystemImage
-        $fsi.FileSystemsToCreate = 3   # FsiFileSystemISO9660 | FsiFileSystemJoliet
-        $fsi.VolumeName = "cidata"
-        $fsi.Root.AddTree($TmpSeedDir, $false)
-
-        $result    = $fsi.CreateResultImage()
-        $adoStream = New-Object -ComObject ADODB.Stream
-        $adoStream.Type = 1   # adTypeBinary
-        $adoStream.Open()
-        $adoStream.CopyFrom($result.ImageStream)
-        $adoStream.SaveToFile($SeedIso, 2)
-        $adoStream.Close()
-
-        Remove-Item $TmpSeedDir -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Host "Cloud-init seed ISO created."
-        return $SeedIso
-    } catch {
-        Remove-Item $TmpSeedDir -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Host "IMAPI2 unavailable; falling back to FAT-VHD seed disk."
-    }
-
-    # FAT-VHD fallback
-    $SeedVhd = Join-Path $KeyDir "seed.vhdx"
-    $VhdSizeBytes = 5MB
-
+    New-Item -ItemType Directory -Force -Path $KeyDir | Out-Null
     if (Test-Path $SeedVhd) { Remove-Item $SeedVhd -Force }
-    New-VHD -Path $SeedVhd -SizeBytes $VhdSizeBytes -Fixed | Out-Null
+    New-VHD -Path $SeedVhd -SizeBytes 5MB -Fixed | Out-Null
     $disk = Mount-VHD -Path $SeedVhd -PassThru | Get-Disk
     Initialize-Disk -Number $disk.Number -PartitionStyle MBR
     $part = New-Partition -DiskNumber $disk.Number -UseMaximumSize -AssignDriveLetter
@@ -162,6 +132,7 @@ function New-SeedIso {
     [System.IO.File]::WriteAllText("$drive\meta-data", $MetaData, [System.Text.Encoding]::ASCII)
     [System.IO.File]::WriteAllText("$drive\user-data", $UserData,  [System.Text.Encoding]::ASCII)
     Dismount-VHD -Path $SeedVhd
+    Write-Host "Cloud-init seed disk created."
     return $SeedVhd
 }
 
@@ -212,7 +183,10 @@ function Fix-CloudInitDatasource {
         $parts   = Get-Partition -DiskNumber $diskNum -ErrorAction Stop
         $EspGuid = "{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}"
 
-        $espPart = $parts | Where-Object { $_.GptType -eq $EspGuid } | Select-Object -First 1
+        # Match by GPT type GUID or by the "System" type string (both are set on ESP).
+        $espPart = $parts | Where-Object {
+            $_.GptType -eq $EspGuid -or $_.Type -eq "System"
+        } | Select-Object -First 1
         if (-not $espPart) {
             Write-Host "Warning: EFI System Partition not found; skipping GRUB patch."
             return
@@ -332,8 +306,8 @@ function Ensure-VM {
     Remove-Item $tgz, $vhdx -ErrorAction SilentlyContinue
     Remove-Item $ExtractDir -Recurse -Force -ErrorAction SilentlyContinue
 
-    Write-Host "Building cloud-init seed ISO..."
-    $SeedIso = New-SeedIso -SshPublicKey $SshPublicKey
+    Write-Host "Building cloud-init seed disk..."
+    $SeedDisk = New-SeedDisk -SshPublicKey $SshPublicKey
 
     $SwitchName = Ensure-VmSwitch
 
@@ -352,17 +326,13 @@ function Ensure-VM {
 
     Set-VM -VMName "zs-config-host" -CheckpointType Disabled
 
-    if ($SeedIso -like "*.iso") {
-        Add-VMDvdDrive -VMName "zs-config-host" -Path $SeedIso
-        $dvd  = Get-VMDvdDrive      -VMName "zs-config-host"
-        $disk = Get-VMHardDiskDrive -VMName "zs-config-host" | Select-Object -First 1
-        Set-VMFirmware -VMName "zs-config-host" -BootOrder @($disk, $dvd)
-    } else {
-        # FAT-VHD fallback: attach as a SCSI hard disk; cloud-init reads any FAT disk labeled cidata
-        Add-VMHardDiskDrive -VMName "zs-config-host" -Path $SeedIso
-        $disk = Get-VMHardDiskDrive -VMName "zs-config-host" | Select-Object -First 1
-        Set-VMFirmware -VMName "zs-config-host" -BootOrder @($disk)
-    }
+    # Attach seed disk as a SCSI hard disk (/dev/sdb inside the VM).
+    # A DVD-backed ISO would appear on /dev/sr0 which fails with
+    # "Can't lookup blockdev" on Hyper-V before cloud-init runs.
+    Add-VMHardDiskDrive -VMName "zs-config-host" -Path $SeedDisk
+    $osDrive = Get-VMHardDiskDrive -VMName "zs-config-host" |
+               Where-Object { $_.Path -eq $OsDisk } | Select-Object -First 1
+    Set-VMFirmware -VMName "zs-config-host" -BootOrder @($osDrive)
 
     Write-Host "VM 'zs-config-host' provisioned."
 }
