@@ -47,7 +47,7 @@ COPY db/           ./db/
 COPY lib/          ./lib/
 COPY services/     ./services/
 COPY entrypoint.sh ./entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
+RUN sed -i 's/\r//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 # Copy compiled frontend from stage 1
 COPY --from=frontend-build /build/api/static ./api/static
