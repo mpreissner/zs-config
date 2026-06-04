@@ -28,13 +28,41 @@ done
 
 # ── Preflight ─────────────────────────────────────────────────────────────────
 
+_install_pkg() {
+    local pkg="$1"
+    if command -v apt-get &>/dev/null; then
+        sudo apt-get install -y "$pkg"
+    elif command -v dnf &>/dev/null; then
+        sudo dnf install -y "$pkg"
+    elif command -v yum &>/dev/null; then
+        sudo yum install -y "$pkg"
+    elif command -v brew &>/dev/null; then
+        brew install "$pkg"
+    else
+        echo "ERROR: Cannot install $pkg — no supported package manager found (apt/dnf/yum/brew)." >&2
+        exit 1
+    fi
+}
+
+if ! command -v git &>/dev/null; then
+    echo "git not found. Installing..."
+    _install_pkg git
+fi
+
 if ! command -v docker &>/dev/null; then
-    echo "ERROR: docker is not installed or not in PATH." >&2
-    exit 1
+    if [[ "$(uname)" == "Darwin" ]]; then
+        echo "ERROR: Docker Desktop is not running or not installed." >&2
+        echo "Install from https://docs.docker.com/desktop/install/mac-install/ and start it, then re-run." >&2
+        exit 1
+    fi
+    echo "docker not found. Installing via get.docker.com..."
+    curl -fsSL https://get.docker.com | sh
+    sudo usermod -aG docker "$USER" 2>/dev/null || true
+    sudo systemctl enable --now docker 2>/dev/null || true
 fi
 
 if ! docker compose version &>/dev/null; then
-    echo "ERROR: docker compose (v2) is required." >&2
+    echo "ERROR: docker compose (v2) is required. Install Docker Engine 20.10+ or add the Compose plugin." >&2
     exit 1
 fi
 
@@ -235,9 +263,14 @@ if [[ "$(uname)" == "Darwin" ]]; then
     security find-certificate -a -p \
         "$HOME/Library/Keychains/login.keychain-db" >> "$BUNDLE" 2>/dev/null || true
 else
-    # On Linux, copy the host system store (includes any corp CAs installed there)
-    [[ -f /etc/ssl/certs/ca-certificates.crt ]] && \
-        cp /etc/ssl/certs/ca-certificates.crt "$BUNDLE" || true
+    # On Linux, copy the host CA bundle (path varies by distro).
+    # Debian/Ubuntu: /etc/ssl/certs/ca-certificates.crt
+    # RHEL/Fedora/Rocky: /etc/pki/tls/certs/ca-bundle.crt
+    if [[ -f /etc/ssl/certs/ca-certificates.crt ]]; then
+        cp /etc/ssl/certs/ca-certificates.crt "$BUNDLE"
+    elif [[ -f /etc/pki/tls/certs/ca-bundle.crt ]]; then
+        cp /etc/pki/tls/certs/ca-bundle.crt "$BUNDLE"
+    fi
 fi
 
 # ── Build ─────────────────────────────────────────────────────────────────────
