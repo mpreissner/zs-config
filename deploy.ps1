@@ -184,13 +184,25 @@ function Ensure-VmSwitch {
     return "zs-config-external"
 }
 
+function Remove-StaleVm {
+    $vm = Get-VM -Name "zs-config-host" -ErrorAction SilentlyContinue
+    if (-not $vm) { return }
+    Write-Host "Removing stale VM 'zs-config-host'..."
+    if ($vm.State -eq "Running") { Stop-VM -Name "zs-config-host" -TurnOff -Force }
+    Remove-VM -Name "zs-config-host" -Force
+}
+
 function Ensure-VM {
     param([string]$SshPublicKey)
 
     $vm = Get-VM -Name "zs-config-host" -ErrorAction SilentlyContinue
     if ($vm) {
-        Write-Host "VM 'zs-config-host' already exists. Skipping provisioning."
-        return
+        if ($vm.State -eq "Running") {
+            Write-Host "VM 'zs-config-host' is already running. Skipping provisioning."
+            return
+        }
+        Write-Host "VM 'zs-config-host' exists but is not running (state: $($vm.State)). Re-provisioning..."
+        Remove-StaleVm
     }
 
     $ImageUrl  = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64-azure.vhd.tar.gz"
@@ -222,7 +234,7 @@ function Ensure-VM {
     New-Item -ItemType Directory -Force -Path $VmDiskDir | Out-Null
     $OsDisk = Join-Path $VmDiskDir "os.vhdx"
     Write-Host "Copying VHDX to $OsDisk..."
-    Copy-Item $vhdx $OsDisk
+    Copy-Item $vhdx $OsDisk -Force
     Resize-VHD -Path $OsDisk -SizeBytes 42949672960
 
     Remove-Item $tgz, $vhdx -ErrorAction SilentlyContinue
@@ -357,15 +369,10 @@ function Invoke-WindowsServerDeploy {
     Wait-ForSsh    -Ip $VmIp
     Wait-ForDocker -Ip $VmIp
 
-    Invoke-Ssh $VmIp @(
-        "git clone --branch $Branch $RepoUrl ~/zs-config 2>/dev/null || " +
-        "(cd ~/zs-config && git fetch origin && git checkout $Branch && " +
-        "git reset --hard origin/$Branch)"
-    )
-    Invoke-Ssh $VmIp @(
-        "chmod +x ~/zs-config/deploy.sh && " +
-        "~/zs-config/deploy.sh $Branch --non-interactive"
-    )
+    $cloneCmd  = "git clone --branch $Branch $RepoUrl ~/zs-config 2>/dev/null || (cd ~/zs-config && git fetch origin && git checkout $Branch && git reset --hard origin/$Branch)"
+    $deployCmd = "chmod +x ~/zs-config/deploy.sh && ~/zs-config/deploy.sh $Branch --non-interactive"
+    Invoke-Ssh $VmIp $cloneCmd
+    Invoke-Ssh $VmIp $deployCmd
 
     $KeyDir  = Join-Path $env:APPDATA "zs-config\vm"
     $KeyFile = Join-Path $KeyDir "id_ed25519"
