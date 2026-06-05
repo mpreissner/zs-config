@@ -7,13 +7,18 @@ Interactive TUI and browser-based UI for Zscaler OneAPI — manage ZPA, ZIA, ZCC
 
 ---
 
-## What's New — v3.2.0
+## What's New — v3.3.1
 
-> **v3.2.0 is the current release** — ZPA snapshot restore and full web UI parity. See the [changelog](CHANGELOG.md) for details.
+> **v3.3.1 is the current release.** See the [changelog](CHANGELOG.md) for full details.
 
-- **ZPA config snapshots** — capture named restore points of your ZPA configuration from the web UI; diff any snapshot against current state with field-level change detail.
-- **Full snapshot restore** — dependency-ordered creates, updates, and deletes across all ZPA resource types, with cross-resource ID remapping for newly created objects. Local DB is re-synced automatically after restore.
-- **ZPA web UI parity** — user portals, certificates, applications, and access policy now support full CRUD from the browser. DB-first reads across all ZPA list endpoints.
+- **Deploy script fix** — re-running `deploy.sh` or `deploy.ps1` on an existing installation no longer re-prompts for network binding or SSL. Both are skipped automatically when a prior setup is detected.
+
+**v3.3.0** — ZCC traffic profile visualizer, snapshot/restore, and update notifications:
+
+- **ZCC traffic profile visualizer** — interactive SVG pipeline diagram showing how a ZCC app profile routes traffic across On/VPN/Off network contexts, with conditional arrows for active destinations and an app-profile bypass line.
+- **ZCC snapshot and restore** — capture named restore points of the full ZCC configuration; diff and selectively restore with dry-run preview.
+- **ZPA app panel** — selecting the ZPA destination populates a private application table; collapses to 2nd-level domain summary for large deployments.
+- **Update notifications** — Admin → Settings → Updates adds a daily PyPI check with SMTP email alerts when a new version is available.
 
 ---
 
