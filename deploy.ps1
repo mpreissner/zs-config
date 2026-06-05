@@ -671,13 +671,14 @@ if ($IsRepo) {
 # -- Ensure JWT_SECRET is set ---------------------------------------------------
 
 $EnvFile = Join-Path $RepoDir ".env"
-$JwtSecret = $null
-$BindAddr  = $null
-$SslDomain = $null
+$JwtSecret        = $null
+$BindAddr         = $null
+$SslDomain        = $null
+$IsExistingInstall = $false
 
 if (Test-Path $EnvFile) {
     foreach ($line in Get-Content $EnvFile) {
-        if ($line -match "^JWT_SECRET=(.+)$")    { $JwtSecret = $Matches[1] }
+        if ($line -match "^JWT_SECRET=(.+)$")    { $JwtSecret = $Matches[1]; $IsExistingInstall = $true }
         if ($line -match "^BIND_ADDR=(.+)$")     { $BindAddr  = $Matches[1] }
         if ($line -match "^ZS_SSL_DOMAIN=(.+)$") { $SslDomain = $Matches[1] }
     }
@@ -696,22 +697,28 @@ $env:JWT_SECRET = $JwtSecret
 # -- Network binding ------------------------------------------------------------
 
 if (-not $BindAddr) {
-    Write-Host ""
-    Write-Host "Network binding:"
-    Write-Host "  [1] Localhost only - 127.0.0.1 (default, single machine)"
-    Write-Host "  [2] All interfaces - 0.0.0.0   (server / remote access)"
-    $bindChoice = Read-Host "Choice [1/2, default 1]"
-    if ($bindChoice -eq "2") { $BindAddr = "0.0.0.0" } else { $BindAddr = "127.0.0.1" }
-    Add-Content -Path $EnvFile -Value "BIND_ADDR=$BindAddr"
-    Write-Host "Network binding set to $BindAddr - saved to .env."
-    Write-Host ""
+    if ($IsExistingInstall) {
+        $BindAddr = "127.0.0.1"
+        Add-Content -Path $EnvFile -Value "BIND_ADDR=$BindAddr"
+        Write-Host "Re-deploy: defaulting network binding to localhost - change BIND_ADDR in .env if needed."
+    } else {
+        Write-Host ""
+        Write-Host "Network binding:"
+        Write-Host "  [1] Localhost only - 127.0.0.1 (default, single machine)"
+        Write-Host "  [2] All interfaces - 0.0.0.0   (server / remote access)"
+        $bindChoice = Read-Host "Choice [1/2, default 1]"
+        if ($bindChoice -eq "2") { $BindAddr = "0.0.0.0" } else { $BindAddr = "127.0.0.1" }
+        Add-Content -Path $EnvFile -Value "BIND_ADDR=$BindAddr"
+        Write-Host "Network binding set to $BindAddr - saved to .env."
+        Write-Host ""
+    }
 }
 
 $env:BIND_ADDR = $BindAddr
 
 # -- SSL certificate (optional) -------------------------------------------------
 
-if (-not $SslDomain) {
+if (-not $SslDomain -and -not $IsExistingInstall) {
     Write-Host ""
     Write-Host "SSL certificate (optional):"
     Write-Host "  Skip to use HTTP on port 8000, or provide a cert to enable HTTPS on port 8443."
