@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [3.3.1] - 2026-06-04
+
+### Fixed
+
+- **Deploy script (Linux/macOS and Windows Desktop)** — re-running `deploy.sh` or `deploy.ps1` on an existing installation no longer prompts for network binding or SSL configuration. Both prompts are skipped when an existing `JWT_SECRET` is detected in `.env`, since these settings are already established. SSL managed via the web UI (stored in the database) is unaffected.
+
+---
+
 ## [3.3.0] - 2026-06-04
 
 ### Added

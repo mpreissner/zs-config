@@ -149,11 +149,13 @@ fi
 
 # ── Ensure JWT_SECRET is set ──────────────────────────────────────────────────
 
+_existing_install=0
 if [[ -f "$REPO_DIR/.env" ]]; then
     set -a
     # shellcheck disable=SC1091
     source "$REPO_DIR/.env"
     set +a
+    [[ -n "${JWT_SECRET:-}" ]] && _existing_install=1
 fi
 
 if [[ -z "${JWT_SECRET:-}" ]]; then
@@ -173,7 +175,11 @@ fi
 # 0.0.0.0   = all interfaces (required for server/remote access)
 
 if [[ -z "${BIND_ADDR:-}" ]]; then
-    if [[ "$NON_INTERACTIVE" -eq 1 ]]; then
+    if [[ "$_existing_install" -eq 1 ]]; then
+        BIND_ADDR="127.0.0.1"
+        echo "BIND_ADDR=${BIND_ADDR}" >> "$REPO_DIR/.env"
+        echo "Re-deploy: defaulting network binding to localhost — change BIND_ADDR in .env if needed."
+    elif [[ "$NON_INTERACTIVE" -eq 1 ]]; then
         BIND_ADDR="0.0.0.0"
         echo "Non-interactive — network binding set to ${BIND_ADDR}."
     elif [[ -t 0 ]]; then
@@ -190,15 +196,17 @@ if [[ -z "${BIND_ADDR:-}" ]]; then
         echo "Non-interactive — defaulting to localhost-only binding (127.0.0.1)."
         BIND_ADDR="127.0.0.1"
     fi
-    echo "BIND_ADDR=${BIND_ADDR}" >> "$REPO_DIR/.env"
-    echo "Network binding set to ${BIND_ADDR} — saved to .env."
-    echo ""
+    if [[ "$_existing_install" -eq 0 ]]; then
+        echo "BIND_ADDR=${BIND_ADDR}" >> "$REPO_DIR/.env"
+        echo "Network binding set to ${BIND_ADDR} — saved to .env."
+        echo ""
+    fi
 fi
 
 # ── SSL certificate (optional) ────────────────────────────────────────────────
 # If ZS_SSL_DOMAIN is already set (from .env or environment), skip prompting.
 
-if [[ -z "${ZS_SSL_DOMAIN:-}" ]] && [[ -t 0 ]] && [[ "$NON_INTERACTIVE" -eq 0 ]]; then
+if [[ -z "${ZS_SSL_DOMAIN:-}" ]] && [[ "$_existing_install" -eq 0 ]] && [[ -t 0 ]] && [[ "$NON_INTERACTIVE" -eq 0 ]]; then
     echo ""
     echo "SSL certificate (optional):"
     echo "  Skip to use HTTP on port 8000, or provide a cert to enable HTTPS on port 8443."
