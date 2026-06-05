@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [3.3.2] - 2026-06-05
+
+### Fixed
+
+- **ZPA import** — ZPA import now completes successfully when using `zscaler-sdk-python` ≥ 1.9.25. Newer SDK versions return non-JSON-serializable `Version` objects for certain ZPA resource fields; the conversion layer now coerces these to their string equivalents before writing to the database.
+
+---
+
 ## [3.3.1] - 2026-06-04
 
 ### Fixed

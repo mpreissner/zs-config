@@ -1,3 +1,4 @@
+import json
 from typing import Dict, List, Optional
 
 from zscaler import ZscalerClient
@@ -29,10 +30,13 @@ def _unwrap(result, resp, err):
 def _to_dicts(items) -> list:
     if not items:
         return []
-    return [
+    raw = [
         i if isinstance(i, dict) else (i.as_dict() if hasattr(i, 'as_dict') else vars(i))
         for i in items
     ]
+    # Round-trip through JSON to coerce any non-serializable SDK types (e.g. packaging.version.Version)
+    # to their string representations before the caller stores them in the database.
+    return json.loads(json.dumps(raw, default=str))
 
 
 def _to_dict(item) -> dict:

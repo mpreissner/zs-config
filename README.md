@@ -7,9 +7,13 @@ Interactive TUI and browser-based UI for Zscaler OneAPI — manage ZPA, ZIA, ZCC
 
 ---
 
-## What's New — v3.3.1
+## What's New — v3.3.2
 
-> **v3.3.1 is the current release.** See the [changelog](CHANGELOG.md) for full details.
+> **v3.3.2 is the current release.** See the [changelog](CHANGELOG.md) for full details.
+
+- **ZPA import fix** — ZPA import now completes successfully with `zscaler-sdk-python` ≥ 1.9.25, which returns non-serializable `Version` objects for certain resource fields. These are now coerced to strings before DB storage.
+
+**v3.3.1** — Deploy script fix:
 
 - **Deploy script fix** — re-running `deploy.sh` or `deploy.ps1` on an existing installation no longer re-prompts for network binding or SSL. Both are skipped automatically when a prior setup is detected.
 
