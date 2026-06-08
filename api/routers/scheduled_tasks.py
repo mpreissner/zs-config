@@ -197,6 +197,16 @@ def _serialize_task(task, last_run=None) -> Dict[str, Any]:
     return result
 
 
+def _check_task_access(task, user) -> None:
+    """Check entitlement for source and all target tenants on a task."""
+    check_tenant_access(task.source_tenant_id, user)
+    if task.target_tenant_ids:
+        for tid in task.target_tenant_ids:
+            check_tenant_access(tid, user)
+    elif task.target_tenant_id is not None:
+        check_tenant_access(task.target_tenant_id, user)
+
+
 def _get_last_run(task_id: int):
     """Return the most recent TaskRunHistory for a task, or None."""
     from db.models import TaskRunHistory
@@ -206,6 +216,7 @@ def _get_last_run(task_id: int):
         run = (
             session.query(TaskRunHistory)
             .filter_by(task_id=task_id)
+            .filter(TaskRunHistory.parent_run_id == None)  # noqa: E711
             .order_by(TaskRunHistory.started_at.desc())
             .first()
         )
@@ -274,7 +285,7 @@ def list_tasks(user: AuthUser = Depends(require_auth)):
 
 @router.post("", status_code=201)
 def create_task(
-    body: Union[SyncTaskCreate, ImportTaskCreate] = Body(...),
+    body: ScheduledTaskCreate = Body(...),
     user: AuthUser = Depends(require_auth),
 ):
     """Create a new scheduled task (sync or import)."""
@@ -331,9 +342,7 @@ def get_task(task_id: int, user: AuthUser = Depends(require_auth)):
     if task is None:
         raise HTTPException(status_code=404, detail="Scheduled task not found")
 
-    check_tenant_access(task.source_tenant_id, user)
-    if task.target_tenant_id is not None:
-        check_tenant_access(task.target_tenant_id, user)
+    _check_task_access(task, user)
 
     last_run = _get_last_run(task_id)
     return _serialize_task(task, last_run=last_run)
@@ -349,9 +358,7 @@ def update_task(task_id: int, body: ScheduledTaskUpdate, user: AuthUser = Depend
         raise HTTPException(status_code=404, detail="Scheduled task not found")
 
     # Entitlement check on both old and new tenant IDs
-    check_tenant_access(existing.source_tenant_id, user)
-    if existing.target_tenant_id is not None:
-        check_tenant_access(existing.target_tenant_id, user)
+    _check_task_access(existing, user)
     if body.source_tenant_id is not None:
         check_tenant_access(body.source_tenant_id, user)
     if body.target_tenant_id is not None:
@@ -397,9 +404,7 @@ def delete_task(task_id: int, user: AuthUser = Depends(require_auth)):
     if existing is None:
         raise HTTPException(status_code=404, detail="Scheduled task not found")
 
-    check_tenant_access(existing.source_tenant_id, user)
-    if existing.target_tenant_id is not None:
-        check_tenant_access(existing.target_tenant_id, user)
+    _check_task_access(existing, user)
 
     _delete(task_id)
 
@@ -413,9 +418,7 @@ def enable_task(task_id: int, user: AuthUser = Depends(require_auth)):
     if existing is None:
         raise HTTPException(status_code=404, detail="Scheduled task not found")
 
-    check_tenant_access(existing.source_tenant_id, user)
-    if existing.target_tenant_id is not None:
-        check_tenant_access(existing.target_tenant_id, user)
+    _check_task_access(existing, user)
 
     updated = _enable(task_id)
     last_run = _get_last_run(task_id)
@@ -431,9 +434,7 @@ def disable_task(task_id: int, user: AuthUser = Depends(require_auth)):
     if existing is None:
         raise HTTPException(status_code=404, detail="Scheduled task not found")
 
-    check_tenant_access(existing.source_tenant_id, user)
-    if existing.target_tenant_id is not None:
-        check_tenant_access(existing.target_tenant_id, user)
+    _check_task_access(existing, user)
 
     updated = _disable(task_id)
     last_run = _get_last_run(task_id)
@@ -455,9 +456,7 @@ def trigger_task(task_id: int, user: AuthUser = Depends(require_auth)):
     if existing is None:
         raise HTTPException(status_code=404, detail="Scheduled task not found")
 
-    check_tenant_access(existing.source_tenant_id, user)
-    if existing.target_tenant_id is not None:
-        check_tenant_access(existing.target_tenant_id, user)
+    _check_task_access(existing, user)
 
     job_id = store.create()
 
@@ -504,9 +503,7 @@ def list_runs(
     if existing is None:
         raise HTTPException(status_code=404, detail="Scheduled task not found")
 
-    check_tenant_access(existing.source_tenant_id, user)
-    if existing.target_tenant_id is not None:
-        check_tenant_access(existing.target_tenant_id, user)
+    _check_task_access(existing, user)
 
     with get_session() as session:
         runs = (
@@ -531,9 +528,7 @@ def get_run(task_id: int, run_id: int, user: AuthUser = Depends(require_auth)):
     if existing is None:
         raise HTTPException(status_code=404, detail="Scheduled task not found")
 
-    check_tenant_access(existing.source_tenant_id, user)
-    if existing.target_tenant_id is not None:
-        check_tenant_access(existing.target_tenant_id, user)
+    _check_task_access(existing, user)
 
     with get_session() as session:
         run = session.query(TaskRunHistory).filter_by(id=run_id, task_id=task_id).first()

@@ -413,7 +413,7 @@ def _run_fanout_sync_task(task_id: int, target_tenant_ids: List[int]) -> Optiona
 
     # 5. Compute parent rollup
     finished_at = datetime.utcnow()
-    total_synced = sum(s for _, s in child_results)
+    total_synced = sum(s for st, s in child_results if st != "failed")
 
     all_success = all(st == "success" for st, _ in child_results)
     all_failed  = all(st == "failed"  for st, _ in child_results)

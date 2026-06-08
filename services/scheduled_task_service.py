@@ -625,17 +625,14 @@ def _register_job(task: ScheduledTask) -> None:
     jid = _job_id(task.id)
     trigger = CronTrigger.from_crontab(task.cron_expression)
 
-    if _scheduler.get_job(jid):
-        _scheduler.reschedule_job(jid, trigger=trigger)
-    else:
-        _scheduler.add_job(
-            run_task,
-            trigger=trigger,
-            id=jid,
-            args=[task.id],
-            replace_existing=True,
-            max_instances=1,
-        )
+    _scheduler.add_job(
+        run_task,
+        trigger=trigger,
+        id=jid,
+        args=[task.id],
+        replace_existing=True,
+        max_instances=1,
+    )
 
 
 def _remove_job(task_id: int) -> None:
