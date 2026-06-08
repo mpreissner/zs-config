@@ -9,11 +9,11 @@ Prefix: /api/v1/scheduled-tasks
 
 import threading
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
 from croniter import croniter
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, field_validator, model_validator
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from api.dependencies import require_auth, check_tenant_access, AuthUser
 
@@ -24,11 +24,13 @@ router = APIRouter(prefix="/api/v1/scheduled-tasks", tags=["Scheduled Tasks"])
 # Pydantic schemas
 # ---------------------------------------------------------------------------
 
-class ScheduledTaskCreate(BaseModel):
+class SyncTaskCreate(BaseModel):
+    task_type: Literal["sync"] = "sync"
     name: str
     source_tenant_id: int
-    target_tenant_id: int
-    resource_groups: List[str]
+    target_tenant_id: Optional[int] = None
+    target_tenant_ids: Optional[List[int]] = None
+    resource_groups: Optional[List[str]] = None
     schedule: str                    # interval preset or cron expression
     sync_deletes: bool = False
     enabled: bool = True
@@ -38,7 +40,13 @@ class ScheduledTaskCreate(BaseModel):
     label_resource_types: Optional[List[str]] = None
 
     @model_validator(mode="after")
-    def _validate_mode(self) -> "ScheduledTaskCreate":
+    def _validate(self) -> "SyncTaskCreate":
+        has_single = self.target_tenant_id is not None
+        has_multi  = self.target_tenant_ids is not None and len(self.target_tenant_ids) > 0
+        if not has_single and not has_multi:
+            raise ValueError("Provide target_tenant_id (single) or target_tenant_ids (multi).")
+        if has_single and has_multi:
+            raise ValueError("Provide target_tenant_id or target_tenant_ids, not both.")
         if self.sync_mode not in ("resource_type", "label"):
             raise ValueError("sync_mode must be 'resource_type' or 'label'.")
         if self.sync_mode == "resource_type":
@@ -52,10 +60,40 @@ class ScheduledTaskCreate(BaseModel):
         return self
 
 
+class ImportTaskCreate(BaseModel):
+    task_type: Literal["import"] = "import"
+    name: str
+    source_tenant_id: int
+    import_products: List[str]
+    schedule: str
+    enabled: bool = True
+    owner_email: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _validate(self) -> "ImportTaskCreate":
+        if not self.import_products:
+            raise ValueError("import_products must be a non-empty list.")
+        valid = {"ZIA", "ZPA", "ZCC"}
+        for p in self.import_products:
+            if p not in valid:
+                raise ValueError(f"Unknown product: '{p}'. Valid values: ZIA, ZPA, ZCC.")
+        return self
+
+
+# Discriminated union for POST body — task_type field selects the model.
+# Backward compatible: SyncTaskCreate.task_type defaults to "sync".
+ScheduledTaskCreate = Annotated[
+    Union[SyncTaskCreate, ImportTaskCreate],
+    Field(discriminator="task_type"),
+]
+
+
 class ScheduledTaskUpdate(BaseModel):
+    task_type: Optional[str] = None
     name: Optional[str] = None
     source_tenant_id: Optional[int] = None
     target_tenant_id: Optional[int] = None
+    target_tenant_ids: Optional[List[int]] = None
     resource_groups: Optional[List[str]] = None
     schedule: Optional[str] = None
     sync_deletes: Optional[bool] = None
@@ -64,9 +102,12 @@ class ScheduledTaskUpdate(BaseModel):
     sync_mode: Optional[str] = None
     label_name: Optional[str] = None
     label_resource_types: Optional[List[str]] = None
+    import_products: Optional[List[str]] = None
 
     @model_validator(mode="after")
     def _validate_mode(self) -> "ScheduledTaskUpdate":
+        if self.task_type is not None and self.task_type not in ("sync", "import"):
+            raise ValueError("task_type must be 'sync' or 'import'.")
         if self.sync_mode is not None and self.sync_mode not in ("resource_type", "label"):
             raise ValueError("sync_mode must be 'resource_type' or 'label'.")
         if self.sync_mode == "resource_type":
@@ -100,22 +141,33 @@ def _serialize_task(task, last_run=None) -> Dict[str, Any]:
     from db.models import TenantConfig
     from db.database import get_session
 
+    task_type = task.task_type or "sync"
+    target_tenant_ids = list(task.target_tenant_ids) if task.target_tenant_ids else None
+
     with get_session() as session:
         src = session.get(TenantConfig, task.source_tenant_id)
-        tgt = session.get(TenantConfig, task.target_tenant_id)
         src_name = src.name if src else str(task.source_tenant_id)
-        tgt_name = tgt.name if tgt else str(task.target_tenant_id)
 
-    return {
+        tgt_name = None
+        tgt_names = None
+        if task_type == "sync":
+            effective_tgt_id = (target_tenant_ids[0] if target_tenant_ids else task.target_tenant_id)
+            if effective_tgt_id is not None:
+                tgt = session.get(TenantConfig, effective_tgt_id)
+                tgt_name = tgt.name if tgt else str(effective_tgt_id)
+            if target_tenant_ids and len(target_tenant_ids) > 1:
+                tgt_names = []
+                for tid in target_tenant_ids:
+                    t = session.get(TenantConfig, tid)
+                    tgt_names.append(t.name if t else str(tid))
+
+    result = {
         "id": task.id,
+        "task_type": task_type,
         "name": task.name,
         "source_tenant_id": task.source_tenant_id,
         "source_tenant_name": src_name,
-        "target_tenant_id": task.target_tenant_id,
-        "target_tenant_name": tgt_name,
-        "resource_groups": task.resource_groups,
         "cron_expression": task.cron_expression,
-        "sync_deletes": task.sync_deletes,
         "enabled": task.enabled,
         "owner_email": task.owner_email,
         "last_run_at": last_run.started_at.isoformat() + "Z" if last_run and last_run.started_at else None,
@@ -123,10 +175,26 @@ def _serialize_task(task, last_run=None) -> Dict[str, Any]:
         "next_run_at": _next_run(task.cron_expression) if task.enabled else None,
         "created_at": task.created_at.isoformat() + "Z" if task.created_at else None,
         "updated_at": task.updated_at.isoformat() + "Z" if task.updated_at else None,
-        "sync_mode": task.sync_mode or "resource_type",
-        "label_name": task.label_name,
-        "label_resource_types": task.label_resource_types,
     }
+
+    if task_type == "sync":
+        result.update({
+            "target_tenant_id": task.target_tenant_id,
+            "target_tenant_name": tgt_name,
+            "target_tenant_ids": target_tenant_ids,
+            "target_tenant_names": tgt_names,
+            "resource_groups": task.resource_groups,
+            "sync_deletes": task.sync_deletes,
+            "sync_mode": task.sync_mode or "resource_type",
+            "label_name": task.label_name,
+            "label_resource_types": task.label_resource_types,
+        })
+    elif task_type == "import":
+        result.update({
+            "import_products": task.import_products,
+        })
+
+    return result
 
 
 def _get_last_run(task_id: int):
@@ -157,6 +225,8 @@ def _copy_run(run):
         status=run.status,
         resources_synced=run.resources_synced,
         errors_json=run.errors_json,
+        parent_run_id=run.parent_run_id,
+        target_tenant_id=run.target_tenant_id,
     )
 
 
@@ -175,6 +245,10 @@ def _serialize_run(run, include_errors: bool = False) -> Dict[str, Any]:
         "status": run.status,
         "resources_synced": run.resources_synced,
         "error_count": len(run.errors_json) if run.errors_json else 0,
+        "parent_run_id": run.parent_run_id,
+        "target_tenant_id": run.target_tenant_id,
+        "is_parent": run.parent_run_id is None and run.target_tenant_id is None,
+        "is_child": run.parent_run_id is not None,
     }
     if include_errors:
         result["errors"] = run.errors_json or []
@@ -199,27 +273,49 @@ def list_tasks(user: AuthUser = Depends(require_auth)):
 
 
 @router.post("", status_code=201)
-def create_task(body: ScheduledTaskCreate, user: AuthUser = Depends(require_auth)):
-    """Create a new scheduled sync task."""
+def create_task(
+    body: Union[SyncTaskCreate, ImportTaskCreate] = Body(...),
+    user: AuthUser = Depends(require_auth),
+):
+    """Create a new scheduled task (sync or import)."""
     from services.scheduled_task_service import create_task as _create
 
     check_tenant_access(body.source_tenant_id, user)
-    check_tenant_access(body.target_tenant_id, user)
+
+    if isinstance(body, SyncTaskCreate):
+        if body.target_tenant_id is not None:
+            check_tenant_access(body.target_tenant_id, user)
+        if body.target_tenant_ids:
+            for tid in body.target_tenant_ids:
+                check_tenant_access(tid, user)
 
     try:
-        task = _create(
-            name=body.name,
-            source_tenant_id=body.source_tenant_id,
-            target_tenant_id=body.target_tenant_id,
-            resource_groups=body.resource_groups,
-            schedule=body.schedule,
-            sync_deletes=body.sync_deletes,
-            enabled=body.enabled,
-            owner_email=body.owner_email,
-            sync_mode=body.sync_mode,
-            label_name=body.label_name,
-            label_resource_types=body.label_resource_types,
-        )
+        if isinstance(body, SyncTaskCreate):
+            task = _create(
+                name=body.name,
+                source_tenant_id=body.source_tenant_id,
+                task_type="sync",
+                target_tenant_id=body.target_tenant_id,
+                target_tenant_ids=body.target_tenant_ids,
+                resource_groups=body.resource_groups,
+                schedule=body.schedule,
+                sync_deletes=body.sync_deletes,
+                enabled=body.enabled,
+                owner_email=body.owner_email,
+                sync_mode=body.sync_mode,
+                label_name=body.label_name,
+                label_resource_types=body.label_resource_types,
+            )
+        else:  # ImportTaskCreate
+            task = _create(
+                name=body.name,
+                source_tenant_id=body.source_tenant_id,
+                task_type="import",
+                schedule=body.schedule,
+                enabled=body.enabled,
+                owner_email=body.owner_email,
+                import_products=body.import_products,
+            )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -236,7 +332,8 @@ def get_task(task_id: int, user: AuthUser = Depends(require_auth)):
         raise HTTPException(status_code=404, detail="Scheduled task not found")
 
     check_tenant_access(task.source_tenant_id, user)
-    check_tenant_access(task.target_tenant_id, user)
+    if task.target_tenant_id is not None:
+        check_tenant_access(task.target_tenant_id, user)
 
     last_run = _get_last_run(task_id)
     return _serialize_task(task, last_run=last_run)
@@ -253,18 +350,24 @@ def update_task(task_id: int, body: ScheduledTaskUpdate, user: AuthUser = Depend
 
     # Entitlement check on both old and new tenant IDs
     check_tenant_access(existing.source_tenant_id, user)
-    check_tenant_access(existing.target_tenant_id, user)
+    if existing.target_tenant_id is not None:
+        check_tenant_access(existing.target_tenant_id, user)
     if body.source_tenant_id is not None:
         check_tenant_access(body.source_tenant_id, user)
     if body.target_tenant_id is not None:
         check_tenant_access(body.target_tenant_id, user)
+    if body.target_tenant_ids is not None:
+        for tid in body.target_tenant_ids:
+            check_tenant_access(tid, user)
 
     try:
         updated = _update(
             task_id=task_id,
             name=body.name,
             source_tenant_id=body.source_tenant_id,
+            task_type=body.task_type,
             target_tenant_id=body.target_tenant_id,
+            target_tenant_ids=body.target_tenant_ids,
             resource_groups=body.resource_groups,
             schedule=body.schedule,
             sync_deletes=body.sync_deletes,
@@ -273,6 +376,7 @@ def update_task(task_id: int, body: ScheduledTaskUpdate, user: AuthUser = Depend
             sync_mode=body.sync_mode,
             label_name=body.label_name,
             label_resource_types=body.label_resource_types,
+            import_products=body.import_products,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -294,7 +398,8 @@ def delete_task(task_id: int, user: AuthUser = Depends(require_auth)):
         raise HTTPException(status_code=404, detail="Scheduled task not found")
 
     check_tenant_access(existing.source_tenant_id, user)
-    check_tenant_access(existing.target_tenant_id, user)
+    if existing.target_tenant_id is not None:
+        check_tenant_access(existing.target_tenant_id, user)
 
     _delete(task_id)
 
@@ -309,7 +414,8 @@ def enable_task(task_id: int, user: AuthUser = Depends(require_auth)):
         raise HTTPException(status_code=404, detail="Scheduled task not found")
 
     check_tenant_access(existing.source_tenant_id, user)
-    check_tenant_access(existing.target_tenant_id, user)
+    if existing.target_tenant_id is not None:
+        check_tenant_access(existing.target_tenant_id, user)
 
     updated = _enable(task_id)
     last_run = _get_last_run(task_id)
@@ -326,7 +432,8 @@ def disable_task(task_id: int, user: AuthUser = Depends(require_auth)):
         raise HTTPException(status_code=404, detail="Scheduled task not found")
 
     check_tenant_access(existing.source_tenant_id, user)
-    check_tenant_access(existing.target_tenant_id, user)
+    if existing.target_tenant_id is not None:
+        check_tenant_access(existing.target_tenant_id, user)
 
     updated = _disable(task_id)
     last_run = _get_last_run(task_id)
@@ -349,15 +456,16 @@ def trigger_task(task_id: int, user: AuthUser = Depends(require_auth)):
         raise HTTPException(status_code=404, detail="Scheduled task not found")
 
     check_tenant_access(existing.source_tenant_id, user)
-    check_tenant_access(existing.target_tenant_id, user)
+    if existing.target_tenant_id is not None:
+        check_tenant_access(existing.target_tenant_id, user)
 
     job_id = store.create()
 
     def run():
-        from services.scheduled_sync_engine import run_sync_task
+        from services.scheduled_sync_engine import run_task
 
         try:
-            run_result = run_sync_task(task_id)
+            run_result = run_task(task_id)
             if run_result is None:
                 store.fail(job_id, "Task not found or disabled")
                 return
@@ -382,7 +490,12 @@ def list_runs(
     offset: int = Query(0, ge=0),
     user: AuthUser = Depends(require_auth),
 ):
-    """Get run history for a task (paginated)."""
+    """Get run history for a task (paginated).
+
+    Returns both parent and child rows for fan-out sync tasks.
+    Each row includes parent_run_id, target_tenant_id, is_parent, is_child
+    so callers can reconstruct the tree.
+    """
     from services.scheduled_task_service import get_task as _get
     from db.models import TaskRunHistory
     from db.database import get_session
@@ -392,7 +505,8 @@ def list_runs(
         raise HTTPException(status_code=404, detail="Scheduled task not found")
 
     check_tenant_access(existing.source_tenant_id, user)
-    check_tenant_access(existing.target_tenant_id, user)
+    if existing.target_tenant_id is not None:
+        check_tenant_access(existing.target_tenant_id, user)
 
     with get_session() as session:
         runs = (
@@ -418,7 +532,8 @@ def get_run(task_id: int, run_id: int, user: AuthUser = Depends(require_auth)):
         raise HTTPException(status_code=404, detail="Scheduled task not found")
 
     check_tenant_access(existing.source_tenant_id, user)
-    check_tenant_access(existing.target_tenant_id, user)
+    if existing.target_tenant_id is not None:
+        check_tenant_access(existing.target_tenant_id, user)
 
     with get_session() as session:
         run = session.query(TaskRunHistory).filter_by(id=run_id, task_id=task_id).first()
