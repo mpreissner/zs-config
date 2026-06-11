@@ -1,6 +1,8 @@
 """ZCC API router."""
 
 import json
+import re
+import urllib.request
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -37,6 +39,125 @@ def _as_list(val) -> list:
     return [val]
 
 
+def _mask_to_prefix(mask: str) -> int:
+    try:
+        return sum(bin(int(p)).count("1") for p in mask.split("."))
+    except Exception:
+        return 0
+
+
+def _fetch_pac_bypasses(pac_url: str, timeout: int = 4) -> List[Dict]:
+    """Fetch a PAC URL and extract DIRECT bypass rules using regex heuristics.
+
+    Returns a list of {"label": str, "detail": str} items describing bypasses.
+    Only looks at uncommented lines to avoid false positives.
+    """
+    if not pac_url or not pac_url.startswith("http"):
+        return []
+    try:
+        req = urllib.request.Request(pac_url, headers={"User-Agent": "zs-config/1.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            content = resp.read().decode("utf-8", errors="replace")
+    except Exception:
+        return []
+
+    # Strip single-line comments to avoid matching commented-out rules
+    content_nc = re.sub(r"//[^\n]*", "", content)
+
+    results: List[Dict] = []
+    seen: set = set()
+
+    def _add(label: str, detail: str = "") -> None:
+        key = label
+        if key not in seen:
+            seen.add(key)
+            results.append({"label": label, "detail": detail})
+
+    # ── 1. RFC1918 / privateIP regex variable pattern ────────────────────────
+    # Strategy: find any JS variable assigned a regex literal that contains
+    # RFC1918-like prefixes, then confirm that variable.test() is called near DIRECT.
+    # e.g.: var privateIP = /^(0|10|127|192\.168|...)\.[0-9.]+$/;
+    var_regex_re = re.compile(r"var\s+(\w+)\s*=\s*/([^/\n]{10,})/[gimy]*\s*;")
+    for m in var_regex_re.finditer(content_nc):
+        varname, regex_body = m.group(1), m.group(2)
+        # Only consider regex literals that look like IP prefix filters
+        if not re.search(r"192|172|10|127|169", regex_body):
+            continue
+        # Confirm varname.test(...) appears near a DIRECT return
+        test_re = re.compile(rf"\b{re.escape(varname)}\.test\s*\(")
+        for tm in test_re.finditer(content_nc):
+            ctx = content_nc[tm.start(): min(len(content_nc), tm.end() + 400)]
+            if "DIRECT" not in ctx:
+                continue
+            # Extract alternation parts from the regex body to map to CIDRs
+            _rfc_map = {
+                "10": "10.0.0.0/8",
+                "127": "127.0.0.0/8",
+                r"192\.168": "192.168.0.0/16",
+                r"172\.1[6789]": "172.16.0.0/12",
+                r"172\.2[0-9]": "172.16.0.0/12",
+                r"172\.3[01]": "172.16.0.0/12",
+                r"169\.254": "169.254.0.0/16",
+                r"192\.88\.99": "192.88.99.0/24",
+            }
+            found: List[str] = []
+            cidr_seen2: set = set()
+            for pat, cidr in _rfc_map.items():
+                if re.search(re.escape(pat).replace(r"\\", "\\"), regex_body) and cidr not in cidr_seen2:
+                    cidr_seen2.add(cidr)
+                    found.append(cidr)
+            label = "RFC1918 private IPs → DIRECT"
+            detail = ", ".join(found) if found else regex_body[:80]
+            _add(label, detail)
+            break
+
+    # ── 2. isInNet(x, "ip", "mask") → DIRECT ────────────────────────────────
+    innet_re = re.compile(
+        r'isInNet\s*\([^,)]+,\s*"([0-9.]+)"\s*,\s*"([0-9.]+)"\s*\)'
+    )
+    for m in innet_re.finditer(content_nc):
+        ip, mask = m.group(1), m.group(2)
+        ctx_end = min(len(content_nc), m.end() + 300)
+        ctx = content_nc[m.start():ctx_end]
+        if "DIRECT" not in ctx:
+            continue
+        prefix = _mask_to_prefix(mask)
+        cidr = f"{ip}/{prefix}"
+        _add(f"{cidr} → DIRECT", "isInNet rule")
+
+    # ── 3. Explicit host == "..." → DIRECT ───────────────────────────────────
+    host_eq_re = re.compile(r'host\s*==\s*"([^"]+)"')
+    for m in host_eq_re.finditer(content_nc):
+        host = m.group(1)
+        ctx_end = min(len(content_nc), m.end() + 200)
+        ctx = content_nc[m.start():ctx_end]
+        if "DIRECT" in ctx:
+            _add(f"{host} → DIRECT", "host match")
+
+    # ── 4. shExpMatch(host, "pattern") → DIRECT (non-example patterns) ───────
+    shexp_re = re.compile(r'shExpMatch\s*\(\s*host\s*,\s*"([^"]+)"\s*\)')
+    for m in shexp_re.finditer(content_nc):
+        pattern = m.group(1)
+        if "example" in pattern.lower():
+            continue
+        ctx_end = min(len(content_nc), m.end() + 200)
+        ctx = content_nc[m.start():ctx_end]
+        if "DIRECT" in ctx:
+            _add(f"{pattern} → DIRECT", "shExpMatch")
+
+    # ── 5. isPlainHostName → DIRECT ──────────────────────────────────────────
+    if re.search(r"isPlainHostName\s*\(", content_nc):
+        ctx_near = content_nc[content_nc.find("isPlainHostName"):][:300]
+        if "DIRECT" in ctx_near:
+            _add("Plain hostnames (unqualified) → DIRECT", "isPlainHostName")
+
+    # ── 6. Non-HTTP/S protocols → DIRECT ─────────────────────────────────────
+    if re.search(r"url\.substring.*!=.*https?.*DIRECT", content_nc, re.DOTALL):
+        _add("Non-HTTP/S protocols → DIRECT", "protocol check")
+
+    return results
+
+
 def _derive_tunnel_mode(raw_fp: Optional[Dict]) -> str:
     """Derive tunnel mode string from forwarding profile raw_config.
 
@@ -52,8 +173,6 @@ def _derive_tunnel_mode(raw_fp: Optional[Dict]) -> str:
     first = actions[0] if isinstance(actions[0], dict) else {}
     if first.get("enablePacketTunnel") or first.get("enable_packet_tunnel"):
         return "Z-Tunnel 2.0"
-    if first.get("systemProxy") or first.get("system_proxy"):
-        return "Proxy"
     spd = first.get("systemProxyData") or first.get("system_proxy_data") or {}
     if spd.get("enableProxyServer") or spd.get("enable_proxy_server"):
         return "Proxy"
@@ -61,7 +180,12 @@ def _derive_tunnel_mode(raw_fp: Optional[Dict]) -> str:
 
 
 def _detect_listening_proxy(raw_fp: Optional[Dict]) -> bool:
-    """Return True when Z-Tunnel 2.0 is active together with a listening proxy."""
+    """Return True when 'Redirect Web Traffic to ZCC Listening Proxy' is enabled.
+
+    The actual API field is redirect_web_traffic (snake_case from DB import) or
+    redirectWebTraffic (camelCase from direct HTTP). system_proxy is not a reliable
+    indicator — it is set to 2 whenever ZT2 is active regardless of LP state.
+    """
     if not raw_fp:
         return False
     actions = (raw_fp.get("forwardingProfileActions") or
@@ -69,11 +193,7 @@ def _detect_listening_proxy(raw_fp: Optional[Dict]) -> bool:
     if not actions:
         return False
     first = actions[0] if isinstance(actions[0], dict) else {}
-    if not (first.get("enablePacketTunnel") or first.get("enable_packet_tunnel")):
-        return False
-    spd = first.get("systemProxyData") or first.get("system_proxy_data") or {}
-    sys_proxy = first.get("systemProxy") or first.get("system_proxy") or 0
-    return int(sys_proxy) == 2 or bool(spd.get("enableProxyServer") or spd.get("enable_proxy_server"))
+    return bool(first.get("redirectWebTraffic") or first.get("redirect_web_traffic"))
 
 
 def _detect_zpa(raw_fp: Optional[Dict]) -> bool:
@@ -199,6 +319,8 @@ def _build_traffic_profile(
         "enablePac": enable_pac,
         "ziaPacFileId": zia_pac_file_id,
         "ziaPacFileName": zia_pac_file_name,
+        "bypasses": _fetch_pac_bypasses(fp_pac_url) if fp_pac_url else [],
+        "appProfileBypasses": _fetch_pac_bypasses(pac_url) if pac_url else [],
     }
 
     # Port bypasses — sourcePortBasedBypasses may be a list of dicts or a
