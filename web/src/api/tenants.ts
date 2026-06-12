@@ -1,4 +1,4 @@
-import { apiFetch } from "./client";
+import { apiFetch, getAuthHeaders } from "./client";
 
 /** FedRAMP tier, named as zscaler-sdk-python names it in its `cloud` config key.
  *  "gov" is FedRAMP High (.net domains), "govus" is FedRAMP Moderate (.us). */
@@ -84,6 +84,21 @@ export const importZPA = (id: number): Promise<JobRef> =>
 
 export const importZCC = (id: number): Promise<JobRef> =>
   apiFetch<JobRef>(`/api/v1/tenants/${id}/import/zcc`, { method: "POST" });
+
+export async function downloadTerraform(tenantId: number, product: "zia" | "zpa", tenantName: string): Promise<void> {
+  const res = await fetch(`/api/v1/tenants/${tenantId}/terraform/${product}`, {
+    headers: getAuthHeaders(),
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error("Export failed");
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${tenantName.replace(/\s+/g, "_")}_${product}.tf`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export interface SnapshotDiffItem {
   action: "create" | "update" | "delete";
