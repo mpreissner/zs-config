@@ -6912,7 +6912,7 @@ function AppProfileVisualizer({
   const pacBypasses: Array<{ label: string; detail: string }> = data?.pac?.bypasses ?? [];
   const pacAppBypasses: Array<{ label: string; detail: string }> = data?.pac?.appProfileBypasses ?? [];
   const totalPacBypasses = pacBypasses.length + pacAppBypasses.length;
-  const localActive = pacEvaluated || excludeCount > 0 || totalPacBypasses > 0;
+  const localActive = pacEvaluated || excludeCount > 0;
 
   const localSubtitle = data
     ? pacEvaluated
