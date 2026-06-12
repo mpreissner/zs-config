@@ -8,6 +8,7 @@ import {
   importZIA,
   importZPA,
   importZCC,
+  clearZCCDisabledResources,
   previewApplySnapshot,
   applySnapshot,
   Tenant,
@@ -5667,6 +5668,8 @@ function ImportProductModal({
     }
   }, [active.data, jobId]);
 
+  const [resetMsg, setResetMsg] = useState<string | null>(null);
+
   const mut = useMutation({
     mutationFn: () =>
       product === "ZIA" ? importZIA(tenant.id) :
@@ -5676,6 +5679,16 @@ function ImportProductModal({
       setJobId(data.job_id);
       if (data.already_running) setResumed(true);
     },
+    onError: (e: Error) => setMutErr(e.message),
+  });
+
+  const resetMut = useMutation({
+    mutationFn: () => clearZCCDisabledResources(tenant.id),
+    onSuccess: (data) => setResetMsg(
+      data.cleared.length > 0
+        ? `Cleared: ${data.cleared.join(", ")}. Run import to retry.`
+        : "No disabled resources to clear."
+    ),
     onError: (e: Error) => setMutErr(e.message),
   });
 
@@ -5740,6 +5753,7 @@ function ImportProductModal({
             </div>
           )}
           {err && <p className="text-xs text-red-600">{err}</p>}
+          {resetMsg && <p className="text-xs text-blue-700 bg-blue-50 px-3 py-2 rounded">{resetMsg}</p>}
           {isDone && result && (
             <div className={`p-3 rounded-md text-sm ${result.status === "SUCCESS" || result.status === "PARTIAL" ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
               <p className="font-medium">{result.status}</p>
@@ -5747,19 +5761,31 @@ function ImportProductModal({
               {result.error_message && <p className="text-xs mt-1">{result.error_message}</p>}
             </div>
           )}
-          <div className="flex justify-end gap-2">
-            {!isDone && (
+          <div className="flex justify-between gap-2">
+            {product === "ZCC" && !isDone && !isRunning && !checking && (
               <button
-                onClick={() => mut.mutate()}
-                disabled={isRunning || checking}
-                className="px-4 py-2 text-sm rounded-md bg-zs-500 hover:bg-zs-600 text-white disabled:opacity-60"
+                onClick={() => { setResetMsg(null); resetMut.mutate(); }}
+                disabled={resetMut.isPending}
+                title="Clear any resource types that were auto-disabled after a previous API error, so they will be retried on the next import"
+                className="px-3 py-2 text-xs rounded-md border border-gray-300 hover:bg-gray-50 text-gray-600 disabled:opacity-60"
               >
-                {checking ? "Checking…" : isRunning ? "Importing…" : `Import ${product}`}
+                {resetMut.isPending ? "Clearing…" : "Reset N/A Resources"}
               </button>
             )}
-            <button onClick={onClose} className="px-4 py-2 text-sm rounded-md border border-gray-300 hover:bg-gray-50">
-              {isDone ? "Done" : "Cancel"}
-            </button>
+            <div className="flex gap-2 ml-auto">
+              {!isDone && (
+                <button
+                  onClick={() => mut.mutate()}
+                  disabled={isRunning || checking}
+                  className="px-4 py-2 text-sm rounded-md bg-zs-500 hover:bg-zs-600 text-white disabled:opacity-60"
+                >
+                  {checking ? "Checking…" : isRunning ? "Importing…" : `Import ${product}`}
+                </button>
+              )}
+              <button onClick={onClose} className="px-4 py-2 text-sm rounded-md border border-gray-300 hover:bg-gray-50">
+                {isDone ? "Done" : "Cancel"}
+              </button>
+            </div>
           </div>
         </div>
       </div>
