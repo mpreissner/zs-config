@@ -6793,11 +6793,8 @@ function AppProfileVisualizer({
 
   const tabs: Array<{ key: string; label: string; count: number | null; group: string }> = [];
   if (data) {
-    if (data.tunnelRoutes.some(r => r.direction === "include")) tabs.push({ key: "tunnel", label: "Tunnel Routes", count: data.tunnelRoutes.filter(r => r.direction === "include").length, group: "zia" });
     if (data.dnsRoutes.length > 0)          tabs.push({ key: "dns",     label: "DNS Routes",        count: data.dnsRoutes.length,          group: "zia"    });
-    if (data.zpaEnabled)                    tabs.push({ key: "zpa",     label: "ZPA",               count: null,                          group: "zpa"    });
     if (data.processBypasses.length > 0)    tabs.push({ key: "process", label: "Process Bypasses",  count: data.processBypasses.length,    group: "bypass" });
-    if (data.portBypasses.length > 0)       tabs.push({ key: "port",    label: "Port Bypasses",     count: data.portBypasses.length,       group: "bypass" });
     if (data.pac.enablePac || data.pac.url || data.pac.profilePacUrl) tabs.push({ key: "pac",     label: "PAC Config",        count: null,                          group: "zia"    });
   }
 
