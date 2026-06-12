@@ -207,6 +207,11 @@ export interface DnsRoute {
   direction: "include" | "exclude";
 }
 
+export interface PacBypass {
+  label: string;
+  detail: string;
+}
+
 export interface PacConfig {
   url: string | null;
   profilePacUrl: string | null;
@@ -214,6 +219,8 @@ export interface PacConfig {
   enablePac: boolean;
   ziaPacFileId: number | null;
   ziaPacFileName: string | null;
+  bypasses: PacBypass[];           // forwarding profile PAC
+  appProfileBypasses: PacBypass[]; // app profile PAC
 }
 
 export type TunnelMode = "Z-Tunnel 1.0" | "Z-Tunnel 2.0" | "Proxy" | "Unknown";

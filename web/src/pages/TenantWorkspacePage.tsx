@@ -6744,6 +6744,9 @@ function AppProfileVisualizer({
   const [activeSection, setActiveSection] = useState<string>("tunnel");
   const [hovered, setHovered] = useState<string | null>(null);
   const [networkContext, setNetworkContext] = useState<"off" | "on" | "vpn">("off");
+  const [simDest, setSimDest] = useState("");
+  const [simPort, setSimPort] = useState("443");
+  const [simResult, setSimResult] = useState<{ outcome: string; color: string; reasons: { text: string; source: string }[] } | null>(null);
 
   const { data, isLoading, error } = useQuery<TrafficProfile>({
     queryKey: ["traffic-profile", tenantName, policyId],
@@ -6764,7 +6767,7 @@ function AppProfileVisualizer({
       ["zpa",     data.zpaEnabled],
       ["process", data.processBypasses.length],
       ["port",    data.portBypasses.length],
-      ["pac",     data.pac.enablePac || !!data.pac.url],
+      ["pac",     data.pac.enablePac || !!data.pac.url || !!data.pac.profilePacUrl],
     ];
     const first = candidates.find(([, v]) => Boolean(v));
     if (first) setActiveSection(first[0]);
@@ -6790,12 +6793,9 @@ function AppProfileVisualizer({
 
   const tabs: Array<{ key: string; label: string; count: number | null; group: string }> = [];
   if (data) {
-    if (data.tunnelRoutes.some(r => r.direction === "include")) tabs.push({ key: "tunnel", label: "Tunnel Routes", count: data.tunnelRoutes.filter(r => r.direction === "include").length, group: "zia" });
     if (data.dnsRoutes.length > 0)          tabs.push({ key: "dns",     label: "DNS Routes",        count: data.dnsRoutes.length,          group: "zia"    });
-    if (data.zpaEnabled)                    tabs.push({ key: "zpa",     label: "ZPA",               count: null,                          group: "zpa"    });
     if (data.processBypasses.length > 0)    tabs.push({ key: "process", label: "Process Bypasses",  count: data.processBypasses.length,    group: "bypass" });
-    if (data.portBypasses.length > 0)       tabs.push({ key: "port",    label: "Port Bypasses",     count: data.portBypasses.length,       group: "bypass" });
-    if (data.pac.enablePac || data.pac.url) tabs.push({ key: "pac",     label: "PAC Config",        count: null,                          group: "zia"    });
+    if (data.pac.enablePac || data.pac.url || data.pac.profilePacUrl) tabs.push({ key: "pac",     label: "PAC Config",        count: null,                          group: "zia"    });
   }
 
   const tabBtnClass = (key: string, group: string) => {
@@ -6826,13 +6826,37 @@ function AppProfileVisualizer({
   const NC_INT: Record<string, number> = { on: 1, vpn: 2, off: 0 };
   const getCtxFpAction = (ctx: string): Record<string, unknown> =>
     fpAllActions.find(a => Number(a.networkType ?? a.network_type) === NC_INT[ctx]) ?? {};
+  // Base Z-Tunnel 2.0 mode per context — enable_packet_tunnel is the overall ZT2 switch
+  const ctxIsZT2Base = (ctx: string): boolean => {
+    const a = getCtxFpAction(ctx);
+    if (Object.keys(a).length === 0) return data?.tunnelMode === "Z-Tunnel 2.0";
+    return a.enablePacketTunnel === 1 || a.enable_packet_tunnel === 1;
+  };
+
+  // "Redirect Web Traffic to ZCC Listening Proxy" checkbox per context
+  // API field: redirect_web_traffic (snake_case DB) or redirectWebTraffic (camelCase HTTP)
+  const ctxHasLP = (ctx: string): boolean => {
+    const a = getCtxFpAction(ctx);
+    if (Object.keys(a).length === 0) return data?.listeningProxy ?? false;
+    return Boolean(a.redirectWebTraffic || a.redirect_web_traffic);
+  };
+
+  // "Use Z-Tunnel 2.0 for Proxied Web Traffic" checkbox per context
+  // API field: use_tunnel2_for_proxied_web_traffic (snake_case DB) or useTunnel2ForProxiedWebTraffic (camelCase HTTP)
+  const ctxHasZT2Proxied = (ctx: string): boolean => {
+    const a = getCtxFpAction(ctx);
+    if (Object.keys(a).length === 0) return false;
+    return Boolean(a.useTunnel2ForProxiedWebTraffic || a.use_tunnel2_for_proxied_web_traffic);
+  };
+
   const ctxModeStr = (ctx: string): string => {
     const a = getCtxFpAction(ctx);
     if (Object.keys(a).length === 0) return data?.tunnelMode ?? "";
     if ((a.actionType ?? a.action_type) === 3) return "ZCC Bypass";
+    // Base tunnel mode is determined by enable_packet_tunnel
     if (a.enablePacketTunnel === 1 || a.enable_packet_tunnel === 1) return "Z-Tunnel 2.0";
     const spd = (a.systemProxyData ?? a.system_proxy_data ?? {}) as Record<string, unknown>;
-    if ((a.systemProxy ?? a.system_proxy ?? 0) === 2 || spd.enableProxyServer || spd.enable_proxy_server) return "Proxy";
+    if (spd.enableProxyServer || spd.enable_proxy_server) return "Proxy";
     return "Z-Tunnel 1.0";
   };
   const ctxTransStr = (ctx: string): string =>
@@ -6856,7 +6880,7 @@ function AppProfileVisualizer({
     return data?.zpaEnabled ?? false;
   };
 
-  const ctxDetailedMode = (ctx: string): "T2.0+LP" | "T2.0" | "T1.0" | "Proxy" | "Bypass" | "Unknown" => {
+  const ctxDetailedMode = (ctx: string): "T2.0+LP" | "T2.0" | "T1.0" | "LP+T1.0" | "Proxy" | "Bypass" | "Unknown" => {
     const a = getCtxFpAction(ctx);
     if (Object.keys(a).length === 0) {
       if (!data) return "Unknown";
@@ -6865,28 +6889,150 @@ function AppProfileVisualizer({
       return "T1.0";
     }
     if ((a.actionType ?? a.action_type) === 3) return "Bypass";
-    if (a.enablePacketTunnel === 1 || a.enable_packet_tunnel === 1) {
-      const spd = (a.systemProxyData ?? a.system_proxy_data ?? {}) as Record<string, unknown>;
-      const hasLP = (a.systemProxy ?? a.system_proxy ?? 0) === 2 || Boolean(spd.enableProxyServer || spd.enable_proxy_server);
-      return hasLP ? "T2.0+LP" : "T2.0";
+    const isZT2Base = ctxIsZT2Base(ctx);
+    const hasLP     = ctxHasLP(ctx);
+    const hasZT2P   = ctxHasZT2Proxied(ctx);
+    if (isZT2Base) {
+      if (hasLP) return hasZT2P ? "T2.0+LP" : "LP+T1.0";
+      return "T2.0";
     }
-    const spd2 = (a.systemProxyData ?? a.system_proxy_data ?? {}) as Record<string, unknown>;
-    if ((a.systemProxy ?? a.system_proxy ?? 0) === 2 || spd2.enableProxyServer || spd2.enable_proxy_server) return "Proxy";
+    if (hasLP) return "Proxy";
     return "T1.0";
   };
   const detailedMode = ctxDetailedMode(networkContext);
+  // PAC is evaluated when LP is active (web hits the listening proxy which applies app profile PAC)
+  // or when the base mode is not ZT2 (ZT1/Proxy always evaluate PAC).
+  // Pure ZT2 with no LP skips PAC entirely.
+  const lpActive = ctxHasLP(networkContext);
+  const zt2ProxiedActive = ctxHasZT2Proxied(networkContext);
   const pacEvaluated = detailedMode !== "T2.0" && detailedMode !== "Bypass" && detailedMode !== "Unknown";
+  const pacBypasses: Array<{ label: string; detail: string }> = data?.pac?.bypasses ?? [];
+  const pacAppBypasses: Array<{ label: string; detail: string }> = data?.pac?.appProfileBypasses ?? [];
+  const totalPacBypasses = pacBypasses.length + pacAppBypasses.length;
   const localActive = pacEvaluated || excludeCount > 0;
 
   const localSubtitle = data
     ? pacEvaluated
-      ? excludeCount > 0
-        ? `PAC DIRECT · ${excludeCount} exclusion${excludeCount !== 1 ? "s" : ""}`
-        : "PAC DIRECT path"
-      : excludeCount > 0
-        ? `${excludeCount} tunnel exclusion${excludeCount !== 1 ? "s" : ""}`
+      ? (() => {
+          const parts: string[] = [];
+          if (excludeCount > 0) parts.push(`${excludeCount} exclusion${excludeCount !== 1 ? "s" : ""}`);
+          if (totalPacBypasses > 0) parts.push(`${totalPacBypasses} PAC bypass${totalPacBypasses !== 1 ? "es" : ""}`);
+          const suffix = parts.length ? ` · ${parts.join(" · ")}` : "";
+          return lpActive ? `PAC DIRECT — web only${suffix}` : `PAC DIRECT${suffix}`;
+        })()
+      : excludeCount > 0 || pacBypasses.length > 0
+        ? (() => {
+            const parts: string[] = [];
+            if (excludeCount > 0) parts.push(`${excludeCount} tunnel exclusion${excludeCount !== 1 ? "s" : ""}`);
+            if (totalPacBypasses > 0) parts.push(`${totalPacBypasses} PAC bypass${totalPacBypasses !== 1 ? "es" : ""}`);
+            return parts.join(" · ");
+          })()
         : "No explicit exclusions"
     : "";
+
+  // ── Traffic simulator helpers ──────────────────────────────────────────────
+  const _ipToNum = (ip: string): number => {
+    const p = ip.split(".").map(Number);
+    if (p.length !== 4 || p.some(isNaN)) return -1;
+    return ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0;
+  };
+  const _isValidIP = (s: string) =>
+    /^\d{1,3}(\.\d{1,3}){3}$/.test(s) && s.split(".").every(x => +x <= 255);
+  const _inCIDR = (ip: string, cidr: string): boolean => {
+    const [net, bits] = cidr.split("/");
+    const prefix = parseInt(bits);
+    if (isNaN(prefix)) return false;
+    const ipN = _ipToNum(ip), netN = _ipToNum(net);
+    if (ipN < 0 || netN < 0) return false;
+    const mask = prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;
+    return (ipN & mask) === (netN & mask);
+  };
+  const _isRFC1918 = (ip: string) =>
+    _inCIDR(ip, "10.0.0.0/8") || _inCIDR(ip, "172.16.0.0/12") ||
+    _inCIDR(ip, "192.168.0.0/16") || _inCIDR(ip, "127.0.0.0/8") ||
+    _inCIDR(ip, "169.254.0.0/16") || _inCIDR(ip, "192.88.99.0/24");
+  const _shExp = (host: string, pat: string): boolean => {
+    const re = pat.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".");
+    return new RegExp(`^${re}$`, "i").test(host);
+  };
+
+  const runSimulator = () => {
+    if (!data || !simDest.trim()) return;
+    const dest = simDest.trim().toLowerCase();
+    const port = parseInt(simPort) || 443;
+    const isIP = _isValidIP(dest);
+    const reasons: { text: string; source: string }[] = [];
+
+    // 1. Port bypass
+    for (const pb of data.portBypasses) {
+      if (pb.port === String(port) || pb.port === "*") {
+        setSimResult({ outcome: "Direct", color: "orange", reasons: [{ text: `Port ${port} matches port bypass rule`, source: "Port Bypass" }] });
+        return;
+      }
+    }
+
+    // 2. Tunnel CIDR exclusion
+    if (isIP) {
+      for (const r of data.tunnelRoutes.filter(r => r.direction === "exclude")) {
+        if (_inCIDR(dest, r.cidr)) {
+          setSimResult({ outcome: "Direct", color: "orange", reasons: [{ text: `${dest} falls within tunnel exclusion ${r.cidr}`, source: "Tunnel Exclusion" }] });
+          return;
+        }
+      }
+    }
+
+    // 3. PAC bypass rules
+    const allPac = [
+      ...pacBypasses.map(b => ({ ...b, src: "Forwarding Profile PAC", url: data.pac.profilePacUrl })),
+      ...pacAppBypasses.map(b => ({ ...b, src: "App Profile PAC", url: data.pac.url })),
+    ];
+    for (const rule of allPac) {
+      const lbl = rule.label;
+      const srcDetail = rule.src;
+      // RFC1918
+      if (lbl.includes("RFC1918") && isIP && _isRFC1918(dest)) {
+        reasons.push({ text: `${dest} is an RFC1918 private IP`, source: srcDetail });
+        setSimResult({ outcome: "Direct", color: "orange", reasons });
+        return;
+      }
+      // isInNet CIDR rule (label starts with x.x.x.x/n)
+      const cidrM = lbl.match(/^(\d[\d.]+\/\d+)/);
+      if (cidrM && isIP && _inCIDR(dest, cidrM[1])) {
+        reasons.push({ text: `${dest} matches isInNet rule ${cidrM[1]}`, source: srcDetail });
+        setSimResult({ outcome: "Direct", color: "orange", reasons });
+        return;
+      }
+      // Plain hostname
+      if (lbl.includes("Plain hostnames") && !isIP && !dest.includes(".")) {
+        reasons.push({ text: `"${dest}" is a plain (unqualified) hostname`, source: srcDetail });
+        setSimResult({ outcome: "Direct", color: "orange", reasons });
+        return;
+      }
+      // shExpMatch domain pattern
+      if (lbl.endsWith("→ DIRECT") && !isIP) {
+        const pat = lbl.replace(/\s*→\s*DIRECT$/, "").trim();
+        if ((pat.includes("*") || pat.includes(".")) && _shExp(dest, pat)) {
+          reasons.push({ text: `"${dest}" matches domain pattern "${pat}"`, source: srcDetail });
+          setSimResult({ outcome: "Direct", color: "orange", reasons });
+          return;
+        }
+      }
+      // Non-HTTP/S
+      if (lbl.includes("Non-HTTP/S") && port !== 80 && port !== 443 && port !== 8080) {
+        reasons.push({ text: `Port ${port} is not HTTP/HTTPS — bypassed by PAC`, source: srcDetail });
+        setSimResult({ outcome: "Direct", color: "orange", reasons });
+        return;
+      }
+    }
+
+    // 4. Default → ZIA
+    const tunnelLabel = detailedMode === "T2.0" ? "Z-Tunnel 2.0 (DTLS)" : detailedMode === "T2.0+LP" ? "Z-Tunnel 2.0 via LP" : data.tunnelMode;
+    setSimResult({
+      outcome: "ZIA",
+      color: "green",
+      reasons: [{ text: `No bypass rules matched — routed to ZIA via ${tunnelLabel}`, source: "Default" }],
+    });
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -6933,6 +7079,7 @@ function AppProfileVisualizer({
                     <marker id="tp3-arr-local" markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3z" fill="#f97316"/></marker>
                     <marker id="tp3-arr-on"   markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3z" fill="#7c3aed"/></marker>
                     <marker id="tp3-arr-off"  markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3z" fill="#0d9488"/></marker>
+                    <marker id="tp3-arr-lp"   markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L7,3z" fill="#2563eb"/></marker>
                     <filter id="tp3-shadow"><feDropShadow dx="0" dy="1" stdDeviation="2" floodOpacity="0.08"/></filter>
                   </defs>
 
@@ -6983,14 +7130,37 @@ function AppProfileVisualizer({
                     const zpaCtxOn = ctxZpaOn(networkContext);
                     return (
                       <>
-                        {/* Trunk up to ZIA */}
+                        {/* Trunk up to junction at y=50 */}
                         <line x1="596" y1={ctxY} x2="596" y2="50"
                           stroke={tc} strokeWidth="1.5"/>
-                        {/* → ZIA */}
-                        <line x1="596" y1="50" x2="644" y2="50"
-                          stroke={tc}
-                          strokeWidth="2"
-                          markerEnd="url(#tp3-arr-zia)" className="pointer-events-none"/>
+
+                        {lpActive ? (
+                          <>
+                            {/* Non-web: direct Z-Tunnel to ZIA (upper branch from junction) */}
+                            <line x1="596" y1="50" x2="596" y2="36" stroke={tc} strokeWidth="1.5"/>
+                            <line x1="596" y1="36" x2="644" y2="36"
+                              stroke={tc} strokeWidth="2"
+                              markerEnd="url(#tp3-arr-zia)" className="pointer-events-none"/>
+                            {/* Web: via listening proxy (lower branch from junction) */}
+                            <line x1="596" y1="50" x2="596" y2="64" stroke="#2563eb" strokeWidth="1.5"/>
+                            <line x1="596" y1="64" x2="608" y2="64" stroke="#2563eb" strokeWidth="1.5"/>
+                            {/* LP node badge */}
+                            <rect x="608" y="58" width="24" height="12" rx="3"
+                              fill="#dbeafe" stroke="#2563eb" strokeWidth="1" className="pointer-events-none"/>
+                            <text x="620" y="67" fontSize="7" fontWeight="600" fill="#1d4ed8"
+                              textAnchor="middle" className="pointer-events-none">LP</text>
+                            {/* LP → ZIA */}
+                            <line x1="632" y1="64" x2="644" y2="64"
+                              stroke="#2563eb" strokeWidth="2"
+                              markerEnd="url(#tp3-arr-lp)" className="pointer-events-none"/>
+                          </>
+                        ) : (
+                          /* → ZIA (single path when LP inactive) */
+                          <line x1="596" y1="50" x2="644" y2="50"
+                            stroke={tc} strokeWidth="2"
+                            markerEnd="url(#tp3-arr-zia)" className="pointer-events-none"/>
+                        )}
+
                         {/* Trunk down to Local (only when ZPA or Local destination active) */}
                         {(localActive || (data.zpaEnabled && zpaCtxOn)) && (
                           <line x1="596" y1={ctxY} x2="596" y2="166"
@@ -7015,11 +7185,29 @@ function AppProfileVisualizer({
                     );
                   })()}
 
-                  {/* ── PAC path labels near fork arrows (only when evaluated) ─ */}
-                  {pacEvaluated && (
+                  {/* ── PAC path labels near fork arrows ─────────────────────── */}
+                  {pacEvaluated && !lpActive && (
                     <>
-                      <text x="599" y="45" fontSize="7" fill="#9ca3af" className="pointer-events-none">PAC PROXY</text>
-                      <text x="599" y="178" fontSize="7" fill="#9ca3af" className="pointer-events-none">PAC DIRECT</text>
+                      <text x="599" y="45" fontSize="7" fill="#9ca3af" className="pointer-events-none">PAC PROXY → ZT1</text>
+                      <text x="599" y="178" fontSize="7" fill="#9ca3af" className="pointer-events-none">PAC DIRECT → bypass</text>
+                    </>
+                  )}
+                  {lpActive && (
+                    <>
+                      {/* Non-web: LWF/TAP path label above arrow at y=36 */}
+                      <text x="599" y="31" fontSize="6" fill="#6b7280" className="pointer-events-none">Non-proxy-aware</text>
+                      <text x="599" y="39" fontSize="6" fill="#9ca3af" className="pointer-events-none">LWF/TAP · ZT2</text>
+                      {/* Web: proxy-aware label left of LP badge */}
+                      <text x="598" y="61" fontSize="6" fill="#1d4ed8" className="pointer-events-none">Proxy-aware →</text>
+                      {/* Tunnel type after LP badge */}
+                      <text x="634" y="61" fontSize="6" fontWeight="600" fill="#1d4ed8" className="pointer-events-none">
+                        {zt2ProxiedActive ? "ZT2" : "ZT1"}
+                      </text>
+                      {/* PAC results below web path */}
+                      <text x="598" y="76" fontSize="6" fill="#9ca3af" className="pointer-events-none">
+                        {zt2ProxiedActive ? "PAC default→ZT2 · proxy→ZT1" : "PAC default→ZT1 · proxy→ZT1"}
+                      </text>
+                      <text x="599" y="178" fontSize="7" fill="#9ca3af" className="pointer-events-none">PAC DIRECT → bypass (L7)</text>
                     </>
                   )}
 
@@ -7046,6 +7234,14 @@ function AppProfileVisualizer({
                       {`${data.deviceType.charAt(0).toUpperCase()}${data.deviceType.slice(1)} policy`}
                     </text>
                   )}
+                  {lpActive && (
+                    <>
+                      <rect x="286" y="120" width="28" height="13" rx="3"
+                        fill="#dbeafe" stroke="#2563eb" strokeWidth="0.8" className="pointer-events-none"/>
+                      <text x="300" y="130" fontSize="7.5" fontWeight="600" fill="#1d4ed8"
+                        textAnchor="middle" className="pointer-events-none">LP</text>
+                    </>
+                  )}
 
                   {/* ── 3 Network Context Nodes ─────────────────────────────── */}
                   <g transform="translate(80, 0)">
@@ -7065,7 +7261,7 @@ function AppProfileVisualizer({
                   </text>
                   <text x="330" y="61" fontSize="8"
                     fill={networkContext === "on" ? "#7c3aed" : "#9ca3af"} className="pointer-events-none">
-                    {ctxModeStr("on")}{ctxDetailedMode("on") === "T2.0+LP" ? " +LP" : ""}{ctxModeStr("on") ? ` · ${ctxTransStr("on")}` : ""}
+                    {ctxModeStr("on")}{ctxHasLP("on") ? " · LP" : ""}{ctxModeStr("on") ? ` · ${ctxTransStr("on")}` : ""}
                   </text>
 
                   {/* VPN Trusted Network (y=85, h=46, center=108) */}
@@ -7083,7 +7279,7 @@ function AppProfileVisualizer({
                   </text>
                   <text x="330" y="119" fontSize="8"
                     fill={networkContext === "vpn" ? "#4f46e5" : "#9ca3af"} className="pointer-events-none">
-                    {ctxModeStr("vpn")}{ctxDetailedMode("vpn") === "T2.0+LP" ? " +LP" : ""}{ctxModeStr("vpn") ? ` · ${ctxTransStr("vpn")}` : ""}
+                    {ctxModeStr("vpn")}{ctxHasLP("vpn") ? " · LP" : ""}{ctxModeStr("vpn") ? ` · ${ctxTransStr("vpn")}` : ""}
                   </text>
 
                   {/* Off Trusted Network (y=143, h=46, center=166) */}
@@ -7101,7 +7297,7 @@ function AppProfileVisualizer({
                   </text>
                   <text x="330" y="176" fontSize="8"
                     fill={networkContext === "off" ? "#0d9488" : "#9ca3af"} className="pointer-events-none">
-                    {ctxModeStr("off")}{ctxDetailedMode("off") === "T2.0+LP" ? " +LP" : ""}{ctxModeStr("off") ? ` · ${ctxTransStr("off")}` : ""}
+                    {ctxModeStr("off")}{ctxHasLP("off") ? " · LP" : ""}{ctxModeStr("off") ? ` · ${ctxTransStr("off")}` : ""}
                   </text>
                   </g>{/* end translate(80, 0) context nodes */}
 
@@ -7121,13 +7317,17 @@ function AppProfileVisualizer({
                     fill="none" stroke="#22c55e" strokeWidth="1.2" className="pointer-events-none"/>
                   <text x="571" y="42" fontSize="10" fontWeight="600" fill="#15803d" className="pointer-events-none">ZIA Cloud</text>
                   <text x="571" y="57" fontSize="8.5" fill="#6b7280" className="pointer-events-none">
-                    {pacEvaluated
-                      ? "PAC PROXY path"
-                      : detailedMode === "T2.0"
-                        ? "All traffic (PAC skipped)"
-                        : ZIA_MODE_LABEL[data.tunnelMode]}
+                    {lpActive && zt2ProxiedActive
+                      ? "Proxy-aware: LP→ZT2 (default) / ZT1 (PAC proxy)  ·  Non-proxy-aware: LWF→ZT2"
+                      : lpActive && !zt2ProxiedActive
+                        ? "Proxy-aware: LP→ZT1  ·  Non-proxy-aware: LWF→ZT2"
+                        : detailedMode === "T2.0"
+                          ? (data.pac.enablePac || data.pac.profilePacUrl || data.pac.url)
+                            ? "All traffic via ZT2  ·  System PAC active"
+                            : "All traffic via ZT2 (no PAC)"
+                          : ZIA_MODE_LABEL[data.tunnelMode]}
                   </text>
-                  {(data.pac.enablePac || data.pac.url) && (
+                  {(data.pac.enablePac || data.pac.url || data.pac.profilePacUrl) && (
                     <g className="cursor-pointer" onClick={(e) => { e.stopPropagation(); setActiveSection("pac"); }}>
                       <rect x="730" y="28" width="30" height="16" rx="4" fill="#fef3c7" stroke="#fbbf24" strokeWidth="1"/>
                       <text x="745" y="39" fontSize="8" fontWeight="600" fill="#92400e" textAnchor="middle" className="pointer-events-none">PAC</text>
@@ -7200,6 +7400,17 @@ function AppProfileVisualizer({
                     </>
                   )}
                 </svg>
+                {/* ── System proxy footnote (ZT2proxied=on, LP=off) ─────────── */}
+                {!lpActive && zt2ProxiedActive && (
+                  <div className="flex items-start gap-1.5 px-3 py-2 border-t border-gray-100 bg-amber-50/60">
+                    <svg className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20A10 10 0 0012 2z"/>
+                    </svg>
+                    <p className="text-xs text-amber-800 leading-snug">
+                      <span className="font-medium">Device system proxy note:</span> If the endpoint OS has a system proxy configured pointing to the ZCC listening address (e.g. 127.0.0.1:9000), web traffic will route through the listening proxy and then Z-Tunnel 2.0 — even though <em>Redirect Web Traffic to Listening Proxy</em> is disabled in the forwarding profile.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* ── Targeting bar ─────────────────────────────────────────────── */}
@@ -7228,6 +7439,55 @@ function AppProfileVisualizer({
                     </>
                   )}
                 </span>
+              </div>
+
+              {/* ── Traffic Simulator ────────────────────────────────────────── */}
+              <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-medium text-gray-500 uppercase">Traffic Simulator</p>
+                  <p className="text-xs text-gray-400 italic">Results based on parsed PAC rules — complex PAC logic may not be fully represented</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="Destination IP or hostname"
+                    value={simDest}
+                    onChange={e => { setSimDest(e.target.value); setSimResult(null); }}
+                    onKeyDown={e => e.key === "Enter" && runSimulator()}
+                    className="flex-1 min-w-[180px] px-2.5 py-1.5 text-xs rounded border border-gray-300 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Port"
+                    value={simPort}
+                    onChange={e => { setSimPort(e.target.value); setSimResult(null); }}
+                    onKeyDown={e => e.key === "Enter" && runSimulator()}
+                    className="w-20 px-2.5 py-1.5 text-xs rounded border border-gray-300 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono"
+                  />
+                  <button
+                    onClick={runSimulator}
+                    className="px-3 py-1.5 text-xs font-medium rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                  >
+                    Check
+                  </button>
+                </div>
+                {simResult && (
+                  <div className="mt-2 flex flex-col gap-1">
+                    {simResult.reasons.map((r, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold ${
+                          simResult.color === "green"
+                            ? "bg-green-100 text-green-800"
+                            : "bg-orange-100 text-orange-800"
+                        }`}>
+                          {simResult.outcome}
+                        </span>
+                        <span className="text-xs text-gray-500 italic shrink-0">{r.source}</span>
+                        <span className="text-xs text-gray-700">{r.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* ── Tab bar + detail panels (always visible) ─────────────────── */}
@@ -7411,10 +7671,39 @@ function AppProfileVisualizer({
               {activeSection === "local" && (() => {
                 const tunnelExclusions = data.tunnelRoutes.filter(r => r.direction === "exclude");
                 const hasAny = data.processBypasses.length > 0 || data.portBypasses.length > 0 ||
-                  data.vpnGatewayBypasses.length > 0 || tunnelExclusions.length > 0;
+                  data.vpnGatewayBypasses.length > 0 || tunnelExclusions.length > 0 || pacBypasses.length > 0;
                 return (
                   <div className="space-y-4">
                     {!hasAny && <p className="text-xs text-gray-400">No local/direct bypass rules configured.</p>}
+                    {[
+                      { label: "Forwarding Profile PAC — Bypass Rules", url: data.pac.profilePacUrl, items: pacBypasses },
+                      { label: "App Profile PAC — Bypass Rules",        url: data.pac.url,           items: pacAppBypasses },
+                    ].filter(s => s.items.length > 0).map(section => (
+                      <div key={section.label}>
+                        <p className="text-xs font-medium text-blue-700 uppercase mb-1">{section.label}</p>
+                        <div className="overflow-x-auto rounded border border-blue-100 bg-blue-50/30">
+                          <table className="min-w-full text-sm divide-y divide-blue-100">
+                            <thead className="bg-blue-50">
+                              <tr>
+                                <th className="px-3 py-1.5 text-left text-xs font-medium text-blue-600 uppercase">Rule</th>
+                                <th className="px-3 py-1.5 text-left text-xs font-medium text-blue-600 uppercase">Detail</th>
+                              </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-blue-50">
+                              {section.items.map((b, i) => (
+                                <tr key={i}>
+                                  <td className="px-3 py-1.5 font-mono text-xs text-gray-800">{b.label}</td>
+                                  <td className="px-3 py-1.5 text-xs text-gray-500">{b.detail}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Parsed from: <span className="font-mono">{section.url}</span>
+                        </p>
+                      </div>
+                    ))}
                     {data.processBypasses.length > 0 && (
                       <div>
                         <p className="text-xs font-medium text-orange-700 uppercase mb-1">App Profile Bypasses (Process)</p>
