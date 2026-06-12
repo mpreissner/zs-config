@@ -20,7 +20,7 @@ export interface ScheduledTask {
   sync_mode: "resource_type" | "label";
   label_name: string | null;
   label_resource_types: string[] | null;
-  task_type: "sync" | "import";
+  task_type?: "sync" | "import";
   target_tenant_ids: number[] | null;
   target_tenant_names: string[] | null;
   import_products: string[] | null;

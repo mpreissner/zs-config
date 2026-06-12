@@ -193,7 +193,7 @@ function TaskFormModal({ mode, initial, onClose, onSaved }: TaskFormModalProps) 
 
   // Import products — empty by default on create, pre-populated in edit
   const [selectedProducts, setSelectedProducts] = useState<string[]>(
-    mode === "edit" ? (initial?.import_products ?? []) : []
+    mode === "edit" ? (initial?.import_products ?? ["ZIA", "ZPA", "ZCC"]) : []
   );
 
   const [error, setError] = useState<string | null>(null);
