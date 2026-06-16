@@ -85,6 +85,40 @@ export const importZPA = (id: number): Promise<JobRef> =>
 export const importZCC = (id: number): Promise<JobRef> =>
   apiFetch<JobRef>(`/api/v1/tenants/${id}/import/zcc`, { method: "POST" });
 
+export interface PolicyCheck {
+  engine: string;
+  matched: boolean;
+  rule_name: string | null;
+  action: string | null;
+  reason: string;
+  category: string | null;
+  caveats: string[];
+}
+
+export interface SimulationResult {
+  destination: string;
+  port: number;
+  protocol: string;
+  zpa: PolicyCheck;
+  zia_firewall: PolicyCheck;
+  zia_dns: PolicyCheck;
+  zia_url: PolicyCheck;
+  verdict: "ZPA" | "ZIA_ALLOW" | "ZIA_BLOCK_FIREWALL" | "ZIA_BLOCK_DNS" | "ZIA_BLOCK_URL" | "INTERNET";
+  verdict_label: string;
+}
+
+export const simulateTraffic = (
+  tenantId: number,
+  destination: string,
+  port: number,
+  protocol: string,
+): Promise<SimulationResult> =>
+  apiFetch<SimulationResult>(`/api/v1/tenants/${tenantId}/simulate`, {
+    method: "POST",
+    body: JSON.stringify({ destination, port, protocol }),
+    headers: { "Content-Type": "application/json" },
+  });
+
 export interface SnapshotDiffItem {
   action: "create" | "update" | "delete";
   resource_type: string;
