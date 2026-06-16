@@ -112,12 +112,16 @@ export const simulateTraffic = (
   destination: string,
   port: number,
   protocol: string,
+  nwApplication?: string,
 ): Promise<SimulationResult> =>
   apiFetch<SimulationResult>(`/api/v1/tenants/${tenantId}/simulate`, {
     method: "POST",
-    body: JSON.stringify({ destination, port, protocol }),
+    body: JSON.stringify({ destination, port, protocol, nw_application: nwApplication || null }),
     headers: { "Content-Type": "application/json" },
   });
+
+export const fetchSimApplications = (tenantId: number): Promise<string[]> =>
+  apiFetch<string[]>(`/api/v1/tenants/${tenantId}/simulate/applications`);
 
 export interface SnapshotDiffItem {
   action: "create" | "update" | "delete";
