@@ -140,6 +140,7 @@ class ZPAImportService:
 
         synced = updated = deleted = 0
         errors = []
+        failed_types = set()
         newly_disabled = []
 
         for idx, defn in enumerate(all_defs, start=1):
@@ -166,6 +167,7 @@ class ZPAImportService:
                     )
                 else:
                     errors.append(f"{defn.resource_type}: {exc}")
+                    failed_types.add(defn.resource_type)
                 if progress_callback:
                     progress_callback(defn.resource_type, idx, total)
                 continue
@@ -177,8 +179,9 @@ class ZPAImportService:
             if progress_callback:
                 progress_callback(defn.resource_type, idx, total)
 
-        # Mark any resource no longer returned by the API as deleted
-        deleted = self._mark_deleted(resource_types, run_start)
+        # Mark any resource no longer returned by the API as deleted. A type
+        # whose fetch failed was not seen at all, so its rows are left alone.
+        deleted = self._mark_deleted(resource_types, run_start, skip_types=failed_types)
 
         all_skipped = sorted(disabled_types)
         attempted = total - len([d for d in all_defs if d.resource_type in disabled_types and d.resource_type not in newly_disabled])
@@ -264,32 +267,39 @@ class ZPAImportService:
         result = method(**defn.list_args) if defn.list_args else method()
         return result or []
 
+    @staticmethod
+    def _scim_idp_ids(idps: list) -> List[str]:
+        """IdP ids to query for SCIM objects.
+
+        Skips only IdPs that report scim_enabled False.  An IdP that omits the
+        flag is still queried: skipping it would drop its objects from this
+        run, and the delete pass would then flag them all as deleted.
+        """
+        return [
+            str(idp["id"]) for idp in idps
+            if idp.get("id") and idp.get("scim_enabled") is not False
+        ]
+
     def _fetch_scim_groups_all(self) -> list:
-        """Fetch SCIM groups across all IdPs."""
-        idps = self.client.list_idp()
+        """Fetch SCIM groups across all SCIM-enabled IdPs.
+
+        A failure for any IdP fails the whole type rather than returning the
+        other IdPs' groups: a partial list would get the missing IdP's groups
+        marked deleted.
+        """
         groups = []
-        for idp in idps:
-            idp_id = str(idp.get("id", ""))
-            if not idp_id:
-                continue
-            try:
-                groups.extend(self.client.list_scim_groups(idp_id) or [])
-            except Exception:
-                pass
+        for idp_id in self._scim_idp_ids(self.client.list_idp()):
+            groups.extend(self.client.list_scim_groups(idp_id) or [])
         return groups
 
     def _fetch_scim_attributes_all(self) -> list:
-        """Fetch SCIM user attributes across all IdPs."""
-        idps = self.client.list_idp()
+        """Fetch SCIM user attributes across all SCIM-enabled IdPs.
+
+        Fails the whole type on any IdP's error, as _fetch_scim_groups_all does.
+        """
         attrs = []
-        for idp in idps:
-            idp_id = str(idp.get("id", ""))
-            if not idp_id:
-                continue
-            try:
-                attrs.extend(self.client.list_scim_attributes(idp_id) or [])
-            except Exception:
-                pass
+        for idp_id in self._scim_idp_ids(self.client.list_idp()):
+            attrs.extend(self.client.list_scim_attributes(idp_id) or [])
         return attrs
 
     def _upsert(self, defn: ResourceDef, records: list, run_start: datetime):
@@ -367,11 +377,20 @@ class ZPAImportService:
 
         return synced, updated
 
-    def _mark_deleted(self, resource_types: Optional[List[str]], run_start: datetime) -> int:
+    def _mark_deleted(
+        self,
+        resource_types: Optional[List[str]],
+        run_start: datetime,
+        skip_types: frozenset = frozenset(),
+    ) -> int:
         """Mark rows not touched in this sync run as deleted.
 
         Rows written during this run have synced_at == run_start.  Any row
         with synced_at < run_start was not returned by the API this time.
+
+        skip_types are resource types whose fetch failed this run.  Their rows
+        were not refreshed because nothing came back, not because the objects
+        are gone, so they are left as they were.
 
         Migration candidates are excluded: they do not exist in the tenant, so
         the API will never return them and every import would otherwise flag
@@ -379,7 +398,10 @@ class ZPAImportService:
         source filter states the intent rather than resting on that.
         """
         deleted = 0
-        type_filter = resource_types or [d.resource_type for d in RESOURCE_DEFINITIONS]
+        type_filter = [
+            t for t in (resource_types or [d.resource_type for d in RESOURCE_DEFINITIONS])
+            if t not in skip_types
+        ]
         pending_audit: list = []
 
         with get_session() as session:
