@@ -64,6 +64,9 @@ ENV ZSCALER_DB_PATH=/data/db/zscaler.db
 ENV ZS_PLUGIN_DIR=/data/plugins
 ENV PYTHONUSERBASE=/data/plugins
 ENV PYTHONUNBUFFERED=1
+# The pip install above runs before the source is copied, so it installs the
+# zs-config console script but no packages; resolve them from /app instead.
+ENV PYTHONPATH=/app
 # Point HOME at the persistent DB volume so the Fernet key file
 # (~/.config/zs-config/secret.key) survives container restarts and image upgrades.
 ENV HOME=/data/db

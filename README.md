@@ -227,8 +227,7 @@ On first launch an encryption key is generated at `~/.config/zs-config/secret.ke
 ### TUI inside the Docker container
 
 ```bash
-docker exec -it zs-config /bin/bash
-python -m cli.z_config
+docker exec -it zs-config zs-config
 ```
 
 ### Dev setup
