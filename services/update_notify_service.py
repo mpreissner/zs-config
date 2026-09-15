@@ -1,11 +1,12 @@
-"""Update notification service — checks PyPI daily and sends SMTP alert when a new version is available."""
+"""Update notification service — checks GitHub releases daily and sends SMTP alert when a new version is available."""
 
 import smtplib
 import ssl
 from email.message import EmailMessage
 from typing import Optional
 
-PYPI_URL = "https://pypi.org/pypi/zs-config/json"
+# Releases ship as the container deployment only; PyPI is no longer published.
+RELEASES_URL = "https://api.github.com/repos/mpreissner/zs-config/releases/latest"
 CHANGELOG_URL = "https://github.com/mpreissner/zs-config/blob/main/CHANGELOG.md"
 DEPLOY_ONELINER = "curl -fsSL https://raw.githubusercontent.com/mpreissner/zs-config/main/deploy.sh | bash"
 
@@ -17,12 +18,17 @@ def _parse_ver(v: str) -> tuple:
     return tuple(int(x) for x in v.split("."))
 
 
-def _fetch_latest_version() -> Optional[str]:
+def fetch_latest_version(timeout: float = _REQUEST_TIMEOUT) -> Optional[str]:
+    """Return the latest published release version (no leading "v"), or None."""
     try:
         import requests
-        resp = requests.get(PYPI_URL, timeout=_REQUEST_TIMEOUT)
+        resp = requests.get(
+            RELEASES_URL,
+            headers={"Accept": "application/vnd.github+json"},
+            timeout=timeout,
+        )
         resp.raise_for_status()
-        return resp.json()["info"]["version"]
+        return resp.json()["tag_name"].lstrip("v")
     except Exception:
         return None
 
@@ -94,7 +100,7 @@ def send_test_email(
 
 
 def check_and_notify() -> None:
-    """Check PyPI for a new version and send an email alert if one is found and notifications are enabled."""
+    """Check GitHub releases for a new version and send an email alert if one is found and notifications are enabled."""
     from db.database import get_setting
     from cli.banner import VERSION
 
@@ -106,7 +112,7 @@ def check_and_notify() -> None:
     if not to_addr or not host:
         return
 
-    latest = _fetch_latest_version()
+    latest = fetch_latest_version()
     if latest is None:
         return
 
