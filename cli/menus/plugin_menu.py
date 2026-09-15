@@ -399,7 +399,7 @@ def _branch_override_menu(installed: list[dict], overrides: dict) -> None:
     pkg = selected["package"]
     current_override = overrides.get(pkg)
 
-    # ── Step 2: fetch manifest + available feature branches ───────────────
+    # ── Step 2: fetch manifest + available feature/fix branches ───────────
     console.print()
     with console.status(f"[cyan]Fetching branches for {pkg}...[/cyan]"):
         available, manifest_error = fetch_manifest()
@@ -429,7 +429,7 @@ def _branch_override_menu(installed: list[dict], overrides: dict) -> None:
         if branch_error:
             console.print(f"[red]✗ {branch_error}[/red]")
         else:
-            console.print(f"[yellow]No feature branches found for {pkg}.[/yellow]")
+            console.print(f"[yellow]No feature or fix branches found for {pkg}.[/yellow]")
 
         if current_override:
             clear = questionary.confirm(

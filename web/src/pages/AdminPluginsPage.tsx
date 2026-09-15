@@ -284,7 +284,7 @@ function ChannelPanel() {
  *
  * "Channel default" and a pin of the same name are different answers: the first
  * follows the channel wherever it goes, the second holds this plugin still when
- * the channel moves. Feature branches come from the plugin's own branch listing,
+ * the channel moves. Feature and fix branches come from the plugin's own branch listing,
  * so a plugin with none simply offers the two channel names.
  *
  * Changing the ref of an installed plugin reinstalls it — hence the job — while
