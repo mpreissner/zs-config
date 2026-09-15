@@ -112,6 +112,7 @@ class ZCCImportService:
 
         synced = updated = deleted = 0
         errors = []
+        failed_types = set()
         newly_disabled = []
 
         for idx, defn in enumerate(all_defs, start=1):
@@ -138,6 +139,7 @@ class ZCCImportService:
                     )
                 else:
                     errors.append(f"{defn.resource_type}: {exc}")
+                    failed_types.add(defn.resource_type)
                 if progress_callback:
                     progress_callback(defn.resource_type, idx, total)
                 continue
@@ -149,7 +151,8 @@ class ZCCImportService:
             if progress_callback:
                 progress_callback(defn.resource_type, idx, total)
 
-        deleted = self._mark_deleted(resource_types, run_start)
+        # A type whose fetch failed was not seen at all, so its rows are left alone.
+        deleted = self._mark_deleted(resource_types, run_start, skip_types=failed_types)
 
         all_skipped = sorted(disabled_types)
         attempted = total - len([d for d in all_defs if d.resource_type in disabled_types and d.resource_type not in newly_disabled])
@@ -295,10 +298,22 @@ class ZCCImportService:
 
         return synced, updated
 
-    def _mark_deleted(self, resource_types: Optional[List[str]], run_start: datetime) -> int:
-        """Mark rows not touched in this sync run as deleted."""
+    def _mark_deleted(
+        self,
+        resource_types: Optional[List[str]],
+        run_start: datetime,
+        skip_types: frozenset = frozenset(),
+    ) -> int:
+        """Mark rows not touched in this sync run as deleted.
+
+        skip_types are resource types whose fetch failed this run; their rows
+        are left as they were.
+        """
         deleted = 0
-        type_filter = resource_types or [d.resource_type for d in RESOURCE_DEFINITIONS]
+        type_filter = [
+            t for t in (resource_types or [d.resource_type for d in RESOURCE_DEFINITIONS])
+            if t not in skip_types
+        ]
         pending_audit: list = []
 
         with get_session() as session:
