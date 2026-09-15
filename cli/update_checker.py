@@ -1,10 +1,6 @@
-"""Update checker — silently checks PyPI for a newer zs-config version on startup."""
+"""Update checker — silently checks GitHub releases for a newer zs-config version on startup."""
 
-import os
-import platform
 import re
-import shutil
-import subprocess
 import sys
 from typing import Optional
 
@@ -14,10 +10,10 @@ from rich.panel import Panel
 
 import questionary
 
-PYPI_URL = "https://pypi.org/pypi/zs-config/json"
+from services.update_notify_service import DEPLOY_ONELINER, fetch_latest_version
+
 CHANGELOG_URL = "https://raw.githubusercontent.com/mpreissner/zs-config/main/CHANGELOG.md"
-PACKAGE_NAME = "zs-config"
-REQUEST_TIMEOUT = 4          # version check (PyPI)
+REQUEST_TIMEOUT = 4          # version check (GitHub API)
 CHANGELOG_TIMEOUT = 10       # changelog fetch (raw.githubusercontent.com — can be slower)
 
 console = Console()
@@ -26,15 +22,6 @@ console = Console()
 def _parse_ver(v: str) -> tuple:
     v = v.lstrip("v")
     return tuple(int(x) for x in v.split("."))
-
-
-def _fetch_latest_version() -> Optional[str]:
-    try:
-        resp = requests.get(PYPI_URL, timeout=REQUEST_TIMEOUT)
-        resp.raise_for_status()
-        return resp.json()["info"]["version"]
-    except Exception:
-        return None
 
 
 def _fetch_changelog() -> Optional[str]:
@@ -70,83 +57,19 @@ def _extract_changelog_sections(changelog: str, from_ver: str, to_ver: str) -> s
     return "\n\n---\n\n".join(sections)
 
 
-def _sqlcipher_available() -> bool:
-    try:
-        import sqlcipher3.dbapi2  # noqa: F401
-        return True
-    except ImportError:
-        return False
-
-
-def _install_libsqlcipher() -> bool:
-    """Attempt to install libsqlcipher via the system package manager.
-
-    Returns True if the install succeeded and sqlcipher3 is now importable.
-    """
-    system = platform.system()
-
-    if system == "Darwin":
-        brew = shutil.which("brew")
-        if not brew:
-            console.print(
-                "[red]Homebrew not found. Install it from https://brew.sh then run:[/red]\n"
-                "  brew install sqlcipher"
-            )
-            return False
-        console.print("[dim]Running: brew install sqlcipher[/dim]")
-        result = subprocess.run([brew, "install", "sqlcipher"])
-
-    elif system == "Linux":
-        if shutil.which("apt-get"):
-            console.print("[dim]Running: sudo apt-get install -y libsqlcipher-dev[/dim]")
-            result = subprocess.run(["sudo", "apt-get", "install", "-y", "libsqlcipher-dev"])
-        elif shutil.which("dnf"):
-            console.print("[dim]Running: sudo dnf install -y sqlcipher-devel[/dim]")
-            result = subprocess.run(["sudo", "dnf", "install", "-y", "sqlcipher-devel"])
-        elif shutil.which("pacman"):
-            console.print("[dim]Running: sudo pacman -S --noconfirm sqlcipher[/dim]")
-            result = subprocess.run(["sudo", "pacman", "-S", "--noconfirm", "sqlcipher"])
-        elif shutil.which("zypper"):
-            console.print("[dim]Running: sudo zypper install -y sqlcipher-devel[/dim]")
-            result = subprocess.run(["sudo", "zypper", "install", "-y", "sqlcipher-devel"])
-        else:
-            console.print(
-                "[red]No supported package manager found (apt, dnf, pacman, zypper).[/red]\n"
-                "Install libsqlcipher manually then re-launch zs-config to upgrade."
-            )
-            return False
-
-    else:
-        console.print(
-            "[red]Automatic libsqlcipher install is not supported on Windows.[/red]\n"
-            "Install SQLCipher from https://www.zetetic.net/sqlcipher/ then re-launch to upgrade."
-        )
-        return False
-
-    if result.returncode != 0:
-        console.print("[red]libsqlcipher install failed. Fix the error above then re-launch to upgrade.[/red]")
-        return False
-
-    return _sqlcipher_available()
-
-
-def _detect_install_method() -> tuple:
-    if "pipx" in os.path.abspath(sys.executable).lower():
-        pipx_cmd = shutil.which("pipx")
-        return ("pipx", [pipx_cmd, "upgrade", PACKAGE_NAME])
-    return ("pip", [sys.executable, "-m", "pip", "install", "--upgrade", PACKAGE_NAME])
-
-
 def check_for_updates() -> bool:
-    """Check PyPI for a newer zs-config version.
+    """Check GitHub releases for a newer zs-config version.
 
-    Returns True if an update was found (regardless of whether the user
-    accepted it), False otherwise.  Callers use the return value to decide
-    whether to skip downstream checks (e.g. plugin updates) until next launch.
+    zs-config ships as a container deployment only, so there is nothing to
+    upgrade in place — the prompt shows the changelog and the redeploy command.
+
+    Returns True if an update was found, False otherwise.  Callers use the
+    return value to decide whether to skip downstream checks (e.g. plugin
+    updates) until next launch.
     """
     from cli.banner import VERSION
 
-    latest = _fetch_latest_version()
+    latest = fetch_latest_version(timeout=REQUEST_TIMEOUT)
     if latest is None:
         return False
 
@@ -174,63 +97,16 @@ def check_for_updates() -> bool:
             from cli.scroll_view import render_rich_to_lines, scroll_view
             scroll_view(render_rich_to_lines(Markdown(sections)))
 
-    method, cmd = _detect_install_method()
-    cmd_str = " ".join(str(c) for c in cmd)
-
-    answer = questionary.confirm(
-        f"Update now using {method}?  [{cmd_str}]",
-        default=True,
-    ).ask()
-
-    if not answer:
-        console.print("[dim]Skipping update. You can update manually later.[/dim]")
-        return True
-
-    # v3.0.0+ requires libsqlcipher for full database encryption.
-    # Attempt to install it via the system package manager before the pip
-    # upgrade runs — sqlcipher3 compiles against the system library and will
-    # fail to install without it.
-    if _parse_ver(latest) >= (3, 0, 0) and not _sqlcipher_available():
-        console.print(
-            Panel(
-                "v3.0.0+ encrypts the entire database using SQLCipher.\n"
-                "This requires [bold]libsqlcipher[/bold] to be installed on your system.\n\n"
-                "If you decline, the upgrade will be skipped.",
-                title="[yellow]System dependency required[/yellow]",
-                border_style="yellow",
-            )
+    console.print(
+        Panel(
+            "To update, re-run the deployment script on your Docker host:\n\n"
+            f"  {DEPLOY_ONELINER}\n\n"
+            "Or, if you already have the repo cloned:\n\n"
+            "  ./deploy.sh main",
+            border_style="yellow",
         )
-        install_answer = questionary.confirm(
-            "Install libsqlcipher now?",
-            default=True,
-        ).ask()
-
-        if not install_answer:
-            console.print("[dim]Upgrade skipped. libsqlcipher is required for v3.0.0+.[/dim]")
-            return True
-
-        if not _install_libsqlcipher():
-            return True
-
-        console.print("[green]✓ libsqlcipher installed.[/green]")
-
-    result = subprocess.run(cmd)
-
-    if result.returncode == 0:
-        console.print(
-            Panel(
-                f"[green]✓ Updated to v{latest}! Please re-launch zs-config.[/green]",
-                border_style="green",
-            )
-        )
-        sys.exit(0)
-    else:
-        console.print(
-            Panel(
-                f"[red]Update failed. Update manually:[/red]\n{cmd_str}",
-                border_style="red",
-            )
-        )
+    )
+    questionary.press_any_key_to_continue("Press any key to continue...").ask()
     return True
 
 

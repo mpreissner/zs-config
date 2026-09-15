@@ -1094,7 +1094,7 @@ function UpdatesSection({
     <SectionCard title="Updates">
       <FieldRow
         label="Daily update check"
-        hint="Check PyPI once per day and send an email when a new version is available."
+        hint="Check GitHub releases once per day and send an email when a new version is available."
       >
         <Toggle
           checked={draft.update_notify_enabled}
