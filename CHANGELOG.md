@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [3.6.1] - 2026-09-15
+
+A maintenance release: import fixes, update checks, and the container's `zs-config` command.
+
+Thanks to [@dustinmharris](https://github.com/dustinmharris) for reporting #139, #140 and #141, and for fixing #141 in #142.
+
+### Deprecated
+
+- **The `zs-config` package on PyPI is deprecated.** zs-config ships as a container deployment only; the PyPI package is no longer published and stops at 3.3.3. Do not install it — it predates every release since. Use `deploy.sh` (see the README), or install from a source checkout to run the TUI standalone.
+
+### Fixed
+
+- **ZPA import kept only the first page of each resource type** — lists were read one page of 20 at a time and the rest dropped, so larger tenants were silently truncated and SCIM groups churned between imports. Every page is now read, 500 objects at a time. (#141)
+- **A failed fetch marked a resource type deleted** — when an import could not read a resource type (a timeout, a 5xx), every cached row of that type was flagged deleted, because none of them had been seen that run. A type whose fetch fails is now left as it was. Applies to ZIA, ZPA and ZCC imports.
+- **Update checks never fired** — the daily update email and the TUI startup check read PyPI, which stopped at 3.3.3. Both now read the latest GitHub release. The TUI no longer offers an in-place pip upgrade; like the email, it shows the changelog and the redeploy command. (#140)
+- **`zs-config` failed inside the container** with `ModuleNotFoundError: No module named 'cli'`. The image installed the command but not the packages behind it; they now resolve from `/app`, so `docker exec -it zs-config zs-config` launches the TUI. (#139)
+
+---
+
 ## [3.6.0] - 2026-09-08
 
 Scheduled cross-tenant sync moved a rule's shape but not always its scope. This release fixes every path by which a rule could arrive on the target pointing at the wrong objects, or at nothing, and teaches the sync to carry the objects a rule depends on.
