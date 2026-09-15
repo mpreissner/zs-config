@@ -27,6 +27,34 @@ def _unwrap(result, resp, err):
     return result
 
 
+# ZPA's largest page size. Without it the API serves 20 per page, and each page
+# is a separate request: where a list is ordered by a key that is not unique
+# (SCIM groups by modification time, which a provisioning batch shares), two
+# requests can disagree about the order of the ties, so a walk repeats some
+# objects and skips others. One page of 500 keeps nearly every tenant to a
+# single request.
+_MAX_PAGE_SIZE = 500
+
+
+def _list_params(**extra) -> dict:
+    # A fresh dict per call: the SDK writes the next page number into it.
+    return {"pagesize": _MAX_PAGE_SIZE, **extra}
+
+
+def _unwrap_all(result, resp, err):
+    """_unwrap for a list call: follow the response through every page.
+
+    An SDK list method returns only the first page it is asked for; the rest
+    come from resp.next(). Without this, any resource type with more objects
+    than one page is silently truncated.
+    """
+    items = list(_unwrap(result, resp, err) or [])
+    while resp is not None and resp.has_next():
+        page, resp, err = resp.next()
+        items.extend(_unwrap(page, resp, err) or [])
+    return items
+
+
 def _to_dicts(items) -> list:
     if not items:
         return []
@@ -81,12 +109,12 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_certificates(self, page: int = 1, page_size: int = 500) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.certificates.list_certificates({"page_size": page_size})
-        return _to_dicts(_unwrap(result, resp, err))
+        result, resp, err = self._sdk.zpa.certificates.list_certificates(query_params={"pagesize": page_size})
+        return _to_dicts(_unwrap_all(result, resp, err))
 
     def list_issued_certificates(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.certificates.list_issued_certificates()
-        return _to_dicts(_unwrap(result, resp, err))
+        result, resp, err = self._sdk.zpa.certificates.list_issued_certificates(query_params=_list_params())
+        return _to_dicts(_unwrap_all(result, resp, err))
 
     def get_certificate(self, cert_id: str) -> Optional[Dict]:
         try:
@@ -111,8 +139,8 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_applications(self, app_type: str = "BROWSER_ACCESS") -> List[Dict]:
-        result, resp, err = self._sdk.zpa.application_segment.list_segments()
-        return _to_dicts(_unwrap(result, resp, err))
+        result, resp, err = self._sdk.zpa.application_segment.list_segments(query_params=_list_params())
+        return _to_dicts(_unwrap_all(result, resp, err))
 
     def get_application(self, app_id: str) -> Dict:
         result, resp, err = self._sdk.zpa.application_segment.get_segment(app_id)
@@ -153,8 +181,8 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_pra_portals(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.pra_portal.list_portals()
-        return _to_dicts(_unwrap(result, resp, err))
+        result, resp, err = self._sdk.zpa.pra_portal.list_portals(query_params=_list_params())
+        return _to_dicts(_unwrap_all(result, resp, err))
 
     def get_pra_portal(self, portal_id: str) -> Dict:
         result, resp, err = self._sdk.zpa.pra_portal.get_portal(portal_id)
@@ -179,8 +207,8 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_user_portals(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.user_portal_controller.list_user_portals()
-        return _to_dicts(_unwrap(result, resp, err))
+        result, resp, err = self._sdk.zpa.user_portal_controller.list_user_portals(query_params=_list_params())
+        return _to_dicts(_unwrap_all(result, resp, err))
 
     def get_user_portal(self, portal_id: str) -> Dict:
         result, resp, err = self._sdk.zpa.user_portal_controller.get_user_portal(portal_id)
@@ -205,16 +233,16 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_credentials(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.pra_credential.list_credentials()
-        return _to_dicts(_unwrap(result, resp, err))
+        result, resp, err = self._sdk.zpa.pra_credential.list_credentials(query_params=_list_params())
+        return _to_dicts(_unwrap_all(result, resp, err))
 
     # ------------------------------------------------------------------
     # Segment Groups
     # ------------------------------------------------------------------
 
     def list_segment_groups(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.segment_groups.list_groups()
-        return _to_dicts(_unwrap(result, resp, err))
+        result, resp, err = self._sdk.zpa.segment_groups.list_groups(query_params=_list_params())
+        return _to_dicts(_unwrap_all(result, resp, err))
 
     def create_segment_group(self, name: str, enabled: bool = True) -> Dict:
         result, resp, err = self._sdk.zpa.segment_groups.add_group(name=name, enabled=enabled)
@@ -239,8 +267,8 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_server_groups(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.server_groups.list_groups()
-        return _to_dicts(_unwrap(result, resp, err))
+        result, resp, err = self._sdk.zpa.server_groups.list_groups(query_params=_list_params())
+        return _to_dicts(_unwrap_all(result, resp, err))
 
     def create_server_group(self, name: str, enabled: bool = True) -> Dict:
         result, resp, err = self._sdk.zpa.server_groups.add_group(name=name, enabled=enabled)
@@ -265,12 +293,12 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_connector_groups(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.app_connector_groups.list_connector_groups()
-        return _to_dicts(_unwrap(result, resp, err))
+        result, resp, err = self._sdk.zpa.app_connector_groups.list_connector_groups(query_params=_list_params())
+        return _to_dicts(_unwrap_all(result, resp, err))
 
     def list_connectors(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.app_connectors.list_connectors()
-        return _to_dicts(_unwrap(result, resp, err))
+        result, resp, err = self._sdk.zpa.app_connectors.list_connectors(query_params=_list_params())
+        return _to_dicts(_unwrap_all(result, resp, err))
 
     # Connectors
     def get_connector(self, connector_id: str) -> Dict:
@@ -311,44 +339,47 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_idp(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.idp.list_idps()
-        return _to_dicts(_unwrap(result, resp, err))
+        result, resp, err = self._sdk.zpa.idp.list_idps(query_params=_list_params())
+        return _to_dicts(_unwrap_all(result, resp, err))
 
     def list_saml_attributes(self, idp_id: Optional[str] = None) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.saml_attributes.list_saml_attributes()
-        return _to_dicts(_unwrap(result, resp, err))
+        result, resp, err = self._sdk.zpa.saml_attributes.list_saml_attributes(query_params=_list_params())
+        return _to_dicts(_unwrap_all(result, resp, err))
 
     def list_scim_groups(self, idp_id: str) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.scim_groups.list_scim_groups(idp_id)
-        return _to_dicts(_unwrap(result, resp, err))
+        # Ordered by modification time by default, which ties across a
+        # provisioning batch; id is unique and this endpoint honours sort_by
+        # (most other ZPA list endpoints ignore it, and app connectors reject it).
+        result, resp, err = self._sdk.zpa.scim_groups.list_scim_groups(idp_id, query_params=_list_params(sort_by="id", sort_order="ASC"))
+        return _to_dicts(_unwrap_all(result, resp, err))
 
     def list_scim_attributes(self, idp_id: str) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.scim_attributes.list_scim_attributes(idp_id)
-        return _to_dicts(_unwrap(result, resp, err))
+        result, resp, err = self._sdk.zpa.scim_attributes.list_scim_attributes(idp_id, query_params=_list_params())
+        return _to_dicts(_unwrap_all(result, resp, err))
 
     # ------------------------------------------------------------------
     # Microtenants
     # ------------------------------------------------------------------
 
     def list_microtenants(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.microtenants.list_microtenants()
-        return _to_dicts(_unwrap(result, resp, err))
+        result, resp, err = self._sdk.zpa.microtenants.list_microtenants(query_params=_list_params())
+        return _to_dicts(_unwrap_all(result, resp, err))
 
     # ------------------------------------------------------------------
     # Enrollment Certificates
     # ------------------------------------------------------------------
 
     def list_enrollment_certificates(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.enrollment_certificates.list_enrolment()
-        return _to_dicts(_unwrap(result, resp, err))
+        result, resp, err = self._sdk.zpa.enrollment_certificates.list_enrolment(query_params=_list_params())
+        return _to_dicts(_unwrap_all(result, resp, err))
 
     # ------------------------------------------------------------------
     # Policy Sets
     # ------------------------------------------------------------------
 
     def list_policy_rules(self, policy_type: str) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.policies.list_rules(policy_type)
-        return _to_dicts(_unwrap(result, resp, err))
+        result, resp, err = self._sdk.zpa.policies.list_rules(policy_type, query_params=_list_params())
+        return _to_dicts(_unwrap_all(result, resp, err))
 
     def get_policy_set(self, policy_type: str) -> Dict:
         result, resp, err = self._sdk.zpa.policies.get_policy(policy_type)
@@ -393,8 +424,8 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_pra_consoles(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.pra_console.list_consoles()
-        return _to_dicts(_unwrap(result, resp, err))
+        result, resp, err = self._sdk.zpa.pra_console.list_consoles(query_params=_list_params())
+        return _to_dicts(_unwrap_all(result, resp, err))
 
     def get_pra_console(self, console_id: str) -> Dict:
         result, resp, err = self._sdk.zpa.pra_console.get_console(console_id)
@@ -419,16 +450,16 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_service_edge_groups(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.service_edge_group.list_service_edge_groups()
-        return _to_dicts(_unwrap(result, resp, err))
+        result, resp, err = self._sdk.zpa.service_edge_group.list_service_edge_groups(query_params=_list_params())
+        return _to_dicts(_unwrap_all(result, resp, err))
 
     # ------------------------------------------------------------------
     # Service Edges
     # ------------------------------------------------------------------
 
     def list_service_edges(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.service_edges.list_service_edges()
-        return _to_dicts(_unwrap(result, resp, err))
+        result, resp, err = self._sdk.zpa.service_edges.list_service_edges(query_params=_list_params())
+        return _to_dicts(_unwrap_all(result, resp, err))
 
     def get_service_edge(self, service_edge_id: str) -> Dict:
         result, resp, err = self._sdk.zpa.service_edges.get_service_edge(service_edge_id)
@@ -444,37 +475,37 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_servers(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.servers.list_servers()
-        return _to_dicts(_unwrap(result, resp, err))
+        result, resp, err = self._sdk.zpa.servers.list_servers(query_params=_list_params())
+        return _to_dicts(_unwrap_all(result, resp, err))
 
     # ------------------------------------------------------------------
     # Posture Profiles
     # ------------------------------------------------------------------
 
     def list_posture_profiles(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.posture_profiles.list_posture_profiles()
-        return _to_dicts(_unwrap(result, resp, err))
+        result, resp, err = self._sdk.zpa.posture_profiles.list_posture_profiles(query_params=_list_params())
+        return _to_dicts(_unwrap_all(result, resp, err))
 
     # ------------------------------------------------------------------
     # Machine Groups
     # ------------------------------------------------------------------
 
     def list_machine_groups(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.machine_groups.list_machine_groups()
-        return _to_dicts(_unwrap(result, resp, err))
+        result, resp, err = self._sdk.zpa.machine_groups.list_machine_groups(query_params=_list_params())
+        return _to_dicts(_unwrap_all(result, resp, err))
 
     # ------------------------------------------------------------------
     # Trusted Networks
     # ------------------------------------------------------------------
 
     def list_trusted_networks(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.trusted_networks.list_trusted_networks()
-        return _to_dicts(_unwrap(result, resp, err))
+        result, resp, err = self._sdk.zpa.trusted_networks.list_trusted_networks(query_params=_list_params())
+        return _to_dicts(_unwrap_all(result, resp, err))
 
     # ------------------------------------------------------------------
     # LSS Configs
     # ------------------------------------------------------------------
 
     def list_lss_configs(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.lss.list_configs()
-        return _to_dicts(_unwrap(result, resp, err))
+        result, resp, err = self._sdk.zpa.lss.list_configs(query_params=_list_params())
+        return _to_dicts(_unwrap_all(result, resp, err))

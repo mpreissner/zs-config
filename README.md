@@ -1,15 +1,20 @@
 # zs-config
 
-[![PyPI](https://img.shields.io/pypi/v/zs-config)](https://pypi.org/project/zs-config/)
+[![Release](https://img.shields.io/github/v/release/mpreissner/zs-config)](https://github.com/mpreissner/zs-config/releases/latest)
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 
 Interactive TUI and browser-based UI for Zscaler OneAPI — manage ZPA, ZIA, ZCC, ZDX, and ZIdentity from the terminal or a self-hosted web interface, with a local SQLite cache for fast lookups and bulk operations.
 
 ---
 
-## What's New — v3.5.2
+## What's New — v3.6.1
 
-> **v3.5.2 is the current release.** See the [changelog](CHANGELOG.md) for full details.
+> **v3.6.1 is the current release.** See the [changelog](CHANGELOG.md) for full details.
+
+- **3.6.1** — a maintenance release. ZPA import reads every page instead of the first 20 objects, a failed fetch no longer marks a resource type deleted, update checks read GitHub releases, and `zs-config` works inside the container. The PyPI package is deprecated.
+- **3.6.0** — scheduled cross-tenant sync resolves every rule reference against the target, and a synced rule brings the objects it depends on.
+
+The v3.5.x highlights:
 
 - **Admin and user stay separated** — an account holding both roles could, while acting as admin, click a tenant tile and land in tenant configuration. Tenant configuration is now refused for an admin session outright, and a template is applied by its owner rather than by whoever is looking at it: an admin sees only templates whose owner is gone, to hand one to an account that can use it or delete it. Deprovisioning an account, by admin or by SCIM, releases the templates it owned into that queue. Import stays available to an admin — pre-loading a tenant before its first user arrives is a management function.
 - **Pick individual settings toggles** — ZIA keeps advanced settings, URL & cloud app settings, and browser control settings as one object each, holding dozens of unrelated toggles. A scoped template can now name the keys it wants rather than carrying the whole object, and applying it merges those keys over the target's live settings and leaves the rest alone.
@@ -174,7 +179,7 @@ User Management, Groups (local or SCIM-provisioned; membership, role mapping, te
 - **Config Snapshots** — save, compare (field-level diff), restore (ZIA only, wipe-or-delta, cross-tenant), delete
 - **Audit Log** — immutable record of every operation with full-text search
 - **Encryption at rest** — full SQLite database encryption via SQLCipher (AES-256-CBC); tenant secrets additionally encrypted at the column level (Fernet/AES-256-GCM/ChaCha20); key rotation, FIPS mode, and auto-rotation available via Admin Settings or TUI
-- **Auto-update** — silent PyPI check on startup; shows changelog and upgrades in-place
+- **Update checks** — silent GitHub release check (TUI startup, or a daily email from the web UI); shows the changelog and the redeploy command
 
 ---
 
@@ -204,7 +209,10 @@ zs-config/
 
 ### TUI only (no Docker)
 
-v3.0.0+ requires `libsqlcipher` on your system before installing. The TUI auto-updater installs it for you if you upgrade from within the TUI, but for a fresh install run the appropriate command first:
+> [!WARNING]
+> **The `zs-config` package on PyPI is deprecated.** It is no longer published and stops at 3.3.3 — do not `pip install zs-config`. The container deployment is the supported install.
+
+To run the TUI standalone, install from source. v3.0.0+ requires `libsqlcipher` on your system first:
 
 | Platform | Command |
 |---|---|
@@ -215,9 +223,9 @@ v3.0.0+ requires `libsqlcipher` on your system before installing. The TUI auto-u
 | openSUSE | `sudo zypper install sqlcipher-devel` |
 
 ```bash
-pipx install zs-config   # recommended
-# or
-pip install zs-config
+git clone --branch main https://github.com/mpreissner/zs-config.git
+cd zs-config
+pip install .
 
 zs-config
 ```
@@ -227,8 +235,7 @@ On first launch an encryption key is generated at `~/.config/zs-config/secret.ke
 ### TUI inside the Docker container
 
 ```bash
-docker exec -it zs-config /bin/bash
-python -m cli.z_config
+docker exec -it zs-config zs-config
 ```
 
 ### Dev setup
