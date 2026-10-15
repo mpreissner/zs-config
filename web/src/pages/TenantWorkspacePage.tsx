@@ -8,6 +8,7 @@ import {
   importZIA,
   importZPA,
   importZCC,
+  simulateTraffic,
   simulateTrafficAll,
   SimulationResultAll,
   fetchSimApplications,
@@ -7388,11 +7389,13 @@ function OsBadge({ os }: { os: string }) {
 }
 
 function AppProfileVisualizer({
+  tenantId,
   tenantName,
   policyId,
   policyName,
   onClose,
 }: {
+  tenantId: number;
   tenantName: string;
   policyId: string;
   policyName: string;
@@ -7403,7 +7406,6 @@ function AppProfileVisualizer({
   const [networkContext, setNetworkContext] = useState<"off" | "on" | "vpn">("off");
   const [simDest, setSimDest] = useState("");
   const [simPort, setSimPort] = useState("443");
-  const [simResult, setSimResult] = useState<{ outcome: string; color: string; reasons: { text: string; source: string }[] } | null>(null);
 
   const { data, isLoading, error } = useQuery<TrafficProfile>({
     queryKey: ["traffic-profile", tenantName, policyId],
@@ -7587,109 +7589,34 @@ function AppProfileVisualizer({
         : "No explicit exclusions"
     : "";
 
-  // ── Traffic simulator helpers ──────────────────────────────────────────────
-  const _ipToNum = (ip: string): number => {
-    const p = ip.split(".").map(Number);
-    if (p.length !== 4 || p.some(isNaN)) return -1;
-    return ((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0;
-  };
-  const _isValidIP = (s: string) =>
-    /^\d{1,3}(\.\d{1,3}){3}$/.test(s) && s.split(".").every(x => +x <= 255);
-  const _inCIDR = (ip: string, cidr: string): boolean => {
-    const [net, bits] = cidr.split("/");
-    const prefix = parseInt(bits);
-    if (isNaN(prefix)) return false;
-    const ipN = _ipToNum(ip), netN = _ipToNum(net);
-    if (ipN < 0 || netN < 0) return false;
-    const mask = prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;
-    return (ipN & mask) === (netN & mask);
-  };
-  const _isRFC1918 = (ip: string) =>
-    _inCIDR(ip, "10.0.0.0/8") || _inCIDR(ip, "172.16.0.0/12") ||
-    _inCIDR(ip, "192.168.0.0/16") || _inCIDR(ip, "127.0.0.0/8") ||
-    _inCIDR(ip, "169.254.0.0/16") || _inCIDR(ip, "192.88.99.0/24");
-  const _shExp = (host: string, pat: string): boolean => {
-    const re = pat.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".");
-    return new RegExp(`^${re}$`, "i").test(host);
-  };
-
+  const simMut = useMutation({
+    mutationFn: () => simulateTraffic(tenantId, {
+      destination: simDest.trim(),
+      port: parseInt(simPort) || 443,
+      protocol: parseInt(simPort) === 80 ? "HTTP" : "HTTPS",
+      zccProfile: policyName,
+      networkContext,
+    }),
+  });
+  const resetSim = simMut.reset;
+  useEffect(() => { resetSim(); }, [networkContext, policyName, resetSim]);
   const runSimulator = () => {
-    if (!data || !simDest.trim()) return;
-    const dest = simDest.trim().toLowerCase();
-    const port = parseInt(simPort) || 443;
-    const isIP = _isValidIP(dest);
-    const reasons: { text: string; source: string }[] = [];
-
-    // 1. Port bypass
-    for (const pb of data.portBypasses) {
-      if (pb.port === String(port) || pb.port === "*") {
-        setSimResult({ outcome: "Direct", color: "orange", reasons: [{ text: `Port ${port} matches port bypass rule`, source: "Port Bypass" }] });
-        return;
-      }
-    }
-
-    // 2. Tunnel CIDR exclusion
-    if (isIP) {
-      for (const r of data.tunnelRoutes.filter(r => r.direction === "exclude")) {
-        if (_inCIDR(dest, r.cidr)) {
-          setSimResult({ outcome: "Direct", color: "orange", reasons: [{ text: `${dest} falls within tunnel exclusion ${r.cidr}`, source: "Tunnel Exclusion" }] });
-          return;
-        }
-      }
-    }
-
-    // 3. PAC bypass rules
-    const allPac = [
-      ...pacBypasses.map(b => ({ ...b, src: "Forwarding Profile PAC", url: data.pac.profilePacUrl })),
-      ...pacAppBypasses.map(b => ({ ...b, src: "App Profile PAC", url: data.pac.url })),
-    ];
-    for (const rule of allPac) {
-      const lbl = rule.label;
-      const srcDetail = rule.src;
-      // RFC1918
-      if (lbl.includes("RFC1918") && isIP && _isRFC1918(dest)) {
-        reasons.push({ text: `${dest} is an RFC1918 private IP`, source: srcDetail });
-        setSimResult({ outcome: "Direct", color: "orange", reasons });
-        return;
-      }
-      // isInNet CIDR rule (label starts with x.x.x.x/n)
-      const cidrM = lbl.match(/^(\d[\d.]+\/\d+)/);
-      if (cidrM && isIP && _inCIDR(dest, cidrM[1])) {
-        reasons.push({ text: `${dest} matches isInNet rule ${cidrM[1]}`, source: srcDetail });
-        setSimResult({ outcome: "Direct", color: "orange", reasons });
-        return;
-      }
-      // Plain hostname
-      if (lbl.includes("Plain hostnames") && !isIP && !dest.includes(".")) {
-        reasons.push({ text: `"${dest}" is a plain (unqualified) hostname`, source: srcDetail });
-        setSimResult({ outcome: "Direct", color: "orange", reasons });
-        return;
-      }
-      // shExpMatch domain pattern
-      if (lbl.endsWith("→ DIRECT") && !isIP) {
-        const pat = lbl.replace(/\s*→\s*DIRECT$/, "").trim();
-        if ((pat.includes("*") || pat.includes(".")) && _shExp(dest, pat)) {
-          reasons.push({ text: `"${dest}" matches domain pattern "${pat}"`, source: srcDetail });
-          setSimResult({ outcome: "Direct", color: "orange", reasons });
-          return;
-        }
-      }
-      // Non-HTTP/S
-      if (lbl.includes("Non-HTTP/S") && port !== 80 && port !== 443 && port !== 8080) {
-        reasons.push({ text: `Port ${port} is not HTTP/HTTPS — bypassed by PAC`, source: srcDetail });
-        setSimResult({ outcome: "Direct", color: "orange", reasons });
-        return;
-      }
-    }
-
-    // 4. Default → ZIA
-    const tunnelLabel = detailedMode === "T2.0" ? "Z-Tunnel 2.0 (DTLS)" : detailedMode === "T2.0+LP" ? "Z-Tunnel 2.0 via LP" : data.tunnelMode;
-    setSimResult({
-      outcome: "ZIA",
-      color: "green",
-      reasons: [{ text: `No bypass rules matched — routed to ZIA via ${tunnelLabel}`, source: "Default" }],
-    });
+    if (!simDest.trim() || simMut.isPending) return;
+    simMut.mutate();
   };
+  const simResult = simMut.data;
+  const simBadge = !simResult ? null
+    : simResult.verdict === "ZCC_BYPASS" || simResult.verdict === "ZCC_INACTIVE"
+      ? { label: "Direct", cls: "bg-orange-100 text-orange-800" }
+      : simResult.verdict === "ZPA" ? { label: "ZPA", cls: "bg-blue-100 text-blue-800" }
+      : simResult.verdict === "ZIA_ALLOW" ? { label: "ZIA", cls: "bg-green-100 text-green-800" }
+      : simResult.verdict.startsWith("ZIA_BLOCK") ? { label: "ZIA - Blocked", cls: "bg-red-100 text-red-800" }
+      : { label: "Internet", cls: "bg-gray-100 text-gray-700" };
+  const simSource = simResult && (simResult.verdict === "ZCC_BYPASS" || simResult.verdict === "ZCC_INACTIVE")
+    ? simResult.zcc_bypass.rule_name
+      ? `${simResult.zcc_bypass.engine}: ${simResult.zcc_bypass.rule_name}`
+      : simResult.zcc_bypass.engine
+    : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -8102,14 +8029,14 @@ function AppProfileVisualizer({
               <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-xs font-medium text-gray-500 uppercase">Traffic Simulator</p>
-                  <p className="text-xs text-gray-400 italic">Results based on parsed PAC rules — complex PAC logic may not be fully represented</p>
+                  <p className="text-xs text-gray-400 italic">Based on last imported data</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <input
                     type="text"
                     placeholder="Destination IP or hostname"
                     value={simDest}
-                    onChange={e => { setSimDest(e.target.value); setSimResult(null); }}
+                    onChange={e => { setSimDest(e.target.value); simMut.reset(); }}
                     onKeyDown={e => e.key === "Enter" && runSimulator()}
                     className="flex-1 min-w-[180px] px-2.5 py-1.5 text-xs rounded border border-gray-300 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono"
                   />
@@ -8117,31 +8044,33 @@ function AppProfileVisualizer({
                     type="text"
                     placeholder="Port"
                     value={simPort}
-                    onChange={e => { setSimPort(e.target.value); setSimResult(null); }}
+                    onChange={e => { setSimPort(e.target.value); simMut.reset(); }}
                     onKeyDown={e => e.key === "Enter" && runSimulator()}
                     className="w-20 px-2.5 py-1.5 text-xs rounded border border-gray-300 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 font-mono"
                   />
                   <button
                     onClick={runSimulator}
-                    className="px-3 py-1.5 text-xs font-medium rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                    disabled={simMut.isPending}
+                    className="px-3 py-1.5 text-xs font-medium rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
                   >
-                    Check
+                    {simMut.isPending ? "Checking..." : "Check"}
                   </button>
                 </div>
-                {simResult && (
-                  <div className="mt-2 flex flex-col gap-1">
-                    {simResult.reasons.map((r, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold ${
-                          simResult.color === "green"
-                            ? "bg-green-100 text-green-800"
-                            : "bg-orange-100 text-orange-800"
-                        }`}>
-                          {simResult.outcome}
-                        </span>
-                        <span className="text-xs text-gray-500 italic shrink-0">{r.source}</span>
-                        <span className="text-xs text-gray-700">{r.text}</span>
-                      </div>
+                {simMut.isError && (
+                  <p className="mt-2 text-xs text-red-600">{simMut.error instanceof Error ? simMut.error.message : "Simulation failed"}</p>
+                )}
+                {simResult && simBadge && (
+                  <div className="mt-2 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold ${simBadge.cls}`}>{simBadge.label}</span>
+                      {simSource && <span className="text-xs text-gray-500 italic shrink-0">{simSource}</span>}
+                      <span className="text-xs text-gray-700">{simResult.verdict_label}</span>
+                    </div>
+                    {[
+                      ...simResult.zcc_bypass.caveats,
+                      ...(simResult.verdict.startsWith("ZIA") ? simResult.zia_url.caveats.slice(0, 1) : []),
+                    ].map((c, i) => (
+                      <p key={i} className="text-xs text-gray-400">{c}</p>
                     ))}
                   </div>
                 )}
@@ -8529,9 +8458,11 @@ function AppProfileVisualizer({
 // ── App Profiles section with traffic profile button ──────────────────────────
 
 function AppProfilesSection({
+  tenantId,
   tenantName,
   isOpen,
 }: {
+  tenantId: number;
   tenantName: string;
   isOpen: boolean;
 }) {
@@ -8744,6 +8675,7 @@ function AppProfilesSection({
       </div>
       {visualizerPolicy && (
         <AppProfileVisualizer
+          tenantId={tenantId}
           tenantName={tenantName}
           policyId={visualizerPolicy.id}
           policyName={visualizerPolicy.name}
@@ -8793,7 +8725,7 @@ function ZccTab({
       {/* Policy */}
       <SectionGroup title="Policy" isOpen={!!groups.policy} onToggle={() => toggleGroup("policy")}>
         <Accordion title="App Profiles (Web Policies)" isOpen={!!open.webPolicies} onToggle={() => toggle("webPolicies")}>
-          <AppProfilesSection tenantName={tenant.name} isOpen={!!open.webPolicies} />
+          <AppProfilesSection tenantId={tenant.id} tenantName={tenant.name} isOpen={!!open.webPolicies} />
         </Accordion>
         <Accordion title="Bypass App Services" isOpen={!!open.webAppServices} onToggle={() => toggle("webAppServices")}>
           <ZccReadOnlySection<ZccWebAppService>
