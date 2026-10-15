@@ -100,9 +100,12 @@ def _ip_matches_any(ip_str: str, addresses: List[str]) -> bool:
 
 def _hostname_matches(dest: str, pattern: str) -> bool:
     """Match dest against pattern with wildcard support (*, ?)."""
-    dest = dest.lower().lstrip("https://").lstrip("http://").split("/")[0]
-    pattern = pattern.lower().lstrip("*.")
-    return dest == pattern or dest.endswith("." + pattern) or fnmatch.fnmatch(dest, pattern)
+    dest = _strip_url(dest)
+    raw = pattern.strip().lower()
+    pattern = raw[2:] if raw.startswith("*.") else raw.lstrip(".")
+    if not pattern:
+        return False
+    return dest == pattern or dest.endswith("." + pattern) or fnmatch.fnmatch(dest, raw)
 
 
 def _port_in_ranges(port: int, ranges: List[Dict]) -> bool:
@@ -141,6 +144,47 @@ def _strip_url(dest: str) -> str:
     return dest.split("/")[0].split(":")[0].lower()
 
 
+def _dest_in_addresses(dest: str, addresses: List[str]) -> bool:
+    """True if dest matches any entry: IPs/CIDRs for an IP dest, FQDNs and
+    wildcard domains for a hostname dest."""
+    if _is_ip(dest):
+        return _ip_matches_any(dest, addresses)
+    return any(_hostname_matches(dest, a) for a in addresses if a and a.strip())
+
+
+def _dest_in_ip_groups(dest: str, refs: List[Dict], ip_groups: Dict[int, List[str]]) -> bool:
+    """True if dest matches any referenced destination group (IP or domain type)."""
+    for grp in refs or []:
+        gid = grp.get("id") if isinstance(grp, dict) else None
+        if gid is not None and int(gid) in ip_groups and _dest_in_addresses(dest, ip_groups[int(gid)]):
+            return True
+    return False
+
+
+def _resolve_zpa_segment_domains(tenant_id: int, s) -> Dict[str, List[str]]:
+    """Return {segment_id: [domain/IP, ...]} for enabled ZPA application segments."""
+    rows = s.query(ZPAResource).filter_by(
+        tenant_id=tenant_id, resource_type="application", is_deleted=False
+    ).all()
+    result: Dict[str, List[str]] = {}
+    for row in rows:
+        cfg = row.raw_config or {}
+        if cfg.get("id") is None or cfg.get("enabled", True) is False:
+            continue
+        result[str(cfg["id"])] = list(cfg.get("domainNames") or cfg.get("domain_names") or [])
+    return result
+
+
+def _dest_in_zpa_segments(dest: str, refs: List[Dict], segments: Dict[str, List[str]]) -> bool:
+    """True if dest belongs to any referenced ZPA app segment. ZIA rules reference
+    segments by their ZPA id in external_id."""
+    for ref in refs or []:
+        sid = str(ref.get("external_id") or "") if isinstance(ref, dict) else ""
+        if sid in segments and _dest_in_addresses(dest, segments[sid]):
+            return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # ZPA evaluation
 # ---------------------------------------------------------------------------
@@ -159,7 +203,7 @@ def _eval_zpa(tenant_id: int, dest: str, port: int, protocol: str) -> PolicyChec
     def _domain_specificity(app) -> int:
         """Higher = more specific. Exact hostname > wildcard > IP."""
         cfg = app.raw_config or {}
-        domains = cfg.get("domainNames", cfg.get("domain_names", []))
+        domains = (cfg.get("domainNames") or cfg.get("domain_names") or [])
         if hostname in domains or dest in domains:
             return 2  # exact match
         if any(d.startswith("*.") for d in domains):
@@ -176,7 +220,7 @@ def _eval_zpa(tenant_id: int, dest: str, port: int, protocol: str) -> PolicyChec
     matched_app = None
     for app in sorted_apps:
         cfg = app.raw_config or {}
-        domain_names: List[str] = cfg.get("domainNames", cfg.get("domain_names", []))
+        domain_names: List[str] = (cfg.get("domainNames") or cfg.get("domain_names") or [])
         tcp_ranges: List[Dict] = cfg.get("tcpPortRange", cfg.get("tcp_port_range", []))
         udp_ranges: List[Dict] = cfg.get("udpPortRange", cfg.get("udp_port_range", []))
 
@@ -392,6 +436,7 @@ def _fw_rule_matches(
     dept_name: Optional[str] = None,
     group_name: Optional[str] = None,
     location_name: Optional[str] = None,
+    zpa_segments: Optional[Dict[str, List[str]]] = None,
 ) -> bool:
     """Evaluate one firewall rule. Returns True if ALL constraints match (AND semantics).
     Empty constraint list = wildcard. Constraints that can't be evaluated offline are
@@ -412,20 +457,19 @@ def _fw_rule_matches(
     has_unresolvable_dest = bool(dest_ip_cats or dest_countries)
 
     if has_resolvable_dest:
-        dest_matched = False
-        if dest_addrs and dest_is_ip:
-            dest_matched = _ip_matches_any(dest, dest_addrs)
-        if not dest_matched and dest_ip_grp_refs and dest_is_ip:
-            for grp in dest_ip_grp_refs:
-                gid = grp.get("id")
-                if gid and int(gid) in ip_dest_groups:
-                    if _ip_matches_any(dest, ip_dest_groups[int(gid)]):
-                        dest_matched = True
-                        break
+        dest_matched = (
+            _dest_in_addresses(dest, dest_addrs)
+            or _dest_in_ip_groups(dest, dest_ip_grp_refs, ip_dest_groups)
+        )
         if not dest_matched:
             return False
     elif has_unresolvable_dest:
         # Predefined IP category or country-based — can't resolve offline
+        return False
+
+    # ── ZPA application segment check ─────────────────────────────────────
+    zpa_seg_refs: List[Dict] = cfg.get("zpa_app_segments", [])
+    if zpa_seg_refs and not _dest_in_zpa_segments(dest, zpa_seg_refs, zpa_segments or {}):
         return False
 
     # ── Source IP check ───────────────────────────────────────────────────
@@ -551,6 +595,7 @@ def _eval_zia_firewall(
         nw_services = _resolve_network_services(tenant_id, s)
         nw_svc_groups = _resolve_network_service_groups(tenant_id, s)
         nw_app_groups = _resolve_nw_application_groups(tenant_id, s)
+        zpa_segments = _resolve_zpa_segment_domains(tenant_id, s)
 
     enabled = [r for r in rules if (r.raw_config or {}).get("state") == "ENABLED"]
     non_default = [r for r in enabled if not (r.raw_config or {}).get("default_rule")]
@@ -572,6 +617,7 @@ def _eval_zia_firewall(
             nw_application, app_service_group,
             src_ip, ip_src_groups, nw_app_groups,
             user_name, dept_name, group_name, location_name,
+            zpa_segments,
         ):
             check.matched = True
             check.rule_name = cfg.get("name", "Unknown Rule")
@@ -682,6 +728,7 @@ def _eval_zia_dns(tenant_id: int, dest: str, port: int, protocol: str, live_cats
             .all()
         )
         ip_groups = _resolve_ip_dest_groups(tenant_id, s)
+        zpa_segments = _resolve_zpa_segment_domains(tenant_id, s)
 
     enabled = [r for r in rules if (r.raw_config or {}).get("state") == "ENABLED"]
     non_default_dns = [r for r in enabled if not (r.raw_config or {}).get("default_rule")]
@@ -697,6 +744,13 @@ def _eval_zia_dns(tenant_id: int, dest: str, port: int, protocol: str, live_cats
             check.action = cfg.get("action", "ALLOW")
             check.reason = f'Matched default DNS rule "{check.rule_name}" (catch-all)'
             break
+
+        # Redirect-to-ZPA rules answer only for domains in a ZPA app segment;
+        # the condition is implied by the action rather than stored as criteria.
+        if cfg.get("action") == "REDIR_ZPA" and not any(
+            _dest_in_addresses(dest, domains) for domains in zpa_segments.values()
+        ):
+            continue
 
         dest_addrs: List[str] = cfg.get("dest_addresses", [])
         dest_ip_groups_ref: List[Dict] = cfg.get("dest_ip_groups", [])
@@ -743,18 +797,11 @@ def _eval_zia_dns(tenant_id: int, dest: str, port: int, protocol: str, live_cats
                 (dest_ip_cats or res_cats) and live_cats is not None
                 and any(c in live_cats for c in set(dest_ip_cats + res_cats))
             )
-            dest_matched = cat_matched
-            if not dest_matched:
-                if _is_ip(dest):
-                    if dest_addrs:
-                        dest_matched = _ip_matches_any(dest, dest_addrs)
-                    if not dest_matched:
-                        for grp in dest_ip_groups_ref:
-                            gid = grp.get("id")
-                            if gid and int(gid) in ip_groups:
-                                if _ip_matches_any(dest, ip_groups[int(gid)]):
-                                    dest_matched = True
-                                    break
+            dest_matched = (
+                cat_matched
+                or _dest_in_addresses(dest, dest_addrs)
+                or _dest_in_ip_groups(dest, dest_ip_groups_ref, ip_groups)
+            )
             if not dest_matched:
                 continue
 
@@ -947,6 +994,7 @@ def _eval_ssl_inspection(
     dept_name: Optional[str] = None,
     group_name: Optional[str] = None,
     location_name: Optional[str] = None,
+    src_ip: Optional[str] = None,
 ) -> PolicyCheck:
     check = PolicyCheck(engine="ZIA SSL Inspection")
 
@@ -962,6 +1010,9 @@ def _eval_ssl_inspection(
             tenant_id=tenant_id, resource_type="ssl_inspection_rule", is_deleted=False
         ).all()
         url_categories = _resolve_url_categories(tenant_id, s)
+        ip_dest_groups = _resolve_ip_dest_groups(tenant_id, s)
+        ip_src_groups = _resolve_src_ip_groups(tenant_id, s)
+        zpa_segments = _resolve_zpa_segment_domains(tenant_id, s)
 
     enabled = [r for r in rules if (r.raw_config or {}).get("state") == "ENABLED"]
     non_default = [r for r in enabled if not (r.raw_config or {}).get("default_rule")]
@@ -979,6 +1030,14 @@ def _eval_ssl_inspection(
         depts: List[Dict] = cfg.get("departments", [])
         groups: List[Dict] = cfg.get("groups", [])
         locs: List[Dict] = cfg.get("locations", [])
+
+        # Destination / ZPA segment / source constraints (AND with the rest)
+        if cfg.get("dest_ip_groups") and not _dest_in_ip_groups(dest, cfg["dest_ip_groups"], ip_dest_groups):
+            continue
+        if cfg.get("zpa_app_segments") and not _dest_in_zpa_segments(dest, cfg["zpa_app_segments"], zpa_segments):
+            continue
+        if cfg.get("source_ip_groups") and src_ip and not _dest_in_ip_groups(src_ip, cfg["source_ip_groups"], ip_src_groups):
+            continue
 
         # Evaluate url_categories — resolve custom ones, skip predefined
         cat_matched = False
@@ -1688,6 +1747,7 @@ def simulate(
     zia_ssl = _eval_ssl_inspection(
         tenant_id, dest, protocol,
         cloud_app, user_name, dept_name, group_name, location_name,
+        src_ip,
     )
     zia_cloud_app = _eval_cloud_app_control(
         tenant_id, cloud_app, user_name, dept_name, group_name, location_name,
