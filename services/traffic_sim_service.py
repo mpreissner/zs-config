@@ -7,9 +7,12 @@ the local DB snapshot; no live API calls are made.
 Limitations (inherent to offline evaluation):
   - ZIA URL filtering predefined categories (e.g. SOCIAL_NETWORKING) require
     a live category-lookup call; we mark those as "cannot determine offline".
-  - Firewall / DNS rules scoped to specific users, departments, or groups are
-    evaluated as if the scope constraint is met (worst-case / most-permissive
-    read).  Pass user context in the future to be more precise.
+  - Rules scoped to users, departments, or groups are evaluated as if the
+    scope constraint is met (most-permissive read) unless that input is given.
+  - With no location given, traffic is treated as Road Warrior (ZCC tunnel to
+    ZIA): location-scoped rules match only if they include Road Warrior,
+    ZPA-for-locations rules don't apply, and rules scoped to source IP groups
+    are skipped unless a source IP is given.
   - Rule order is respected; the first matching ENABLED rule wins.
   - ZCC PAC DIRECT rules are evaluated against the PAC script captured at import
     time (pac_file.pacContent). If the content isn't cached, we fall back to a
@@ -399,6 +402,37 @@ def _name_in_list(name: str, ref_list: List[Dict]) -> bool:
     )
 
 
+# Road Warrior is ZIA's built-in location for ZCC traffic that doesn't arrive
+# from a configured location; rules reference it as LOC_DEFAULT (id -3).
+_ROAD_WARRIOR_LOC = "LOC_DEFAULT"
+_ROAD_WARRIOR_NAMES = {"LOC_DEFAULT", "ROAD WARRIOR"}
+_ROAD_WARRIOR_ID = -3
+
+
+def _location_in_list(location_name: str, ref_list: List[Dict]) -> bool:
+    """True if location_name matches a location ref, treating Road Warrior aliases as one."""
+    if location_name.upper() not in _ROAD_WARRIOR_NAMES:
+        return _location_in_list(location_name, ref_list)
+    return any(
+        ref.get("id") == _ROAD_WARRIOR_ID or (ref.get("name") or "").upper() in _ROAD_WARRIOR_NAMES
+        for ref in ref_list
+        if isinstance(ref, dict)
+    )
+
+
+def _blank_scopes(
+    user_name: Optional[str], dept_name: Optional[str],
+    group_name: Optional[str], location_name: Optional[str],
+) -> List[str]:
+    """Rule scope fields whose simulation input was left blank (evaluated permissively)."""
+    return [
+        f for f, v in (
+            ("users", user_name), ("departments", dept_name),
+            ("groups", group_name), ("locations", location_name),
+        ) if not v
+    ]
+
+
 def _svc_matches_port(svc_cfg: Dict, port: int, protocol: str) -> bool:
     """True if a network service config matches the given port + protocol."""
     proto = protocol.upper()
@@ -437,6 +471,8 @@ def _fw_rule_matches(
     group_name: Optional[str] = None,
     location_name: Optional[str] = None,
     zpa_segments: Optional[Dict[str, List[str]]] = None,
+    skip_src_scoped: bool = False,
+    road_warrior: bool = False,
 ) -> bool:
     """Evaluate one firewall rule. Returns True if ALL constraints match (AND semantics).
     Empty constraint list = wildcard. Constraints that can't be evaluated offline are
@@ -469,6 +505,8 @@ def _fw_rule_matches(
 
     # ── ZPA application segment check ─────────────────────────────────────
     zpa_seg_refs: List[Dict] = cfg.get("zpa_app_segments", [])
+    if zpa_seg_refs and road_warrior:
+        return False
     if zpa_seg_refs and not _dest_in_zpa_segments(dest, zpa_seg_refs, zpa_segments or {}):
         return False
 
@@ -484,7 +522,10 @@ def _fw_rule_matches(
                     break
         if not src_matched:
             return False
-    # If src_ip_groups present but no src_ip provided → assume match (permissive)
+    # No src_ip: a roaming device isn't on a fixed subnet, so skip the rule;
+    # otherwise assume match (permissive).
+    if src_ip_grp_refs and not src_ip and skip_src_scoped:
+        return False
 
     # ── Application-layer constraint ──────────────────────────────────────
     rule_nw_apps: List[str] = cfg.get("nw_applications", [])
@@ -565,7 +606,7 @@ def _fw_rule_matches(
         if not _name_in_list(group_name, rule_groups):
             return False
     if rule_locs and location_name:
-        if not _name_in_list(location_name, rule_locs):
+        if not _location_in_list(location_name, rule_locs):
             return False
     # If scoped but no input provided → assume match (permissive)
 
@@ -581,6 +622,8 @@ def _eval_zia_firewall(
     dept_name: Optional[str] = None,
     group_name: Optional[str] = None,
     location_name: Optional[str] = None,
+    skip_src_scoped: bool = False,
+    road_warrior: bool = False,
 ) -> PolicyCheck:
     check = PolicyCheck(engine="ZIA Firewall")
 
@@ -617,7 +660,7 @@ def _eval_zia_firewall(
             nw_application, app_service_group,
             src_ip, ip_src_groups, nw_app_groups,
             user_name, dept_name, group_name, location_name,
-            zpa_segments,
+            zpa_segments, skip_src_scoped, road_warrior,
         ):
             check.matched = True
             check.rule_name = cfg.get("name", "Unknown Rule")
@@ -658,14 +701,15 @@ def _eval_zia_firewall(
             + (f" +{len(ip_cat_rules)-5} more" if len(ip_cat_rules) > 5 else "")
         )
 
+    blank_scopes = _blank_scopes(user_name, dept_name, group_name, location_name)
     scoped_rules = [
         (r.raw_config or {}).get("name", "?")
         for r in non_default
-        if any((r.raw_config or {}).get(f) for f in ("users", "departments", "groups", "locations"))
+        if any((r.raw_config or {}).get(f) for f in blank_scopes)
     ]
-    if scoped_rules and not any([user_name, dept_name, group_name, location_name]):
+    if scoped_rules:
         check.caveats.append(
-            "Rules scoped to users/departments/groups/locations were evaluated permissively (specify identity context for precise results): "
+            f"Rules scoped to {'/'.join(blank_scopes)} were evaluated permissively (specify identity context for precise results): "
             + ", ".join(f'"{n}"' for n in scoped_rules[:5])
             + (f" +{len(scoped_rules)-5} more" if len(scoped_rules) > 5 else "")
         )
@@ -718,7 +762,12 @@ def _zia_url_lookup(tenant_id: int, dest: str) -> Tuple[Optional[List[str]], Opt
     return cats, None
 
 
-def _eval_zia_dns(tenant_id: int, dest: str, port: int, protocol: str, live_cats: Optional[List[str]] = None) -> PolicyCheck:
+def _eval_zia_dns(
+    tenant_id: int, dest: str, port: int, protocol: str,
+    live_cats: Optional[List[str]] = None,
+    location_name: Optional[str] = None,
+    road_warrior: bool = False,
+) -> PolicyCheck:
     check = PolicyCheck(engine="ZIA DNS Filter")
 
     with get_session() as s:
@@ -747,9 +796,16 @@ def _eval_zia_dns(tenant_id: int, dest: str, port: int, protocol: str, live_cats
 
         # Redirect-to-ZPA rules answer only for domains in a ZPA app segment;
         # the condition is implied by the action rather than stored as criteria.
+        # They serve location traffic only: ZCC resolves ZPA domains on-device.
+        if cfg.get("action") == "REDIR_ZPA" and road_warrior:
+            continue
         if cfg.get("action") == "REDIR_ZPA" and not any(
             _dest_in_addresses(dest, domains) for domains in zpa_segments.values()
         ):
+            continue
+
+        dns_locs: List[Dict] = cfg.get("locations", [])
+        if dns_locs and location_name and not _location_in_list(location_name, dns_locs):
             continue
 
         dest_addrs: List[str] = cfg.get("dest_addresses", [])
@@ -876,7 +932,7 @@ def _eval_zia_url(
 
     predefined_rules: List[str] = []   # rules skipped because they use predefined categories (no live lookup)
     scoped_rules: List[str] = []       # rules carrying user/dept/group/location scope
-    has_identity = any([user_name, dept_name, group_name, location_name])
+    blank_scopes = _blank_scopes(user_name, dept_name, group_name, location_name)
     # Live-resolved URL classifications (from ZIA url_lookup) let us match predefined
     # categories offline-plus-one-call, just like the DNS engine.
     live_set = {c.upper() for c in (live_cats or [])}
@@ -896,7 +952,7 @@ def _eval_zia_url(
         r_depts: List[Dict] = cfg.get("departments", [])
         r_groups: List[Dict] = cfg.get("groups", [])
         r_locs: List[Dict] = cfg.get("locations", [])
-        if r_users or r_depts or r_groups or r_locs:
+        if any(cfg.get(f) for f in blank_scopes):
             scoped_rules.append(cfg.get("name", "Unknown Rule"))
         if r_users and user_name and not _name_in_list(user_name, r_users):
             continue
@@ -904,7 +960,7 @@ def _eval_zia_url(
             continue
         if r_groups and group_name and not _name_in_list(group_name, r_groups):
             continue
-        if r_locs and location_name and not _name_in_list(location_name, r_locs):
+        if r_locs and location_name and not _location_in_list(location_name, r_locs):
             continue
 
         rule_cats = cfg.get("url_categories", [])
@@ -967,9 +1023,9 @@ def _eval_zia_url(
             )
 
     # Scoped rules evaluated permissively because no identity context was supplied.
-    if scoped_rules and not has_identity:
+    if scoped_rules:
         check.caveats.append(
-            "URL rules scoped to users/departments/groups/locations were evaluated permissively — "
+            f"URL rules scoped to {'/'.join(blank_scopes)} were evaluated permissively — "
             "provide identity context (user/department/group/location) for a precise result: "
             + _fmt(scoped_rules)
         )
@@ -995,6 +1051,8 @@ def _eval_ssl_inspection(
     group_name: Optional[str] = None,
     location_name: Optional[str] = None,
     src_ip: Optional[str] = None,
+    skip_src_scoped: bool = False,
+    road_warrior: bool = False,
 ) -> PolicyCheck:
     check = PolicyCheck(engine="ZIA SSL Inspection")
 
@@ -1034,9 +1092,13 @@ def _eval_ssl_inspection(
         # Destination / ZPA segment / source constraints (AND with the rest)
         if cfg.get("dest_ip_groups") and not _dest_in_ip_groups(dest, cfg["dest_ip_groups"], ip_dest_groups):
             continue
+        if cfg.get("zpa_app_segments") and road_warrior:
+            continue
         if cfg.get("zpa_app_segments") and not _dest_in_zpa_segments(dest, cfg["zpa_app_segments"], zpa_segments):
             continue
         if cfg.get("source_ip_groups") and src_ip and not _dest_in_ip_groups(src_ip, cfg["source_ip_groups"], ip_src_groups):
+            continue
+        if cfg.get("source_ip_groups") and not src_ip and skip_src_scoped:
             continue
 
         # Evaluate url_categories — resolve custom ones, skip predefined
@@ -1073,7 +1135,7 @@ def _eval_ssl_inspection(
             continue
         if groups and group_name and not _name_in_list(group_name, groups):
             continue
-        if locs and location_name and not _name_in_list(location_name, locs):
+        if locs and location_name and not _location_in_list(location_name, locs):
             continue
 
         action_cfg = cfg.get("action", {})
@@ -1142,7 +1204,7 @@ def _eval_cloud_app_control(
             continue
         if groups and group_name and not _name_in_list(group_name, groups):
             continue
-        if locs and location_name and not _name_in_list(location_name, locs):
+        if locs and location_name and not _location_in_list(location_name, locs):
             continue
 
         actions: List[str] = cfg.get("actions", [])
@@ -1721,6 +1783,14 @@ def simulate(
                 verdict_label=nc_check.reason,
             )
 
+    # With no location given, the traffic is a ZCC tunnel to ZIA: Road Warrior.
+    # Location-scoped rules then match only if they include Road Warrior, and
+    # rules scoped to source IP groups are skipped unless a source IP is given.
+    road_warrior = not (location_name or "").strip()
+    if road_warrior:
+        location_name = _ROAD_WARRIOR_LOC
+    skip_src_scoped = road_warrior and not src_ip
+
     # Live ZIA url_lookup for res_categories evaluation (DNS rules)
     live_cats, lookup_error = (None, None) if _is_ip(dest) else _zia_url_lookup(tenant_id, dest)
 
@@ -1730,8 +1800,9 @@ def simulate(
         tenant_id, dest, port, protocol,
         nw_application, app_service_group,
         src_ip, user_name, dept_name, group_name, location_name,
+        skip_src_scoped, road_warrior,
     )
-    zia_dns = _eval_zia_dns(tenant_id, dest, port, protocol, live_cats)
+    zia_dns = _eval_zia_dns(tenant_id, dest, port, protocol, live_cats, location_name, road_warrior)
     zia_url = _eval_zia_url(
         tenant_id, dest, port, protocol,
         user_name, dept_name, group_name, location_name,
@@ -1747,12 +1818,22 @@ def simulate(
     zia_ssl = _eval_ssl_inspection(
         tenant_id, dest, protocol,
         cloud_app, user_name, dept_name, group_name, location_name,
-        src_ip,
+        src_ip, skip_src_scoped, road_warrior,
     )
     zia_cloud_app = _eval_cloud_app_control(
         tenant_id, cloud_app, user_name, dept_name, group_name, location_name,
     )
     zia_exceptions = _eval_security_exceptions(tenant_id, dest)
+
+    if road_warrior:
+        rw_caveat = (
+            "No location given — assumed Road Warrior (ZCC tunnel to ZIA): location-scoped "
+            "rules match only if they include Road Warrior, and ZPA-for-locations rules "
+            "(ZPA redirect, ZPA app segment criteria) don't apply"
+            + ("; rules scoped to source IP groups were skipped (no source IP given)" if skip_src_scoped else "")
+        )
+        for c in (zia_fw, zia_dns, zia_url, zia_ssl) + ((zia_cloud_app,) if cloud_app else ()):
+            c.caveats.insert(0, rw_caveat)
 
     # Determine verdict.
     #
