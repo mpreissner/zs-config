@@ -544,8 +544,17 @@ def clear_zcc_disabled_resources(tenant_id: int, user: AuthUser = Depends(requir
         t = session.get(TenantConfig, tenant_id)
         if not t:
             raise HTTPException(status_code=404, detail="Tenant not found")
+        tenant_name = t.name
         previously_disabled = list(t.zcc_disabled_resources or [])
         t.zcc_disabled_resources = []
+
+    _write_audit([dict(
+        tenant_id=tenant_id, product="ZCC", operation="clear_disabled_resources",
+        action="UPDATE", status="SUCCESS",
+        resource_type="tenant", resource_name=tenant_name,
+        details={"cleared": previously_disabled},
+        timestamp=datetime.utcnow(),
+    )])
     return {"cleared": previously_disabled}
 
 
