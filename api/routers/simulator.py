@@ -5,11 +5,16 @@ from dataclasses import asdict
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from api.dependencies import AuthUser, require_auth
+from api.dependencies import AuthUser, check_tenant_access, require_auth
 from db.database import get_session
 from db.models import TenantConfig
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["Simulator"])
+
+
+def _check_access(tenant_id: int, user: AuthUser):
+    # Same rule as the ZIA/ZPA routers: admins need an entitlement too.
+    check_tenant_access(tenant_id, user)
 
 
 class SimulateRequest(BaseModel):
@@ -30,9 +35,7 @@ class SimulateRequest(BaseModel):
 
 @router.post("/{tenant_id}/simulate")
 def simulate_traffic(tenant_id: int, req: SimulateRequest, user: AuthUser = Depends(require_auth)):
-    if user.role != "admin":
-        from api.routers.tenants import check_tenant_access
-        check_tenant_access(tenant_id, user)
+    _check_access(tenant_id, user)
 
     with get_session() as s:
         t = s.get(TenantConfig, tenant_id)
@@ -51,9 +54,7 @@ def simulate_traffic(tenant_id: int, req: SimulateRequest, user: AuthUser = Depe
 
 @router.post("/{tenant_id}/simulate/all")
 def simulate_traffic_all(tenant_id: int, req: SimulateRequest, user: AuthUser = Depends(require_auth)):
-    if user.role != "admin":
-        from api.routers.tenants import check_tenant_access
-        check_tenant_access(tenant_id, user)
+    _check_access(tenant_id, user)
 
     with get_session() as s:
         t = s.get(TenantConfig, tenant_id)
@@ -76,9 +77,7 @@ def simulate_traffic_all(tenant_id: int, req: SimulateRequest, user: AuthUser = 
 @router.get("/{tenant_id}/simulate/applications")
 def list_sim_applications(tenant_id: int, user: AuthUser = Depends(require_auth)):
     """Return unique nw_application IDs referenced by this tenant's firewall rules."""
-    if user.role != "admin":
-        from api.routers.tenants import check_tenant_access
-        check_tenant_access(tenant_id, user)
+    _check_access(tenant_id, user)
 
     from db.models import ZIAResource
     with get_session() as s:
@@ -92,12 +91,6 @@ def list_sim_applications(tenant_id: int, user: AuthUser = Depends(require_auth)
             if app:
                 apps.add(str(app))
     return sorted(apps)
-
-
-def _check_access(tenant_id: int, user: AuthUser):
-    if user.role != "admin":
-        from api.routers.tenants import check_tenant_access
-        check_tenant_access(tenant_id, user)
 
 
 def _unique_names(tenant_id: int, resource_type: str, name_field: str = "name") -> list[str]:
@@ -171,9 +164,7 @@ def list_sim_cloud_apps(tenant_id: int, user: AuthUser = Depends(require_auth)):
 @router.get("/{tenant_id}/simulate/app-service-groups")
 def list_sim_app_service_groups(tenant_id: int, user: AuthUser = Depends(require_auth)):
     """Return unique app_service_group names referenced by this tenant's firewall rules."""
-    if user.role != "admin":
-        from api.routers.tenants import check_tenant_access
-        check_tenant_access(tenant_id, user)
+    _check_access(tenant_id, user)
 
     from db.models import ZIAResource
     with get_session() as s:
