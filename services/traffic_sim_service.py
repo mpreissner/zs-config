@@ -1329,7 +1329,8 @@ def _cached_pac_content(tenant_id: int, pac_url: str, session) -> Optional[str]:
 
 
 def _eval_pac_bypass(
-    tenant_id: int, dest: str, port: int, protocol: str, zcc_profile: Optional[str]
+    tenant_id: int, dest: str, port: int, protocol: str, zcc_profile: Optional[str],
+    network_context: Optional[str] = None,
 ) -> Optional[PolicyCheck]:
     """Check whether the destination is sent DIRECT by the active ZCC PAC file.
 
@@ -1337,8 +1338,11 @@ def _eval_pac_bypass(
     (mirroring api/routers/zcc.py get_traffic_profile). Prefers PAC content
     captured in the local cache (imported pac_file resources) and falls back to a
     live fetch only when the content isn't cached. Returns a BYPASS PolicyCheck on
-    the first DIRECT match, or None when no profile is selected, no PAC applies,
-    or nothing matches.
+    the first DIRECT match, an unmatched PolicyCheck carrying a caveat when PAC
+    evaluation is skipped, or None when no profile is selected, no PAC applies,
+    or nothing matches. When network_context is given, the forwarding-profile
+    action for that context supplies the PAC URL, and PAC evaluation is skipped
+    for pure Z-Tunnel 2.0 without the Listening Proxy.
     """
     if not zcc_profile:
         return None
@@ -1361,9 +1365,21 @@ def _eval_pac_bypass(
         if raw_fp:
             actions = (raw_fp.get("forwardingProfileActions")
                        or raw_fp.get("forwarding_profile_actions") or [])
-            if actions and isinstance(actions[0], dict):
-                spd = (actions[0].get("systemProxyData")
-                       or actions[0].get("system_proxy_data") or {})
+            actions = [a for a in actions if isinstance(a, dict)]
+            nc = _NC_INT.get(network_context or "")
+            act = next((a for a in actions
+                        if nc is not None and _action_int(a, "networkType", "network_type") == nc),
+                       actions[0] if actions else None)
+            if act is not None and nc is not None and _pure_zt2(act):
+                skipped = PolicyCheck(engine="ZCC Bypass")
+                skipped.caveats.append(
+                    "PAC was not evaluated because this network context uses Z-Tunnel 2.0 "
+                    "without the Listening Proxy"
+                )
+                return skipped
+            if act is not None:
+                spd = (act.get("systemProxyData")
+                       or act.get("system_proxy_data") or {})
                 fp_pac_url = (spd.get("pacURL") or spd.get("pac_u_r_l")
                               or spd.get("pac_url") or None)
 
@@ -1405,6 +1421,7 @@ def _eval_pac_bypass(
 def _eval_zcc_bypass(
     tenant_id: int, dest: str, port: int, protocol: str,
     zcc_profile: Optional[str] = None,
+    network_context: Optional[str] = None,
 ) -> PolicyCheck:
     check = PolicyCheck(engine="ZCC Bypass")
     dest_is_ip = _is_ip(dest)
@@ -1418,9 +1435,11 @@ def _eval_zcc_bypass(
         ).all()
 
     if zcc_profile:
-        filtered = [r for r in policies if (r.raw_config or {}).get("name") == zcc_profile]
-        if filtered:
-            policies = filtered
+        policies = [r for r in policies if (r.raw_config or {}).get("name") == zcc_profile]
+        if not policies:
+            check.caveats.append(
+                f'Profile "{zcc_profile}" not found in imported data — re-import ZCC'
+            )
 
     for policy in policies:
         cfg = policy.raw_config or {}
@@ -1492,9 +1511,11 @@ def _eval_zcc_bypass(
 
     # No explicit exclusion / port / app-service bypass matched — fall back to
     # the active PAC file's DIRECT rules (requires a live PAC fetch).
-    pac_check = _eval_pac_bypass(tenant_id, dest, port, protocol, zcc_profile)
-    if pac_check is not None:
+    pac_check = _eval_pac_bypass(tenant_id, dest, port, protocol, zcc_profile, network_context)
+    if pac_check is not None and pac_check.matched:
         return pac_check
+    if pac_check is not None:
+        check.caveats.extend(pac_check.caveats)
 
     check.reason = "No ZCC bypass criteria matched — traffic will be tunneled through ZCC"
     return check
@@ -1507,7 +1528,23 @@ def _eval_zcc_bypass(
 _BLOCK_ACTIONS = {"BLOCK", "BLOCK_DROP", "BLOCK_ICMP", "BLOCK_RESET", "BLOCK_BYPASS"}
 
 
-_NC_INT = {"on": 0, "vpn": 1, "off": 2}
+# ZCC forwarding-profile networkType values. 3 also occurs (likely split VPN
+# trusted) and is intentionally left unmapped.
+_NC_INT = {"on": 1, "vpn": 2, "off": 0}
+
+
+def _action_int(action: dict, camel: str, snake: str) -> Optional[int]:
+    v = action.get(snake) if action.get(snake) is not None else action.get(camel)
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _pure_zt2(action: dict) -> bool:
+    """True for Z-Tunnel 2.0 without the Listening Proxy (the PAC is never consulted)."""
+    return (_action_int(action, "enablePacketTunnel", "enable_packet_tunnel") == 1
+            and not (action.get("redirectWebTraffic") or action.get("redirect_web_traffic")))
 
 
 def _resolve_forwarding_profile(tenant_id: int, zcc_profile: str, session) -> Optional[dict]:
@@ -1554,7 +1591,7 @@ def _eval_network_context(tenant_id: int, zcc_profile: Optional[str], network_co
 
     Uses the same forwarding profile resolution as the ZCC traffic profile
     visualizer (onNetPolicy → forwardingProfileId fallback).
-    action_type=0 (None/Disabled) means ZCC is off for that network context.
+    action_type=3 (ZCC bypass/inactive) means ZCC is off for that network context.
     """
     nc = _NC_INT.get(network_context)
     if nc is None or not zcc_profile:
@@ -1578,7 +1615,7 @@ def _eval_network_context(tenant_id: int, zcc_profile: Optional[str], network_co
         at = action.get("action_type") if action.get("action_type") is not None else action.get("actionType")
         if nt is None or at is None:
             continue
-        if int(nt) == nc and int(at) == 0:
+        if int(nt) == nc and int(at) == 3:
             check = PolicyCheck(engine="ZCC Network Context")
             check.matched = True
             check.action = "BYPASS"
@@ -1625,7 +1662,7 @@ def simulate(
     # Live ZIA url_lookup for res_categories evaluation (DNS rules)
     live_cats, lookup_error = (None, None) if _is_ip(dest) else _zia_url_lookup(tenant_id, dest)
 
-    zcc_bypass = _eval_zcc_bypass(tenant_id, dest, port, protocol, zcc_profile)
+    zcc_bypass = _eval_zcc_bypass(tenant_id, dest, port, protocol, zcc_profile, network_context)
     zpa = _eval_zpa(tenant_id, dest, port, protocol)
     zia_fw = _eval_zia_firewall(
         tenant_id, dest, port, protocol,
