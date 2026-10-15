@@ -1554,6 +1554,7 @@ def _resolve_forwarding_profile(tenant_id: int, zcc_profile: str, session) -> Op
     1. Find the web_policy by name
     2. Use onNetPolicy (embedded by direct HTTP import) if present
     3. Fall back to forwardingProfileId lookup in forwarding_profile records
+    4. With no reference at all, use the Default forwarding profile (id 0)
     """
     policy_row = session.query(ZCCResource).filter_by(
         tenant_id=tenant_id, resource_type="web_policy", is_deleted=False
@@ -1575,7 +1576,9 @@ def _resolve_forwarding_profile(tenant_id: int, zcc_profile: str, session) -> Op
     # Fallback: look up forwarding_profile record by forwardingProfileId
     fp_id = str(raw_policy.get("forwardingProfileId") or raw_policy.get("forwarding_profile_id") or "")
     if not fp_id:
-        return None
+        # No explicit reference (the built-in Default app profile): ZCC applies
+        # the tenant's Default forwarding profile, which has id 0.
+        fp_id = "0"
     fp_id_candidates = [fp_id, fp_id + ".0"] if not fp_id.endswith(".0") else [fp_id, fp_id[:-2]]
     fp_row = session.query(ZCCResource).filter(
         ZCCResource.tenant_id == tenant_id,

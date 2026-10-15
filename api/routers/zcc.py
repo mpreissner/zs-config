@@ -679,7 +679,9 @@ def get_traffic_profile(
         if not raw_fp:
             # Legacy fallback: look up forwarding_profile by ID for records imported
             # before the switch to _direct_get (which embeds onNetPolicy).
-            fp_id = str(raw_policy.get("forwardingProfileId", ""))
+            # No reference at all (the built-in Default app profile): ZCC applies
+            # the tenant's Default forwarding profile, which has id 0.
+            fp_id = str(raw_policy.get("forwardingProfileId", "") or "0")
             if fp_id:
                 fp_id_candidates = [fp_id]
                 if fp_id.endswith(".0"):
