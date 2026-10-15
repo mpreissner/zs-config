@@ -21,7 +21,7 @@ import ipaddress
 import re
 import urllib.request
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import ast
 
@@ -636,33 +636,40 @@ def _eval_zia_firewall(
 # ZIA DNS Filtering evaluation
 # ---------------------------------------------------------------------------
 
-def _zia_url_lookup(tenant_id: int, dest: str) -> Optional[List[str]]:
-    """Call ZIA urlLookup for dest and return list of category strings, or None on failure."""
+def _zia_url_lookup(tenant_id: int, dest: str) -> Tuple[Optional[List[str]], Optional[str]]:
+    """Call ZIA urlLookup for dest.
+
+    Returns (categories, error). categories is None when the lookup could not
+    run; error is a short, secret-free description of why.
+    """
+    from db.models import TenantConfig
+    from lib.auth import ZscalerAuth
+    from lib.zia_client import ZIAClient
+    from services.config_service import decrypt_secret
+
+    # Read what the client needs, then close the session before any network I/O.
+    with get_session() as s:
+        t = s.get(TenantConfig, tenant_id)
+        if not t:
+            return None, "tenant not found"
+        creds = (
+            t.zidentity_base_url, t.client_id, t.client_secret_enc,
+            bool(t.govcloud), t.oneapi_base_url,
+        )
+
+    zidentity_url, client_id, secret_enc, govcloud, oneapi_url = creds
     try:
-        from db.models import TenantConfig
-        from lib.auth import ZscalerAuth
-        from lib.zia_client import ZIAClient
-        from services.config_service import decrypt_secret
-        with get_session() as s:
-            t = s.get(TenantConfig, tenant_id)
-            if not t:
-                return None
-            auth = ZscalerAuth(
-                t.zidentity_base_url, t.client_id,
-                decrypt_secret(t.client_secret_enc),
-                govcloud=bool(t.govcloud),
-            )
-            client = ZIAClient(auth, t.oneapi_base_url)
-            results = client.url_lookup([dest])
-            if not results:
-                return []
-            cats: List[str] = []
-            for item in results:
-                cats.extend(item.get("urlClassifications", []))
-                cats.extend(item.get("urlClassificationsWithSecurityAlert", []))
-            return cats
-    except Exception:
-        return None
+        auth = ZscalerAuth(zidentity_url, client_id, decrypt_secret(secret_enc), govcloud=govcloud)
+        results = ZIAClient(auth, oneapi_url).url_lookup([dest])
+    except Exception as exc:
+        # Exception text can carry auth responses; report the type only.
+        return None, type(exc).__name__
+
+    cats: List[str] = []
+    for item in results or []:
+        cats.extend(item.get("urlClassifications", []))
+        cats.extend(item.get("urlClassificationsWithSecurityAlert", []))
+    return cats, None
 
 
 def _eval_zia_dns(tenant_id: int, dest: str, port: int, protocol: str, live_cats: Optional[List[str]] = None) -> PolicyCheck:
@@ -1616,7 +1623,7 @@ def simulate(
             )
 
     # Live ZIA url_lookup for res_categories evaluation (DNS rules)
-    live_cats = _zia_url_lookup(tenant_id, dest) if not _is_ip(dest) else None
+    live_cats, lookup_error = (None, None) if _is_ip(dest) else _zia_url_lookup(tenant_id, dest)
 
     zcc_bypass = _eval_zcc_bypass(tenant_id, dest, port, protocol, zcc_profile)
     zpa = _eval_zpa(tenant_id, dest, port, protocol)
@@ -1631,6 +1638,13 @@ def simulate(
         user_name, dept_name, group_name, location_name,
         live_cats=live_cats,
     )
+    if lookup_error:
+        lookup_caveat = (
+            f"Live ZIA category lookup failed ({lookup_error}) — "
+            "predefined categories were not evaluated"
+        )
+        zia_dns.caveats.insert(0, lookup_caveat)
+        zia_url.caveats.insert(0, lookup_caveat)
     zia_ssl = _eval_ssl_inspection(
         tenant_id, dest, protocol,
         cloud_app, user_name, dept_name, group_name, location_name,
