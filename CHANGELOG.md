@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [3.6.2] - 2026-10-29
+
+A security maintenance release for the eMudhra CA key compromise, plus a plugin picker fix.
+
+### Security
+
+- **eMudhra CA distrust (CVE-2026-111943)** — eight eMudhra intermediate CAs were issued with recoverable keys, and emSign ECC Root CA - G3 has been distrusted. zs-config now requires `certifi>=2026.10.23`, which drops that root. Redeploy with `deploy.sh` so the image is rebuilt on a fresh `python:3.12-slim` with Debian's updated `ca-certificates`, the store `truststore` reads. (#147)
+
+### Fixed
+
+- **The plugin branch picker listed `feature/` branches only** — a fix could not be installed for testing until it had been merged. `fix/` branches are now offered too, and the picker's labels say so. The per-package keyword still applies. (#146)
+
+---
+
 ## [3.6.1] - 2026-09-15
 
 A maintenance release: import fixes, update checks, and the container's `zs-config` command.
