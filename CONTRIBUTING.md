@@ -39,7 +39,7 @@ Check the [issues](../../issues) for open bugs and feature requests. If you want
 ### Tech stack
 
 - **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, React Query (`@tanstack/react-query`)
-- **Backend**: FastAPI, SQLAlchemy, python-jose (JWT)
+- **Backend**: FastAPI, SQLAlchemy, PyJWT
 - **Dev venv**: `~/zscaler-env/`
 
 ### Local development
