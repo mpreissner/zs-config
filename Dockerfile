@@ -2,6 +2,13 @@
 FROM node:22-alpine AS frontend-build
 
 WORKDIR /build/web
+# Trust corporate SSL-inspection CAs for npm (populated by deploy.sh; no-op if
+# empty) and drop distrusted roots. --use-openssl-ca makes Node read only the
+# filtered file: its compiled-in roots can't be edited and may include them.
+COPY docker/ca-bundle.pem docker/distrust_cas_node.js docker/distrusted_cas.json /tmp/
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+ENV NODE_OPTIONS=--use-openssl-ca
+RUN node /tmp/distrust_cas_node.js && rm /tmp/distrust_cas_node.js /tmp/distrusted_cas.json /tmp/ca-bundle.pem
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --prefer-offline
 
@@ -36,8 +43,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY docker/ca-bundle.pem /usr/local/share/ca-certificates/zs-config-bundle.crt
 # The host store can reintroduce distrusted roots, so filter after it is copied.
 # Rebuilds the trust store and fails the build if a distrusted root survives.
-COPY docker/distrust_cas.py /tmp/distrust_cas.py
-RUN python /tmp/distrust_cas.py && rm /tmp/distrust_cas.py
+COPY docker/distrust_cas.py docker/distrusted_cas.json /tmp/
+RUN python /tmp/distrust_cas.py && rm /tmp/distrust_cas.py /tmp/distrusted_cas.json
 
 # Install Python deps (api extras required)
 COPY pyproject.toml requirements.txt* ./
