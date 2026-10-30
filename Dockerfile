@@ -1,5 +1,5 @@
 # ── Stage 1: Node / Vite build ──────────────────────────────────────────────
-FROM node:22-alpine AS frontend-build
+FROM node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS frontend-build
 
 WORKDIR /build/web
 # Trust corporate SSL-inspection CAs for npm (populated by deploy.sh; no-op if
@@ -18,10 +18,10 @@ RUN npm run build
 
 
 # ── Stage 2: Python runtime ──────────────────────────────────────────────────
-# Pin to a digest for production builds — Python minor version upgrades are
-# intentional image rebuilds, not automatic. Example:
-#   FROM python:3.12-slim@sha256:<digest> AS runtime
-FROM python:3.12-slim AS runtime
+# Pinned to the multi-arch index digest. Dependabot opens the digest bumps, which
+# is how base image security fixes arrive. Python minor version upgrades are
+# intentional, not automatic.
+FROM python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159 AS runtime
 
 WORKDIR /app
 
@@ -42,10 +42,13 @@ COPY docker/ca-bundle.pem /usr/local/share/ca-certificates/zs-config-bundle.crt
 COPY docker/distrust_cas.py docker/distrusted_cas.json /tmp/
 RUN python /tmp/distrust_cas.py && rm /tmp/distrust_cas.py /tmp/distrusted_cas.json
 
-# Install Python deps (api extras required). pip stays in the image for plugin
+# Install Python deps from the hashed lockfile, wheels only, so a package without
+# a wheel fails here rather than compiling. pip stays in the image for plugin
 # installs, so the base image's copy has to be current too.
-COPY pyproject.toml ./
-RUN pip install --no-cache-dir --upgrade "pip>=26.2" && pip install --no-cache-dir ".[api]"
+COPY pyproject.toml requirements.lock ./
+RUN pip install --no-cache-dir --upgrade "pip==26.2.2" \
+    && pip install --no-cache-dir --only-binary :all: --require-hashes -r requirements.lock \
+    && pip install --no-cache-dir --no-deps .
 
 # Copy application source
 COPY api/          ./api/

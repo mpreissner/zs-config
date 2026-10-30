@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev, main]
+  schedule:
+    # Weekly, so new CVEs surface in pinned dependencies when nothing is merging.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.5"
+      - name: Check requirements.lock matches pyproject.toml
+        run: |
+          uv pip compile pyproject.toml --extra api --universal --generate-hashes --python-version 3.12 -o requirements.lock -q
+          git diff --exit-code requirements.lock
+      - name: Install from the lockfile
+        run: |
+          pip install --only-binary :all: --require-hashes -r requirements.lock
+          pip install --no-deps .
+          pip check
+      - name: Compile sources
+        run: python -m compileall -q api cli db lib services
+      - name: Audit Python dependencies
+        run: uvx pip-audit==2.10.0 --require-hashes --disable-pip -r requirements.lock
+
+  frontend:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: npm run build
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+  image:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build
+        run: docker build -t zs-config:ci .
+      - name: Start and wait for healthy
+        run: |
+          docker run -d --name zs-config-ci -e JWT_SECRET="$(openssl rand -hex 32)" zs-config:ci
+          for _ in $(seq 1 24); do
+            status="$(docker inspect zs-config-ci --format '{{.State.Health.Status}}')"
+            [ "$status" = healthy ] && exit 0
+            sleep 5
+          done
+          docker logs zs-config-ci
+          exit 1
+      - name: Scan image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.1
+          image-ref: zs-config:ci
+          scanners: vuln
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          # pip's vendored packages can't be bumped apart from pip itself.
+          skip-dirs: /usr/local/lib/python3.12/site-packages/pip
