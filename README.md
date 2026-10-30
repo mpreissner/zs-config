@@ -11,7 +11,7 @@ Interactive TUI and browser-based UI for Zscaler OneAPI — manage ZPA, ZIA, ZCC
 
 > **v3.6.2 is the current release.** See the [changelog](CHANGELOG.md) for full details.
 
-- **3.6.2** — a security maintenance release. Requires certifi 2026.10.23 for the eMudhra CA distrust (CVE-2026-111943); redeploy to rebuild on updated CA certificates. The plugin branch picker offers `fix/` branches as well as `feature/`.
+- **3.6.2** — a security maintenance release. Docker images now exclude the CA roots distrusted after the eMudhra key compromise, and certifi 2026.10.23 is required; redeploy to pick this up. The plugin branch picker offers `fix/` branches as well as `feature/`.
 - **3.6.1** — a maintenance release. ZPA import reads every page instead of the first 20 objects, a failed fetch no longer marks a resource type deleted, update checks read GitHub releases, and `zs-config` works inside the container. The PyPI package is deprecated.
 - **3.6.0** — scheduled cross-tenant sync resolves every rule reference against the target, and a synced rule brings the objects it depends on.
 

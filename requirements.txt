@@ -1,6 +1,6 @@
 # Core HTTP
 requests>=2.33.0
-# CA bundle without the distrusted eMudhra emSign ECC Root CA - G3 (CVE-2026-111943)
+# CA bundle without the emSign roots distrusted after the eMudhra key compromise
 certifi>=2026.10.23
 
 # Zscaler SDK
