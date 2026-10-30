@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [3.6.3] - 2026-10-30
+
+A build fix for Docker deployments behind SSL inspection.
+
+### Fixed
+
+- **The frontend build failed behind SSL inspection** — `npm ci` stopped with `UNABLE_TO_GET_ISSUER_CERT_LOCALLY`, which npm reports as "Exit handler never called", because the frontend build stage never received the host's CA bundle. It now does.
+
+### Security
+
+- **eMudhra CA distrust extended to the frontend build stage** — the stage removes the same roots as the runtime image and uses only the filtered store, ignoring the roots compiled into Node. The stage is discarded after the build, so the shipped image is unchanged.
+
+---
+
 ## [3.6.2] - 2026-10-30
 
 A security maintenance release for the eMudhra CA key compromise, plus a plugin picker fix.
