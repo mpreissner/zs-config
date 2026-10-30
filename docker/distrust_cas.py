@@ -7,21 +7,18 @@ The build fails if a distrusted root survives.
 """
 
 import hashlib
+import json
 import pathlib
 import re
 import ssl
 import subprocess
 import sys
 
-# SHA-256 of the DER certificate.
-DISTRUSTED = {
-    # eMudhra key compromise, October 2026.
-    "86a1ecba089c4a8d3bbe2734c612ba341d813e043cf9e8a862cd5c57a36bbe6b": "emSign ECC Root CA - G3",
-    "bc4d809b15189d78db3e1d8cf4f9726a795da1643ca5f1358e1ddb0edc0d7eb3": "emSign ECC Root CA - C3",
-    "125609aa301da0a249b97a8239cb6a34216f44dcac9f3954b14292f2e8c8608f": "emSign Root CA - C1",
-    # Removed by Debian's fix for the same incident.
-    "d7a7a0fb5d7e2731d771e9484ebcdef71d5f0c3e0a2948782bc83ee0ea699ef4": "Comodo AAA Services root",
-}
+# SHA-256 of the DER certificate, shared with distrust_cas_node.js. Covers the
+# October 2026 eMudhra key compromise, plus the Comodo root Debian removed for it.
+DISTRUSTED = json.loads(
+    pathlib.Path(__file__).with_name("distrusted_cas.json").read_text()
+)
 
 SOURCE_DIRS = ("/usr/share/ca-certificates", "/usr/local/share/ca-certificates")
 SYSTEM_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
