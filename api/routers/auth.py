@@ -15,7 +15,7 @@ from api.auth_utils import (
 )
 from api.dependencies import require_auth, AuthUser
 from services.role_service import available_roles, resolve_active
-from jose import JWTError
+from jwt import PyJWTError
 
 router = APIRouter(prefix="/api/v1/auth", tags=["Auth"])
 
@@ -128,7 +128,7 @@ def refresh_token(refresh_token: Optional[str] = Cookie(default=None)):
         payload = decode_token(refresh_token)
         if payload.get("type") != "refresh":
             raise HTTPException(status_code=401, detail="Invalid token type")
-    except JWTError:
+    except PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
 
     with get_session() as session:

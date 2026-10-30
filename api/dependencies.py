@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 from fastapi import Depends, HTTPException, Header, Query
 from api.auth_utils import decode_token
-from jose import JWTError
+from jwt import PyJWTError
 
 
 @dataclass
@@ -36,7 +36,7 @@ def require_auth(authorization: Optional[str] = Header(default=None)) -> AuthUse
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
         payload = decode_token(authorization.removeprefix("Bearer "))
-    except JWTError:
+    except PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     return _auth_user(payload)
 
@@ -56,7 +56,7 @@ def require_auth_sse(
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
         payload = decode_token(raw)
-    except JWTError:
+    except PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     return _auth_user(payload)
 
