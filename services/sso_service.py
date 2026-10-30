@@ -286,6 +286,11 @@ def exchange_code(cfg: SsoConfig, code: str, verifier: str, nonce: str) -> dict:
     return verify_id_token(cfg, id_token, nonce, doc)
 
 
+# Asymmetric only: tokens are verified against the IdP's public JWKS, so an HMAC
+# alg here would mean accepting a signature made with a public key.
+_ID_TOKEN_ALGORITHMS = ["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"]
+
+
 def verify_id_token(cfg: SsoConfig, id_token: str, nonce: str, doc: Optional[dict] = None) -> dict:
     from jose import jwt as jose_jwt
     from jose.exceptions import JOSEError
@@ -298,6 +303,7 @@ def verify_id_token(cfg: SsoConfig, id_token: str, nonce: str, doc: Optional[dic
         claims = jose_jwt.decode(
             id_token,
             keys,
+            algorithms=_ID_TOKEN_ALGORITHMS,
             audience=cfg.client_id,
             issuer=doc.get("issuer") or cfg.issuer_url,
             options={"verify_at_hash": False},
