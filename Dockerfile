@@ -27,15 +27,11 @@ WORKDIR /app
 
 # System deps:
 # - git: needed by pip for plugin installs from GitHub URLs (pip install git+https://...)
-# - libxml2-dev / libxslt-dev / libxmlsec1-dev / pkg-config: required by xmlsec1 (SAML auth)
+# xmlsec, lxml and sqlcipher3 install from wheels that bundle their native
+# libraries, so no -dev packages are needed.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     ca-certificates \
-    libxml2-dev \
-    libxslt-dev \
-    libxmlsec1-dev \
-    libsqlcipher-dev \
-    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # Inject host trust store (populated by scripts/build.sh; no-op if empty).
@@ -46,9 +42,10 @@ COPY docker/ca-bundle.pem /usr/local/share/ca-certificates/zs-config-bundle.crt
 COPY docker/distrust_cas.py docker/distrusted_cas.json /tmp/
 RUN python /tmp/distrust_cas.py && rm /tmp/distrust_cas.py /tmp/distrusted_cas.json
 
-# Install Python deps (api extras required)
-COPY pyproject.toml requirements.txt* ./
-RUN pip install --no-cache-dir ".[api]"
+# Install Python deps (api extras required). pip stays in the image for plugin
+# installs, so the base image's copy has to be current too.
+COPY pyproject.toml ./
+RUN pip install --no-cache-dir --upgrade "pip>=26.2" && pip install --no-cache-dir ".[api]"
 
 # Copy application source
 COPY api/          ./api/
