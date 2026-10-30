@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [3.6.4] - 2026-10-30
+
+A security maintenance release, with build and CI plumbing.
+
+### Security
+
+- **OIDC token verification** — `python-jose`, which has no fix for CVE-2026-85394, is replaced by PyJWT, and ID tokens are restricted to asymmetric algorithms. (#153, #154)
+- **Dependency updates** — pip in the image, vite, react-router-dom and postcss are updated, and unused `-dev` system packages are dropped from the image. (#153)
+
+### Changed
+
+- **Pinned builds** — base images are pinned by digest and Python dependencies install from a hashed `requirements.lock`, wheels only. `requirements.txt` is removed. (#153, #155)
+- **CI** — pull requests and pushes to `dev` and `main` now run Python, frontend and image checks, and Dependabot is configured. (#155)
+
+---
+
 ## [3.6.3] - 2026-10-30
 
 A build fix for Docker deployments behind SSL inspection.
