@@ -286,25 +286,50 @@ def exchange_code(cfg: SsoConfig, code: str, verifier: str, nonce: str) -> dict:
     return verify_id_token(cfg, id_token, nonce, doc)
 
 
+# Asymmetric only: tokens are verified against the IdP's public JWKS, so an HMAC
+# alg here would mean accepting a signature made with a public key.
+_ID_TOKEN_ALGORITHMS = ["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"]
+
+
+def _decode_id_token(cfg: SsoConfig, id_token: str, keys: dict, doc: dict) -> dict:
+    import jwt
+
+    candidates = jwt.PyJWKSet.from_dict(keys).keys
+    kid = jwt.get_unverified_header(id_token).get("kid")
+    # A token may carry no kid, or one the JWKS doesn't label, so fall back to
+    # trying every published key.
+    candidates = [k for k in candidates if kid and k.key_id == kid] or candidates
+    for candidate in candidates:
+        try:
+            # The raw key, not the PyJWK: a JWK with no "alg" would otherwise
+            # pin verification to its key type's default algorithm.
+            return jwt.decode(
+                id_token,
+                candidate.key,
+                algorithms=_ID_TOKEN_ALGORITHMS,
+                audience=cfg.client_id,
+                issuer=doc.get("issuer") or cfg.issuer_url,
+                # An IdP clock slightly ahead of ours is not a reason to fail login.
+                options={"verify_iat": False},
+            )
+        # A key of the wrong type for the token's alg raises a bare TypeError.
+        except (jwt.InvalidSignatureError, jwt.InvalidKeyError, TypeError):
+            continue
+    raise jwt.InvalidSignatureError("No published key verifies this token")
+
+
 def verify_id_token(cfg: SsoConfig, id_token: str, nonce: str, doc: Optional[dict] = None) -> dict:
-    from jose import jwt as jose_jwt
-    from jose.exceptions import JOSEError
+    import jwt
 
     doc = doc or discover(cfg.issuer_url)
     keys = _jwks(doc["jwks_uri"])
     if not (isinstance(keys, dict) and keys.get("keys")):
         raise SsoError(jwks_empty_message(doc))
     try:
-        claims = jose_jwt.decode(
-            id_token,
-            keys,
-            audience=cfg.client_id,
-            issuer=doc.get("issuer") or cfg.issuer_url,
-            options={"verify_at_hash": False},
-        )
-    # JWKError is a sibling of JWTError, not a subclass — catching only the
-    # latter let key-material problems escape as a 500 with a traceback.
-    except JOSEError as exc:
+        claims = _decode_id_token(cfg, id_token, keys, doc)
+    # PyJWTError covers key-material problems too, which must not escape as a
+    # 500 with a traceback.
+    except jwt.PyJWTError as exc:
         raise SsoError(f"ID token verification failed: {exc}") from exc
     if nonce and claims.get("nonce") != nonce:
         raise SsoError("ID token nonce mismatch")

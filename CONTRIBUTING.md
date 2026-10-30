@@ -39,7 +39,7 @@ Check the [issues](../../issues) for open bugs and feature requests. If you want
 ### Tech stack
 
 - **Frontend**: React 18, TypeScript, Vite, Tailwind CSS, React Query (`@tanstack/react-query`)
-- **Backend**: FastAPI, SQLAlchemy, python-jose (JWT)
+- **Backend**: FastAPI, SQLAlchemy, PyJWT
 - **Dev venv**: `~/zscaler-env/`
 
 ### Local development
@@ -63,6 +63,17 @@ docker compose up -d --build
 ```
 
 Always run `down` before `up -d --build` — starting a new container without stopping the old one can leave orphaned processes holding the DB lock.
+
+### Updating Python dependencies
+
+The image installs from `requirements.lock`, not from the ranges in `pyproject.toml`. After changing dependencies, or to pick up newer versions, regenerate it with `uv` and commit the result:
+
+```bash
+uv pip compile pyproject.toml --extra api --universal --generate-hashes --python-version 3.12 -o requirements.lock           # keep existing pins
+uv pip compile pyproject.toml --extra api --universal --generate-hashes --python-version 3.12 -o requirements.lock --upgrade # move to latest
+```
+
+CI fails if the lockfile is out of step with `pyproject.toml`. Base image digests and GitHub Actions are pinned too, and Dependabot opens PRs to bump them.
 
 ### Accordion / SectionGroup pattern (TenantWorkspacePage)
 

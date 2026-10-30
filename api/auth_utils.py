@@ -2,7 +2,7 @@ import os
 import secrets as _secrets_mod
 import time
 import bcrypt
-from jose import jwt
+import jwt
 
 _ALGORITHM = "HS256"
 _ACCESS_TTL_DEFAULT = 300    # 5 minutes; not configurable via UI

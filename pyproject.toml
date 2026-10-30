@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools==84.2.1", "wheel==0.48.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "zs-config"
-version = "3.6.3"
+version = "3.6.4"
 description = "Interactive TUI for Zscaler OneAPI automation"
 readme = "README.md"
 license = "MIT"
@@ -29,11 +29,11 @@ api = [
     "uvicorn[standard]>=0.27.0",
     "pydantic>=2.0.0",
     "bcrypt>=4.0.0",
-    "python-jose[cryptography]",
+    "PyJWT[crypto]>=2.10.0",
     "python-multipart>=0.0.9",
     "apscheduler>=3.10.0,<4.0",
     "croniter>=1.4.0",
-    # SAML 2.0 SP. Needs libxmlsec1/libxml2 headers, already in the Dockerfile.
+    # SAML 2.0 SP. xmlsec ships wheels; building from source needs libxmlsec1 headers.
     "python3-saml>=1.16.0",
     # ACME client for Let's Encrypt issuance (dns-01 only). Pure Python.
     "acme>=2.9.0",
