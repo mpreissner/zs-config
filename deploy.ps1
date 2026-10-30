@@ -781,7 +781,7 @@ try {
     # -- Build -------------------------------------------------------------------
 
     Write-Host "Building image..."
-    docker compose build
+    docker compose build --pull
 
     # -- Deploy ------------------------------------------------------------------
 

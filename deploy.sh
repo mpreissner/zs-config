@@ -333,7 +333,7 @@ fi
 _pin_ipv4_hosts
 
 echo "Building image..."
-$DOCKER compose build
+$DOCKER compose build --pull
 
 # ── Deploy ────────────────────────────────────────────────────────────────────
 

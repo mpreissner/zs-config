@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [3.6.2] - 2026-10-30
+
+A security maintenance release for the eMudhra CA key compromise, plus a plugin picker fix.
+
+### Security
+
+- **eMudhra CA distrust** — eight eMudhra intermediate CAs were issued with recoverable keys, and emSign ECC Root CA - G3 has been distrusted. The Docker image build now removes that root, emSign ECC Root CA - C3, emSign Root CA - C1 and the Comodo AAA Services root by fingerprint, including from the host trust store copied into the image, and fails if any remain. `deploy.sh` and `deploy.ps1` also pull the current base image on every build. zs-config now requires `certifi>=2026.10.23`, which drops the three emSign roots. Docker deployments must redeploy to pick this up. (#147, #149)
+
+### Fixed
+
+- **The plugin branch picker listed `feature/` branches only** — a fix could not be installed for testing until it had been merged. `fix/` branches are now offered too, and the picker's labels say so. The per-package keyword still applies. (#146)
+
+---
+
 ## [3.6.1] - 2026-09-15
 
 A maintenance release: import fixes, update checks, and the container's `zs-config` command.

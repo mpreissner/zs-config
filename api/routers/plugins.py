@@ -412,7 +412,7 @@ def list_available(user: AuthUser = Depends(require_plugin_admin)):
 
 @router.get("/{package}/branches")
 def list_branches(package: str, user: AuthUser = Depends(require_plugin_admin)):
-    """Feature branches available for a plugin, for the branch override flow."""
+    """Feature and fix branches available for a plugin, for the branch override flow."""
     from lib.plugin_manager import fetch_plugin_branches
 
     _validate_package(package)
