@@ -2,6 +2,10 @@
 FROM node:22-alpine AS frontend-build
 
 WORKDIR /build/web
+# Trust corporate SSL-inspection CAs for npm (populated by deploy.sh; no-op if
+# empty). This stage is discarded, so nothing here reaches the runtime image.
+COPY docker/ca-bundle.pem /tmp/ca-bundle.pem
+ENV NODE_EXTRA_CA_CERTS=/tmp/ca-bundle.pem
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --prefer-offline
 
