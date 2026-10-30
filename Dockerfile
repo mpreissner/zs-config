@@ -34,7 +34,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Inject host trust store (populated by scripts/build.sh; no-op if empty).
 # Captures corporate SSL-inspection CAs so zscaler-sdk-python calls succeed.
 COPY docker/ca-bundle.pem /usr/local/share/ca-certificates/zs-config-bundle.crt
-RUN update-ca-certificates
+# The host store can reintroduce distrusted roots, so filter after it is copied.
+# Rebuilds the trust store and fails the build if a distrusted root survives.
+COPY docker/distrust_cas.py /tmp/distrust_cas.py
+RUN python /tmp/distrust_cas.py && rm /tmp/distrust_cas.py
 
 # Install Python deps (api extras required)
 COPY pyproject.toml requirements.txt* ./

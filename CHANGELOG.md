@@ -4,13 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [3.6.2] - 2026-10-29
+## [3.6.2] - 2026-10-30
 
 A security maintenance release for the eMudhra CA key compromise, plus a plugin picker fix.
 
 ### Security
 
-- **eMudhra CA distrust (CVE-2026-111943)** — eight eMudhra intermediate CAs were issued with recoverable keys, and emSign ECC Root CA - G3 has been distrusted. zs-config now requires `certifi>=2026.10.23`, which drops that root. Redeploy with `deploy.sh` so the image is rebuilt on a fresh `python:3.12-slim` with Debian's updated `ca-certificates`, the store `truststore` reads. (#147)
+- **eMudhra CA distrust** — eight eMudhra intermediate CAs were issued with recoverable keys, and emSign ECC Root CA - G3 has been distrusted. The Docker image build now removes that root, emSign ECC Root CA - C3, emSign Root CA - C1 and the Comodo AAA Services root by fingerprint, including from the host trust store copied into the image, and fails if any remain. `deploy.sh` and `deploy.ps1` also pull the current base image on every build. zs-config now requires `certifi>=2026.10.23`, which drops the three emSign roots. Docker deployments must redeploy to pick this up. (#147, #149)
 
 ### Fixed
 
