@@ -1,5 +1,5 @@
 # ── Stage 1: Node / Vite build ──────────────────────────────────────────────
-FROM node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS frontend-build
+FROM node:22-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202 AS frontend-build
 
 WORKDIR /build/web
 # Trust corporate SSL-inspection CAs for npm (populated by deploy.sh; no-op if
