@@ -44,6 +44,7 @@ def zidentity_menu():
 # Users
 # ------------------------------------------------------------------
 
+
 def users_menu(client, tenant):
     while True:
         render_banner()
@@ -81,6 +82,7 @@ def users_menu(client, tenant):
 
 def _list_users(client, tenant, search_kwargs=None):
     from services.zidentity_service import ZIdentityService
+
     service = ZIdentityService(client, tenant_id=tenant.id)
 
     with console.status("Fetching users..."):
@@ -116,6 +118,7 @@ def _list_users(client, tenant, search_kwargs=None):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -144,6 +147,7 @@ def _search_users(client, tenant):
 def _pick_user(client, tenant, prompt="Select user:"):
     """List users and let the operator pick one. Returns the user dict or None."""
     from services.zidentity_service import ZIdentityService
+
     service = ZIdentityService(client, tenant_id=tenant.id)
 
     search = questionary.text("Search (login name / email, blank to list all):").ask()
@@ -181,6 +185,7 @@ def _pick_user(client, tenant, prompt="Select user:"):
 
 def _user_details(client, tenant):
     from services.zidentity_service import ZIdentityService
+
     service = ZIdentityService(client, tenant_id=tenant.id)
 
     user = _pick_user(client, tenant, prompt="Select user to view:")
@@ -201,15 +206,15 @@ def _user_details(client, tenant):
 
     # Profile panel
     field_map = [
-        ("loginName",     "Login Name"),
-        ("displayName",   "Display Name"),
-        ("firstName",     "First Name"),
-        ("lastName",      "Last Name"),
-        ("primaryEmail",  "Primary Email"),
-        ("secondaryEmail","Secondary Email"),
-        ("status",        "Status"),
-        ("department",    "Department"),
-        ("id",            "ID"),
+        ("loginName", "Login Name"),
+        ("displayName", "Display Name"),
+        ("firstName", "First Name"),
+        ("lastName", "Last Name"),
+        ("primaryEmail", "Primary Email"),
+        ("secondaryEmail", "Secondary Email"),
+        ("status", "Status"),
+        ("department", "Department"),
+        ("id", "ID"),
     ]
     lines = []
     for key, label in field_map:
@@ -245,13 +250,16 @@ def _user_details(client, tenant):
                 colour = "green" if val else "dim"
                 ent_lines.append(f"[bold]{svc:<24}[/bold][{colour}]{val}[/{colour}]")
         if ent_lines:
-            console.print(Panel("\n".join(ent_lines), title="Service Entitlements", border_style="dim"))
+            console.print(
+                Panel("\n".join(ent_lines), title="Service Entitlements", border_style="dim")
+            )
 
     questionary.press_any_key_to_continue("Press any key to continue...").ask()
 
 
 def _reset_password(client, tenant):
     from services.zidentity_service import ZIdentityService
+
     service = ZIdentityService(client, tenant_id=tenant.id)
 
     console.print("\n[bold]Reset Password[/bold]")
@@ -280,6 +288,7 @@ def _reset_password(client, tenant):
 
 def _set_password(client, tenant):
     from services.zidentity_service import ZIdentityService
+
     service = ZIdentityService(client, tenant_id=tenant.id)
 
     console.print("\n[bold]Set Password[/bold]")
@@ -310,6 +319,7 @@ def _set_password(client, tenant):
 
 def _skip_mfa(client, tenant):
     from services.zidentity_service import ZIdentityService
+
     service = ZIdentityService(client, tenant_id=tenant.id)
 
     console.print("\n[bold]Skip MFA[/bold]")
@@ -347,9 +357,7 @@ def _skip_mfa(client, tenant):
     with console.status("Applying MFA bypass..."):
         try:
             service.skip_mfa(str(user["id"]), login, until_ts)
-            console.print(
-                f"[green]✓ MFA skipped for {login} until {until_str}[/green]"
-            )
+            console.print(f"[green]✓ MFA skipped for {login} until {until_str}[/green]")
         except Exception as e:
             console.print(f"[red]✗ {e}[/red]")
 
@@ -359,6 +367,7 @@ def _skip_mfa(client, tenant):
 # ------------------------------------------------------------------
 # Groups
 # ------------------------------------------------------------------
+
 
 def groups_menu(client, tenant):
     while True:
@@ -394,11 +403,10 @@ def groups_menu(client, tenant):
 
 def _list_groups(client, tenant, name=None):
     from services.zidentity_service import ZIdentityService
+
     service = ZIdentityService(client, tenant_id=tenant.id)
 
-    exclude_dynamic = questionary.confirm(
-        "Exclude dynamic groups?", default=False
-    ).ask()
+    exclude_dynamic = questionary.confirm("Exclude dynamic groups?", default=False).ask()
 
     with console.status("Fetching groups..."):
         try:
@@ -430,6 +438,7 @@ def _list_groups(client, tenant, name=None):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -443,6 +452,7 @@ def _search_groups(client, tenant):
 def _pick_group(client, tenant, prompt="Select group:"):
     """List groups and let the operator pick one. Returns the group dict or None."""
     from services.zidentity_service import ZIdentityService
+
     service = ZIdentityService(client, tenant_id=tenant.id)
 
     search = questionary.text("Search group name (blank to list all):").ask()
@@ -472,6 +482,7 @@ def _pick_group(client, tenant, prompt="Select group:"):
 
 def _group_members(client, tenant):
     from services.zidentity_service import ZIdentityService
+
     service = ZIdentityService(client, tenant_id=tenant.id)
 
     group = _pick_group(client, tenant, prompt="Select group to view members:")
@@ -513,11 +524,13 @@ def _group_members(client, tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
 def _add_user_to_group(client, tenant):
     from services.zidentity_service import ZIdentityService
+
     service = ZIdentityService(client, tenant_id=tenant.id)
 
     console.print("\n[bold]Add User to Group[/bold]\n")
@@ -543,9 +556,7 @@ def _add_user_to_group(client, tenant):
 
     with console.status("Adding user..."):
         try:
-            service.add_user_to_group(
-                str(group["id"]), group_name, str(user["id"]), login
-            )
+            service.add_user_to_group(str(group["id"]), group_name, str(user["id"]), login)
             console.print(f"[green]✓ {login} added to {group_name}[/green]")
         except Exception as e:
             console.print(f"[red]✗ {e}[/red]")
@@ -555,6 +566,7 @@ def _add_user_to_group(client, tenant):
 
 def _remove_user_from_group(client, tenant):
     from services.zidentity_service import ZIdentityService
+
     service = ZIdentityService(client, tenant_id=tenant.id)
 
     console.print("\n[bold]Remove User from Group[/bold]\n")
@@ -600,9 +612,7 @@ def _remove_user_from_group(client, tenant):
 
     with console.status("Removing user..."):
         try:
-            service.remove_user_from_group(
-                group_id, group_name, str(user["id"]), login
-            )
+            service.remove_user_from_group(group_id, group_name, str(user["id"]), login)
             console.print(f"[green]✓ {login} removed from {group_name}[/green]")
         except Exception as e:
             console.print(f"[red]✗ {e}[/red]")
@@ -613,6 +623,7 @@ def _remove_user_from_group(client, tenant):
 # ------------------------------------------------------------------
 # API Clients
 # ------------------------------------------------------------------
+
 
 def api_clients_menu(client, tenant):
     while True:
@@ -652,6 +663,7 @@ def api_clients_menu(client, tenant):
 
 def _list_api_clients(client, tenant, name=None):
     from services.zidentity_service import ZIdentityService
+
     service = ZIdentityService(client, tenant_id=tenant.id)
 
     with console.status("Fetching API clients..."):
@@ -685,6 +697,7 @@ def _list_api_clients(client, tenant, name=None):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -697,6 +710,7 @@ def _search_api_clients(client, tenant):
 
 def _pick_api_client(client, tenant, prompt="Select API client:"):
     from services.zidentity_service import ZIdentityService
+
     service = ZIdentityService(client, tenant_id=tenant.id)
 
     search = questionary.text("Search client name (blank to list all):").ask()
@@ -714,15 +728,13 @@ def _pick_api_client(client, tenant, prompt="Select API client:"):
         console.print("[yellow]No API clients found.[/yellow]")
         return None
 
-    choices = [
-        questionary.Choice(c.get("name") or str(c.get("id", "?")), value=c)
-        for c in clients
-    ]
+    choices = [questionary.Choice(c.get("name") or str(c.get("id", "?")), value=c) for c in clients]
     return questionary.select(prompt, choices=choices).ask()
 
 
 def _api_client_details(client, tenant):
     from services.zidentity_service import ZIdentityService
+
     service = ZIdentityService(client, tenant_id=tenant.id)
 
     api_client = _pick_api_client(client, tenant, prompt="Select client to view:")
@@ -742,11 +754,11 @@ def _api_client_details(client, tenant):
 
     # Profile panel
     field_map = [
-        ("name",                "Name"),
-        ("status",              "Status"),
-        ("description",         "Description"),
+        ("name", "Name"),
+        ("status", "Status"),
+        ("description", "Description"),
         ("accessTokenLifeTime", "Token Lifetime (s)"),
-        ("id",                  "ID"),
+        ("id", "ID"),
     ]
     lines = []
     for key, label in field_map:
@@ -760,7 +772,7 @@ def _api_client_details(client, tenant):
 
     # Scopes
     scopes = []
-    for res in (full.get("clientResources") or []):
+    for res in full.get("clientResources") or []:
         scopes.extend(res.get("selectedScopes") or [])
     if scopes:
         lines.append(f"[bold]{'Scopes':<24}[/bold]{', '.join(scopes)}")
@@ -787,6 +799,7 @@ def _api_client_details(client, tenant):
 
 def _add_secret(client, tenant):
     from services.zidentity_service import ZIdentityService
+
     service = ZIdentityService(client, tenant_id=tenant.id)
 
     console.print("\n[bold]Add Secret[/bold]\n")
@@ -810,9 +823,9 @@ def _add_secret(client, tenant):
 
     expires_at = None
     if expires:
-        expires_at = (
-            datetime.now(timezone.utc) + timedelta(days=expires)
-        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        expires_at = (datetime.now(timezone.utc) + timedelta(days=expires)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
 
     with console.status("Adding secret..."):
         try:
@@ -842,6 +855,7 @@ def _add_secret(client, tenant):
 
 def _delete_secret(client, tenant):
     from services.zidentity_service import ZIdentityService
+
     service = ZIdentityService(client, tenant_id=tenant.id)
 
     console.print("\n[bold]Delete Secret[/bold]\n")
@@ -897,6 +911,7 @@ def _delete_secret(client, tenant):
 
 def _delete_api_client(client, tenant):
     from services.zidentity_service import ZIdentityService
+
     service = ZIdentityService(client, tenant_id=tenant.id)
 
     console.print("\n[bold]Delete API Client[/bold]\n")

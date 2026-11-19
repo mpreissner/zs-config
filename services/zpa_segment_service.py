@@ -69,6 +69,7 @@ _REQUIRED = {"name", "domain_names", "segment_group", "server_groups"}
 # BulkCreateResult
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class BulkCreateResult:
     created: int = 0
@@ -80,6 +81,7 @@ class BulkCreateResult:
 # ---------------------------------------------------------------------------
 # CSV parsing
 # ---------------------------------------------------------------------------
+
 
 def parse_csv_text(text: str) -> Tuple[List[Dict], List[str]]:
     """Parse and validate CSV text of application segment rows.
@@ -148,14 +150,34 @@ def template_csv() -> str:
 # (field, required, default, accepted values / format)
 FIELD_REFERENCE: List[Tuple[str, str, str, str]] = [
     ("name", "yes", "", "Any string; must be unique within the tenant"),
-    ("domain_names", "yes", "", "Semicolon-separated FQDNs or wildcards, e.g. app.example.com;*.internal.example.com"),
-    ("segment_group", "yes", "", "Exact name of a Segment Group (must be in the local DB; run Import Config first)"),
+    (
+        "domain_names",
+        "yes",
+        "",
+        "Semicolon-separated FQDNs or wildcards, e.g. app.example.com;*.internal.example.com",
+    ),
+    (
+        "segment_group",
+        "yes",
+        "",
+        "Exact name of a Segment Group (must be in the local DB; run Import Config first)",
+    ),
     ("server_groups", "yes", "", "Semicolon-separated Server Group names, e.g. SG-East;SG-West"),
-    ("tcp_ports", "if no udp_ports", "", "Semicolon-separated ports or ranges, e.g. 443 or 80;443;8080-8090"),
+    (
+        "tcp_ports",
+        "if no udp_ports",
+        "",
+        "Semicolon-separated ports or ranges, e.g. 443 or 80;443;8080-8090",
+    ),
     ("udp_ports", "if no tcp_ports", "", "Same format as tcp_ports, e.g. 53;123"),
     ("description", "", "", "Free text"),
     ("enabled", "", "true", "true / false"),
-    ("app_type", "", "", "Blank for standard segments; BROWSER_ACCESS | SIPA | INSPECT | SECURE_REMOTE_ACCESS"),
+    (
+        "app_type",
+        "",
+        "",
+        "Blank for standard segments; BROWSER_ACCESS | SIPA | INSPECT | SECURE_REMOTE_ACCESS",
+    ),
     ("bypass_type", "", "NEVER", "NEVER | ALWAYS | ON_NET"),
     ("double_encrypt", "", "false", "true / false"),
     ("health_check_type", "", "DEFAULT", "DEFAULT | NONE"),
@@ -170,6 +192,7 @@ FIELD_REFERENCE: List[Tuple[str, str, str, str]] = [
 # ---------------------------------------------------------------------------
 # Port parsing
 # ---------------------------------------------------------------------------
+
 
 def _parse_ports(port_str: str) -> List[Dict[str, str]]:
     """Convert a port string to SDK-compatible port range dicts.
@@ -199,6 +222,7 @@ def _parse_ports(port_str: str) -> List[Dict[str, str]]:
 # ---------------------------------------------------------------------------
 # Dependency resolution
 # ---------------------------------------------------------------------------
+
 
 def resolve_dependencies(
     tenant_id: int,
@@ -280,6 +304,7 @@ def resolve_dependencies(
 # Create missing groups
 # ---------------------------------------------------------------------------
 
+
 def create_missing_groups(client, tenant_id: int, missing: Dict[str, List[str]]) -> Dict:
     """Create missing segment groups and/or server groups via the API.
 
@@ -349,9 +374,8 @@ def create_missing_groups(client, tenant_id: int, missing: Dict[str, List[str]])
     # Re-sync segment_group and server_group from API into local DB cache
     if created:
         from services.zpa_import_service import ZPAImportService
-        ZPAImportService(client, tenant_id).run(
-            resource_types=["segment_group", "server_group"]
-        )
+
+        ZPAImportService(client, tenant_id).run(resource_types=["segment_group", "server_group"])
 
     return {"created": created, "failed": failed, "warnings": warnings}
 
@@ -359,6 +383,7 @@ def create_missing_groups(client, tenant_id: int, missing: Dict[str, List[str]])
 # ---------------------------------------------------------------------------
 # Dry run
 # ---------------------------------------------------------------------------
+
 
 def dry_run(tenant_id: int, rows: List[Dict]) -> List[Dict]:
     """Tag each row with a status: READY, MISSING_DEPENDENCY, or INVALID.
@@ -399,6 +424,7 @@ def dry_run(tenant_id: int, rows: List[Dict]) -> List[Dict]:
 # Bulk create
 # ---------------------------------------------------------------------------
 
+
 def bulk_create(
     client,
     tenant_id: int,
@@ -427,9 +453,7 @@ def bulk_create(
         try:
             payload: Dict[str, Any] = {
                 "name": name,
-                "domain_names": [
-                    d.strip() for d in row["domain_names"].split(";") if d.strip()
-                ],
+                "domain_names": [d.strip() for d in row["domain_names"].split(";") if d.strip()],
                 "segment_group_id": row["_segment_group_id"],
                 "server_groups": [{"id": sid} for sid in row.get("_server_group_ids", [])],
                 "enabled": row.get("enabled", "true").lower() not in ("false", "0", "no"),
@@ -479,12 +503,14 @@ def bulk_create(
                 resource_name=name,
             )
 
-            result.rows_detail.append({
-                "name": name,
-                "status": "CREATED",
-                "id": app_id,
-                "error": None,
-            })
+            result.rows_detail.append(
+                {
+                    "name": name,
+                    "status": "CREATED",
+                    "id": app_id,
+                    "error": None,
+                }
+            )
             result.created += 1
 
         except Exception as exc:
@@ -499,12 +525,14 @@ def bulk_create(
                 resource_name=name,
                 error_message=error_msg,
             )
-            result.rows_detail.append({
-                "name": name,
-                "status": "FAILED",
-                "id": None,
-                "error": error_msg,
-            })
+            result.rows_detail.append(
+                {
+                    "name": name,
+                    "status": "FAILED",
+                    "id": None,
+                    "error": error_msg,
+                }
+            )
             result.failed += 1
 
         if progress_callback:
@@ -512,11 +540,13 @@ def bulk_create(
 
     # Add skipped rows to detail
     for row in skipped_rows:
-        result.rows_detail.append({
-            "name": row.get("name", ""),
-            "status": f"SKIPPED ({row.get('_status', 'UNKNOWN')})",
-            "id": None,
-            "error": "; ".join(row.get("_issues", [])),
-        })
+        result.rows_detail.append(
+            {
+                "name": row.get("name", ""),
+                "status": f"SKIPPED ({row.get('_status', 'UNKNOWN')})",
+                "id": None,
+                "error": "; ".join(row.get("_issues", [])),
+            }
+        )
 
     return result

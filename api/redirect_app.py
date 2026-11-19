@@ -5,6 +5,7 @@ Redirects to the domain stored in the DB (set and cert-validated at upload time)
 not to whatever hostname the incoming request used. The port, unlike the
 hostname, is derived from the request — see _origin().
 """
+
 import os
 from typing import Optional
 
@@ -67,14 +68,16 @@ async def redirect_app(scope, receive, send):
 
     if path == "/health":
         body = b'{"status":"redirect_active"}'
-        await send({
-            "type": "http.response.start",
-            "status": 200,
-            "headers": [
-                [b"content-type", b"application/json"],
-                [b"content-length", str(len(body)).encode()],
-            ],
-        })
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [
+                    [b"content-type", b"application/json"],
+                    [b"content-length", str(len(body)).encode()],
+                ],
+            }
+        )
         await send({"type": "http.response.body", "body": body})
         return
 
@@ -83,17 +86,19 @@ async def redirect_app(scope, receive, send):
     if query:
         location = f"{location}?{query}"
 
-    await send({
-        "type": "http.response.start",
-        "status": 301,
-        "headers": [
-            [b"location", location.encode()],
-            [b"content-length", b"0"],
-            # Cache the redirect so repeat HTTP visits skip this round-trip, but
-            # briefly: a 301 with no max-age is cached indefinitely, and when the
-            # target was wrong that turned a misconfiguration into an outage the
-            # server could no longer correct.
-            [b"cache-control", b"max-age=300"],
-        ],
-    })
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 301,
+            "headers": [
+                [b"location", location.encode()],
+                [b"content-length", b"0"],
+                # Cache the redirect so repeat HTTP visits skip this round-trip, but
+                # briefly: a 301 with no max-age is cached indefinitely, and when the
+                # target was wrong that turned a misconfiguration into an outage the
+                # server could no longer correct.
+                [b"cache-control", b"max-age=300"],
+            ],
+        }
+    )
     await send({"type": "http.response.body", "body": b""})

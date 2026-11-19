@@ -9,6 +9,7 @@ the name instead of the host, which works no matter where the container sits.
 Cloudflare is the only DNS provider wired up. Everything provider-specific
 lives in ``cloudflare_dns``; the order flow below is generic.
 """
+
 import re
 import time
 from dataclasses import dataclass
@@ -64,6 +65,7 @@ class AcmeConfig:
 
 
 # ── Settings ───────────────────────────────────────────────────────────────────
+
 
 def _flag(key: str, default: bool) -> bool:
     raw = get_setting(key)
@@ -121,12 +123,15 @@ def validate_config(cfg: AcmeConfig) -> None:
     if not _HOSTNAME_RE.match(cfg.domain):
         raise AcmeError(f"'{cfg.domain}' is not a valid fully qualified domain name.")
     if not _EMAIL_RE.match(cfg.email):
-        raise AcmeError("A valid contact email is required — Let's Encrypt uses it for expiry warnings.")
+        raise AcmeError(
+            "A valid contact email is required — Let's Encrypt uses it for expiry warnings."
+        )
     if not cfg.token_set:
         raise AcmeError("A Cloudflare API token is required.")
 
 
 # ── ACME plumbing ──────────────────────────────────────────────────────────────
+
 
 def _account_suffix(staging: bool) -> str:
     # Staging and production are separate ACME servers with separate account
@@ -267,9 +272,7 @@ def _run_order(cfg: AcmeConfig, log: Callable[[str], None]) -> tuple:
                 None,
             )
             if challb is None:
-                raise AcmeError(
-                    f"Let's Encrypt did not offer a dns-01 challenge for {identifier}."
-                )
+                raise AcmeError(f"Let's Encrypt did not offer a dns-01 challenge for {identifier}.")
 
             value = challb.chall.validation(client.net.key)
             record_name = challb.chall.validation_domain_name(identifier)
@@ -306,6 +309,7 @@ def _run_order(cfg: AcmeConfig, log: Callable[[str], None]) -> tuple:
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
+
 
 def verify_dns_access() -> str:
     """Confirm the saved token works, and return the zone that covers the domain.

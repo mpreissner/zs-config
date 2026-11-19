@@ -2,7 +2,13 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Literal, Optional, List
-from api.dependencies import require_admin, require_auth, require_user, check_tenant_access, AuthUser
+from api.dependencies import (
+    require_admin,
+    require_auth,
+    require_user,
+    check_tenant_access,
+    AuthUser,
+)
 from lib.auth import DEFAULT_GOV_TIER
 from lib.conf_writer import build_zidentity_url, govcloud_oneapi_url
 
@@ -15,6 +21,7 @@ router = APIRouter(prefix="/api/v1/tenants", tags=["Tenants"])
 
 def _vanity(zidentity_base_url: str) -> str:
     from urllib.parse import urlparse
+
     return urlparse(zidentity_base_url).hostname.split(".")[0]
 
 
@@ -42,6 +49,7 @@ def _serialize(t) -> dict:
 def _write_audit(events: list) -> None:
     from db.database import get_session
     from db.models import AuditLog
+
     if not events:
         return
     with get_session() as session:
@@ -74,10 +82,12 @@ class TenantUpdate(BaseModel):
 @router.get("")
 def list_tenants(user: AuthUser = Depends(require_auth)):
     from services.config_service import list_tenants as _list
+
     all_tenants = _list()
     if user.role == "admin":
         return [_serialize(t) for t in all_tenants]
     from services.group_service import effective_tenant_ids
+
     entitled = effective_tenant_ids(user.user_id)
     return [_serialize(t) for t in all_tenants if t.id in entitled]
 
@@ -86,6 +96,7 @@ def list_tenants(user: AuthUser = Depends(require_auth)):
 def get_tenant(tenant_id: int, user: AuthUser = Depends(require_auth)):
     from db.database import get_session
     from db.models import TenantConfig
+
     with get_session() as session:
         t = session.query(TenantConfig).filter_by(id=tenant_id, is_active=True).first()
     if not t:
@@ -136,17 +147,19 @@ def create_tenant(body: TenantCreate, user: AuthUser = Depends(require_admin)):
         tenant = session.query(TenantConfig).filter_by(id=tenant_id).first()
         if err:
             tenant.last_validation_error = f"Validation failed; check API credentials. ({err})"
-            audit_events.append(dict(
-                tenant_id=tenant_id,
-                product="ZIA",
-                operation="validate_credentials",
-                action="CREATE",
-                status="FAILURE",
-                resource_type="tenant",
-                resource_name=body.name,
-                error_message=err,
-                timestamp=datetime.utcnow(),
-            ))
+            audit_events.append(
+                dict(
+                    tenant_id=tenant_id,
+                    product="ZIA",
+                    operation="validate_credentials",
+                    action="CREATE",
+                    status="FAILURE",
+                    resource_type="tenant",
+                    resource_name=body.name,
+                    error_message=err,
+                    timestamp=datetime.utcnow(),
+                )
+            )
         else:
             tenant.last_validation_error = None
             if org_info:
@@ -155,16 +168,18 @@ def create_tenant(body: TenantCreate, user: AuthUser = Depends(require_admin)):
                 tenant.zpa_tenant_cloud = org_info.get("zpaTenantCloud") or None
             if subscriptions:
                 tenant.zia_subscriptions = subscriptions
-            audit_events.append(dict(
-                tenant_id=tenant_id,
-                product="ZIA",
-                operation="validate_credentials",
-                action="CREATE",
-                status="SUCCESS",
-                resource_type="tenant",
-                resource_name=body.name,
-                timestamp=datetime.utcnow(),
-            ))
+            audit_events.append(
+                dict(
+                    tenant_id=tenant_id,
+                    product="ZIA",
+                    operation="validate_credentials",
+                    action="CREATE",
+                    status="SUCCESS",
+                    resource_type="tenant",
+                    resource_name=body.name,
+                    timestamp=datetime.utcnow(),
+                )
+            )
         session.flush()
         session.refresh(tenant)
         result = _serialize(tenant)
@@ -178,6 +193,7 @@ def update_tenant(tenant_id: int, body: TenantUpdate, user: AuthUser = Depends(r
     from db.database import get_session
     from db.models import TenantConfig
     from services.config_service import update_tenant as _update, fetch_org_info, decrypt_secret
+
     with get_session() as session:
         t = session.query(TenantConfig).filter_by(id=tenant_id, is_active=True).first()
         if not t:
@@ -194,7 +210,8 @@ def update_tenant(tenant_id: int, body: TenantUpdate, user: AuthUser = Depends(r
     )
     new_zidentity = (
         build_zidentity_url(body.vanity_domain, govcloud=eff_govcloud, gov_tier=eff_gov_tier)
-        if body.vanity_domain else None
+        if body.vanity_domain
+        else None
     )
     tier_changed = body.gov_cloud_tier is not None and body.gov_cloud_tier != cur_gov_tier
     if body.govcloud is not None or tier_changed:
@@ -216,20 +233,29 @@ def update_tenant(tenant_id: int, body: TenantUpdate, user: AuthUser = Depends(r
     if not updated:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
-    audit_events = [dict(
-        tenant_id=tenant_id,
-        product=None,
-        operation="update_tenant",
-        action="UPDATE",
-        status="SUCCESS",
-        resource_type="tenant",
-        resource_name=name,
-        timestamp=datetime.utcnow(),
-    )]
+    audit_events = [
+        dict(
+            tenant_id=tenant_id,
+            product=None,
+            operation="update_tenant",
+            action="UPDATE",
+            status="SUCCESS",
+            resource_type="tenant",
+            resource_name=name,
+            timestamp=datetime.utcnow(),
+        )
+    ]
 
     # Re-validate whenever something that affects auth was changed.
-    creds_changed = any([body.client_secret, body.client_id, body.vanity_domain,
-                         body.govcloud is not None, tier_changed])
+    creds_changed = any(
+        [
+            body.client_secret,
+            body.client_id,
+            body.vanity_domain,
+            body.govcloud is not None,
+            tier_changed,
+        ]
+    )
     if creds_changed:
         err = None
         org_info = None
@@ -261,17 +287,19 @@ def update_tenant(tenant_id: int, body: TenantUpdate, user: AuthUser = Depends(r
             session.refresh(tenant)
             updated = tenant
 
-        audit_events.append(dict(
-            tenant_id=tenant_id,
-            product="ZIA",
-            operation="validate_credentials",
-            action="UPDATE",
-            status="FAILURE" if err else "SUCCESS",
-            resource_type="tenant",
-            resource_name=name,
-            error_message=err if err else None,
-            timestamp=datetime.utcnow(),
-        ))
+        audit_events.append(
+            dict(
+                tenant_id=tenant_id,
+                product="ZIA",
+                operation="validate_credentials",
+                action="UPDATE",
+                status="FAILURE" if err else "SUCCESS",
+                resource_type="tenant",
+                resource_name=name,
+                error_message=err if err else None,
+                timestamp=datetime.utcnow(),
+            )
+        )
 
     _write_audit(audit_events)
     return _serialize(updated)
@@ -281,6 +309,7 @@ def update_tenant(tenant_id: int, body: TenantUpdate, user: AuthUser = Depends(r
 def delete_tenant(tenant_id: int, user: AuthUser = Depends(require_admin)):
     from db.database import get_session
     from db.models import TenantConfig
+
     name = None
     with get_session() as session:
         t = session.query(TenantConfig).filter_by(id=tenant_id, is_active=True).first()
@@ -289,16 +318,20 @@ def delete_tenant(tenant_id: int, user: AuthUser = Depends(require_admin)):
         name = t.name
         t.is_active = False
 
-    _write_audit([dict(
-        tenant_id=tenant_id,
-        product=None,
-        operation="delete_tenant",
-        action="DELETE",
-        status="SUCCESS",
-        resource_type="tenant",
-        resource_name=name,
-        timestamp=datetime.utcnow(),
-    )])
+    _write_audit(
+        [
+            dict(
+                tenant_id=tenant_id,
+                product=None,
+                operation="delete_tenant",
+                action="DELETE",
+                status="SUCCESS",
+                resource_type="tenant",
+                resource_name=name,
+                timestamp=datetime.utcnow(),
+            )
+        ]
+    )
 
 
 def _get_zcc_import_client(tenant_id: int):
@@ -371,35 +404,65 @@ def import_zia(tenant_id: int, user: AuthUser = Depends(require_auth)):
         from services.zia_import_service import ZIAImportService
 
         def on_progress(resource_type: str, done: int, total: int):
-            store.append(job_id, {
-                "type": "progress", "phase": "import",
-                "resource_type": resource_type, "done": done, "total": total,
-            })
+            store.append(
+                job_id,
+                {
+                    "type": "progress",
+                    "phase": "import",
+                    "resource_type": resource_type,
+                    "done": done,
+                    "total": total,
+                },
+            )
 
         try:
-            sync_log = ZIAImportService(client, tenant_id=tenant_id).run(progress_callback=on_progress)
-            store.complete(job_id, {
-                "status": sync_log.status,
-                "resources_synced": sync_log.resources_synced,
-                "resources_updated": sync_log.resources_updated,
-                "error_message": sync_log.error_message,
-            })
-            _write_audit([dict(
-                tenant_id=tenant_id, product="ZIA", operation="import",
-                action="CREATE", status=sync_log.status,
-                resource_type="tenant", resource_name=tenant_name,
-                details={"resources_synced": sync_log.resources_synced,
-                         "resources_updated": sync_log.resources_updated},
-                timestamp=datetime.utcnow(),
-            )])
+            sync_log = ZIAImportService(client, tenant_id=tenant_id).run(
+                progress_callback=on_progress
+            )
+            store.complete(
+                job_id,
+                {
+                    "status": sync_log.status,
+                    "resources_synced": sync_log.resources_synced,
+                    "resources_updated": sync_log.resources_updated,
+                    "error_message": sync_log.error_message,
+                },
+            )
+            _write_audit(
+                [
+                    dict(
+                        tenant_id=tenant_id,
+                        product="ZIA",
+                        operation="import",
+                        action="CREATE",
+                        status=sync_log.status,
+                        resource_type="tenant",
+                        resource_name=tenant_name,
+                        details={
+                            "resources_synced": sync_log.resources_synced,
+                            "resources_updated": sync_log.resources_updated,
+                        },
+                        timestamp=datetime.utcnow(),
+                    )
+                ]
+            )
         except Exception as exc:
             store.fail(job_id, str(exc))
-            _write_audit([dict(
-                tenant_id=tenant_id, product="ZIA", operation="import",
-                action="CREATE", status="FAILURE",
-                resource_type="tenant", resource_name=tenant_name,
-                error_message=str(exc), timestamp=datetime.utcnow(),
-            )])
+            _write_audit(
+                [
+                    dict(
+                        tenant_id=tenant_id,
+                        product="ZIA",
+                        operation="import",
+                        action="CREATE",
+                        status="FAILURE",
+                        resource_type="tenant",
+                        resource_name=tenant_name,
+                        error_message=str(exc),
+                        timestamp=datetime.utcnow(),
+                    )
+                ]
+            )
 
     threading.Thread(target=run, daemon=True).start()
     return {"job_id": job_id}
@@ -442,35 +505,65 @@ def import_zpa(tenant_id: int, user: AuthUser = Depends(require_auth)):
         from services.zpa_import_service import ZPAImportService
 
         def on_progress(resource_type: str, done: int, total: int):
-            store.append(job_id, {
-                "type": "progress", "phase": "import",
-                "resource_type": resource_type, "done": done, "total": total,
-            })
+            store.append(
+                job_id,
+                {
+                    "type": "progress",
+                    "phase": "import",
+                    "resource_type": resource_type,
+                    "done": done,
+                    "total": total,
+                },
+            )
 
         try:
-            sync_log = ZPAImportService(zpa_client, tenant_id=tenant_id).run(progress_callback=on_progress)
-            store.complete(job_id, {
-                "status": sync_log.status,
-                "resources_synced": sync_log.resources_synced,
-                "resources_updated": sync_log.resources_updated,
-                "error_message": sync_log.error_message,
-            })
-            _write_audit([dict(
-                tenant_id=tenant_id, product="ZPA", operation="import",
-                action="CREATE", status=sync_log.status,
-                resource_type="tenant", resource_name=tenant_name,
-                details={"resources_synced": sync_log.resources_synced,
-                         "resources_updated": sync_log.resources_updated},
-                timestamp=datetime.utcnow(),
-            )])
+            sync_log = ZPAImportService(zpa_client, tenant_id=tenant_id).run(
+                progress_callback=on_progress
+            )
+            store.complete(
+                job_id,
+                {
+                    "status": sync_log.status,
+                    "resources_synced": sync_log.resources_synced,
+                    "resources_updated": sync_log.resources_updated,
+                    "error_message": sync_log.error_message,
+                },
+            )
+            _write_audit(
+                [
+                    dict(
+                        tenant_id=tenant_id,
+                        product="ZPA",
+                        operation="import",
+                        action="CREATE",
+                        status=sync_log.status,
+                        resource_type="tenant",
+                        resource_name=tenant_name,
+                        details={
+                            "resources_synced": sync_log.resources_synced,
+                            "resources_updated": sync_log.resources_updated,
+                        },
+                        timestamp=datetime.utcnow(),
+                    )
+                ]
+            )
         except Exception as exc:
             store.fail(job_id, str(exc))
-            _write_audit([dict(
-                tenant_id=tenant_id, product="ZPA", operation="import",
-                action="CREATE", status="FAILURE",
-                resource_type="tenant", resource_name=tenant_name,
-                error_message=str(exc), timestamp=datetime.utcnow(),
-            )])
+            _write_audit(
+                [
+                    dict(
+                        tenant_id=tenant_id,
+                        product="ZPA",
+                        operation="import",
+                        action="CREATE",
+                        status="FAILURE",
+                        resource_type="tenant",
+                        resource_name=tenant_name,
+                        error_message=str(exc),
+                        timestamp=datetime.utcnow(),
+                    )
+                ]
+            )
 
     threading.Thread(target=run, daemon=True).start()
     return {"job_id": job_id}
@@ -499,35 +592,65 @@ def import_zcc(tenant_id: int, user: AuthUser = Depends(require_auth)):
         from services.zcc_import_service import ZCCImportService
 
         def on_progress(resource_type: str, done: int, total: int):
-            store.append(job_id, {
-                "type": "progress", "phase": "import",
-                "resource_type": resource_type, "done": done, "total": total,
-            })
+            store.append(
+                job_id,
+                {
+                    "type": "progress",
+                    "phase": "import",
+                    "resource_type": resource_type,
+                    "done": done,
+                    "total": total,
+                },
+            )
 
         try:
-            sync_log = ZCCImportService(client, tenant_id=tenant_id).run(progress_callback=on_progress)
-            store.complete(job_id, {
-                "status": sync_log.status,
-                "resources_synced": sync_log.resources_synced,
-                "resources_updated": sync_log.resources_updated,
-                "error_message": sync_log.error_message,
-            })
-            _write_audit([dict(
-                tenant_id=tenant_id, product="ZCC", operation="import",
-                action="CREATE", status=sync_log.status,
-                resource_type="tenant", resource_name=tenant_name,
-                details={"resources_synced": sync_log.resources_synced,
-                         "resources_updated": sync_log.resources_updated},
-                timestamp=datetime.utcnow(),
-            )])
+            sync_log = ZCCImportService(client, tenant_id=tenant_id).run(
+                progress_callback=on_progress
+            )
+            store.complete(
+                job_id,
+                {
+                    "status": sync_log.status,
+                    "resources_synced": sync_log.resources_synced,
+                    "resources_updated": sync_log.resources_updated,
+                    "error_message": sync_log.error_message,
+                },
+            )
+            _write_audit(
+                [
+                    dict(
+                        tenant_id=tenant_id,
+                        product="ZCC",
+                        operation="import",
+                        action="CREATE",
+                        status=sync_log.status,
+                        resource_type="tenant",
+                        resource_name=tenant_name,
+                        details={
+                            "resources_synced": sync_log.resources_synced,
+                            "resources_updated": sync_log.resources_updated,
+                        },
+                        timestamp=datetime.utcnow(),
+                    )
+                ]
+            )
         except Exception as exc:
             store.fail(job_id, str(exc))
-            _write_audit([dict(
-                tenant_id=tenant_id, product="ZCC", operation="import",
-                action="CREATE", status="FAILURE",
-                resource_type="tenant", resource_name=tenant_name,
-                error_message=str(exc), timestamp=datetime.utcnow(),
-            )])
+            _write_audit(
+                [
+                    dict(
+                        tenant_id=tenant_id,
+                        product="ZCC",
+                        operation="import",
+                        action="CREATE",
+                        status="FAILURE",
+                        resource_type="tenant",
+                        resource_name=tenant_name,
+                        error_message=str(exc),
+                        timestamp=datetime.utcnow(),
+                    )
+                ]
+            )
 
     threading.Thread(target=run, daemon=True).start()
     return {"job_id": job_id}
@@ -550,17 +673,26 @@ def clear_zcc_disabled_resources(tenant_id: int, user: AuthUser = Depends(requir
     # Clearing only touches the local DB, so the service needs no client.
     ZCCImportService(None, tenant_id).clear_disabled_resource_types()
 
-    _write_audit([dict(
-        tenant_id=tenant_id, product="ZCC", operation="clear_disabled_resources",
-        action="UPDATE", status="SUCCESS",
-        resource_type="tenant", resource_name=tenant_name,
-        details={"cleared": previously_disabled},
-        timestamp=datetime.utcnow(),
-    )])
+    _write_audit(
+        [
+            dict(
+                tenant_id=tenant_id,
+                product="ZCC",
+                operation="clear_disabled_resources",
+                action="UPDATE",
+                status="SUCCESS",
+                resource_type="tenant",
+                resource_name=tenant_name,
+                details={"cleared": previously_disabled},
+                timestamp=datetime.utcnow(),
+            )
+        ]
+    )
     return {"cleared": previously_disabled}
 
 
 # ── Apply Snapshot ────────────────────────────────────────────────────────────
+
 
 class ApplySnapshotRequest(BaseModel):
     source_tenant_id: int
@@ -587,9 +719,11 @@ def preview_apply_snapshot(
     check_tenant_access(req.source_tenant_id, user)
 
     with get_session() as session:
-        snap = session.query(RestorePoint).filter_by(
-            id=req.snapshot_id, tenant_id=req.source_tenant_id, product="ZIA"
-        ).first()
+        snap = (
+            session.query(RestorePoint)
+            .filter_by(id=req.snapshot_id, tenant_id=req.source_tenant_id, product="ZIA")
+            .first()
+        )
         if not snap:
             raise HTTPException(status_code=404, detail="Snapshot not found")
         snap_name = snap.name
@@ -606,13 +740,21 @@ def preview_apply_snapshot(
         baseline = {"product": "ZIA", "resources": snap_resources}
 
         def on_import_progress(resource_type: str, done: int, total: int):
-            store.append(job_id, {
-                "type": "progress", "phase": "import",
-                "resource_type": resource_type, "done": done, "total": total,
-            })
+            store.append(
+                job_id,
+                {
+                    "type": "progress",
+                    "phase": "import",
+                    "resource_type": resource_type,
+                    "done": done,
+                    "total": total,
+                },
+            )
 
         try:
-            dry_run = service.classify_baseline(baseline, import_progress_callback=on_import_progress)
+            dry_run = service.classify_baseline(
+                baseline, import_progress_callback=on_import_progress
+            )
             delete_candidates = service.classify_snapshot_deletes(snap_resources)
 
             creates, updates, deletes_list = dry_run.changes_by_action()
@@ -625,17 +767,20 @@ def preview_apply_snapshot(
                 + [{"action": "delete", "resource_type": rt, "name": n} for rt, n in deletes_list]
             )
 
-            store.complete(job_id, {
-                "snapshot_name": snap_name,
-                "snapshot_comment": snap_comment,
-                "snapshot_created": snap_created,
-                "snapshot_resource_count": snap_resource_count,
-                "creates": dry_run.create_count,
-                "updates": dry_run.update_count,
-                "skips": dry_run.skip_count,
-                "deletes": len(delete_candidates),
-                "items": items,
-            })
+            store.complete(
+                job_id,
+                {
+                    "snapshot_name": snap_name,
+                    "snapshot_comment": snap_comment,
+                    "snapshot_created": snap_created,
+                    "snapshot_resource_count": snap_resource_count,
+                    "creates": dry_run.create_count,
+                    "updates": dry_run.update_count,
+                    "skips": dry_run.skip_count,
+                    "deletes": len(delete_candidates),
+                    "items": items,
+                },
+            )
         except Exception as exc:
             store.fail(job_id, str(exc))
 
@@ -660,9 +805,11 @@ def apply_snapshot(
     check_tenant_access(req.source_tenant_id, user)
 
     with get_session() as session:
-        snap = session.query(RestorePoint).filter_by(
-            id=req.snapshot_id, tenant_id=req.source_tenant_id, product="ZIA"
-        ).first()
+        snap = (
+            session.query(RestorePoint)
+            .filter_by(id=req.snapshot_id, tenant_id=req.source_tenant_id, product="ZIA")
+            .first()
+        )
         if not snap:
             raise HTTPException(status_code=404, detail="Snapshot not found")
         snap_name = snap.name
@@ -684,13 +831,20 @@ def apply_snapshot(
         clone_resources: dict = {}
         if req.full_clone and source_client:
             from services.zia_import_service import ZIAImportService
+
             src_import_svc = ZIAImportService(source_client, tenant_id=req.source_tenant_id)
 
             def on_clone_fetch_progress(resource_type: str, done: int, total: int):
-                store.append(job_id, {
-                    "type": "progress", "phase": "clone_fetch",
-                    "resource_type": resource_type, "done": done, "total": total,
-                })
+                store.append(
+                    job_id,
+                    {
+                        "type": "progress",
+                        "phase": "clone_fetch",
+                        "resource_type": resource_type,
+                        "done": done,
+                        "total": total,
+                    },
+                )
 
             clone_resources = src_import_svc.run_clone_resources(
                 progress_callback=on_clone_fetch_progress
@@ -708,45 +862,63 @@ def apply_snapshot(
         wipe_done = [0]
 
         def on_import_progress(resource_type: str, done: int, total: int):
-            store.append(job_id, {
-                "type": "progress", "phase": "import",
-                "resource_type": resource_type, "done": done, "total": total,
-            })
+            store.append(
+                job_id,
+                {
+                    "type": "progress",
+                    "phase": "import",
+                    "resource_type": resource_type,
+                    "done": done,
+                    "total": total,
+                },
+            )
 
         def on_wipe_progress(resource_type: str, record):
             wipe_done[0] += 1
-            store.append(job_id, {
-                "type": "progress", "phase": "wipe",
-                "resource_type": resource_type,
-                "name": record.name,
-                "status": record.status,
-                "done": wipe_done[0],
-            })
+            store.append(
+                job_id,
+                {
+                    "type": "progress",
+                    "phase": "wipe",
+                    "resource_type": resource_type,
+                    "name": record.name,
+                    "status": record.status,
+                    "done": wipe_done[0],
+                },
+            )
 
         push_totals: dict = {}
 
         def on_push_progress(_pass_num: int, resource_type: str, record):
             push_totals.setdefault(resource_type, {"done": 0})
             push_totals[resource_type]["done"] += 1
-            store.append(job_id, {
-                "type": "progress", "phase": "push",
-                "resource_type": resource_type,
-                "name": record.name,
-                "status": record.status,
-                "done": push_totals[resource_type]["done"],
-            })
+            store.append(
+                job_id,
+                {
+                    "type": "progress",
+                    "phase": "push",
+                    "resource_type": resource_type,
+                    "name": record.name,
+                    "status": record.status,
+                    "done": push_totals[resource_type]["done"],
+                },
+            )
 
         rollback_done = [0]
 
         def on_rollback_progress(resource_type: str, record):
             rollback_done[0] += 1
-            store.append(job_id, {
-                "type": "progress", "phase": "rollback",
-                "resource_type": resource_type,
-                "name": record.name,
-                "status": record.status,
-                "done": rollback_done[0],
-            })
+            store.append(
+                job_id,
+                {
+                    "type": "progress",
+                    "phase": "rollback",
+                    "resource_type": resource_type,
+                    "name": record.name,
+                    "status": record.status,
+                    "done": rollback_done[0],
+                },
+            )
 
         stop_fn = lambda: store.is_cancel_requested(job_id)
 
@@ -785,9 +957,13 @@ def apply_snapshot(
                         wipe_records = fc_wipe_records
                     push_records = fc_push_records + push_records_bl
                     wipe_failed_items = [
-                        {"resource_type": r.resource_type, "name": r.name,
-                         "reason": r.status[len("failed:"):]}
-                        for r in wipe_records if r.is_failed
+                        {
+                            "resource_type": r.resource_type,
+                            "name": r.name,
+                            "reason": r.status[len("failed:") :],
+                        }
+                        for r in wipe_records
+                        if r.is_failed
                     ]
                     wiped = sum(1 for r in wipe_records if r.is_deleted)
                 elif req.wipe_mode:
@@ -800,8 +976,13 @@ def apply_snapshot(
                     )
                     wiped = sum(1 for r in wipe_records if r.is_deleted)
                     wipe_failed_items = [
-                        {"resource_type": r.resource_type, "name": r.name, "reason": r.status[len("failed:"):]}
-                        for r in wipe_records if r.is_failed
+                        {
+                            "resource_type": r.resource_type,
+                            "name": r.name,
+                            "reason": r.status[len("failed:") :],
+                        }
+                        for r in wipe_records
+                        if r.is_failed
                     ]
                 else:
                     wipe_records = []
@@ -823,89 +1004,110 @@ def apply_snapshot(
 
                 # Re-import target tenant so DB reflects the pushed state.
                 from services.zia_import_service import ZIAImportService
+
                 ZIAImportService(client, tenant_id=tenant_id).run(
                     progress_callback=on_import_progress
                 )
             except _PushCancelled as exc:
-                rollback_records = service.rollback_pushed(
-                    exc.pushed_records, on_rollback_progress
-                )
+                rollback_records = service.rollback_pushed(exc.pushed_records, on_rollback_progress)
                 rolled_back = sum(
-                    1 for r in rollback_records
+                    1
+                    for r in rollback_records
                     if r.status in ("rollback_deleted", "rollback_restored")
                 )
                 rollback_failed = sum(
                     1 for r in rollback_records if r.status.startswith("rollback_failed")
                 )
-                store.complete(job_id, {
-                    "cancelled": True,
-                    "rolled_back": rolled_back,
-                    "rollback_failed": rollback_failed,
-                })
+                store.complete(
+                    job_id,
+                    {
+                        "cancelled": True,
+                        "rolled_back": rolled_back,
+                        "rollback_failed": rollback_failed,
+                    },
+                )
                 return
 
             created = sum(1 for r in push_records if r.is_created)
             updated = sum(1 for r in push_records if r.is_updated)
             push_failed_items = [
                 {"resource_type": r.resource_type, "name": r.name, "reason": r.failure_reason}
-                for r in push_records if r.is_failed
+                for r in push_records
+                if r.is_failed
             ]
             warnings = [
                 {"resource_type": r.resource_type, "name": r.name, "warnings": r.warnings}
-                for r in push_records if r.warnings
+                for r in push_records
+                if r.warnings
             ]
             failed_items = wipe_failed_items + push_failed_items
             total_failed = len(failed_items)
             status = "SUCCESS" if total_failed == 0 else "PARTIAL"
 
-            _mode = ("full_clone_wipe" if req.full_clone and req.wipe_mode
-                     else "full_clone" if req.full_clone
-                     else "wipe" if req.wipe_mode
-                     else "delta")
-            _write_audit([dict(
-                tenant_id=tenant_id,
-                product="ZIA",
-                operation="apply_snapshot",
-                action="CREATE",
-                status=status,
-                resource_type="tenant",
-                resource_name=tenant_name,
-                details={
-                    "source_tenant_id": req.source_tenant_id,
+            _mode = (
+                "full_clone_wipe"
+                if req.full_clone and req.wipe_mode
+                else "full_clone"
+                if req.full_clone
+                else "wipe"
+                if req.wipe_mode
+                else "delta"
+            )
+            _write_audit(
+                [
+                    dict(
+                        tenant_id=tenant_id,
+                        product="ZIA",
+                        operation="apply_snapshot",
+                        action="CREATE",
+                        status=status,
+                        resource_type="tenant",
+                        resource_name=tenant_name,
+                        details={
+                            "source_tenant_id": req.source_tenant_id,
+                            "snapshot_name": snap_name,
+                            "mode": _mode,
+                            "wiped": wiped,
+                            "created": created,
+                            "updated": updated,
+                            "failed": total_failed,
+                        },
+                        timestamp=datetime.utcnow(),
+                    )
+                ]
+            )
+
+            store.complete(
+                job_id,
+                {
+                    "status": status,
                     "snapshot_name": snap_name,
                     "mode": _mode,
                     "wiped": wiped,
                     "created": created,
                     "updated": updated,
                     "failed": total_failed,
+                    "failed_items": failed_items,
+                    "warnings": warnings,
                 },
-                timestamp=datetime.utcnow(),
-            )])
-
-            store.complete(job_id, {
-                "status": status,
-                "snapshot_name": snap_name,
-                "mode": _mode,
-                "wiped": wiped,
-                "created": created,
-                "updated": updated,
-                "failed": total_failed,
-                "failed_items": failed_items,
-                "warnings": warnings,
-            })
+            )
         except Exception as exc:
             store.fail(job_id, str(exc))
-            _write_audit([dict(
-                tenant_id=tenant_id,
-                product="ZIA",
-                operation="apply_snapshot",
-                action="CREATE",
-                status="FAILURE",
-                resource_type="tenant",
-                resource_name=tenant_name,
-                error_message=str(exc),
-                timestamp=datetime.utcnow(),
-            )])
+            _write_audit(
+                [
+                    dict(
+                        tenant_id=tenant_id,
+                        product="ZIA",
+                        operation="apply_snapshot",
+                        action="CREATE",
+                        status="FAILURE",
+                        resource_type="tenant",
+                        resource_name=tenant_name,
+                        error_message=str(exc),
+                        timestamp=datetime.utcnow(),
+                    )
+                ]
+            )
 
     threading.Thread(target=run, daemon=True).start()
     return {"job_id": job_id}
@@ -916,6 +1118,7 @@ def apply_snapshot(
 # ---------------------------------------------------------------------------
 
 from api.routers.templates import apply_template_to_tenant  # noqa: E402
+
 router.post("/{tenant_id}/templates/apply", status_code=202, tags=["Templates"])(
     apply_template_to_tenant
 )

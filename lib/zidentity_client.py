@@ -186,9 +186,7 @@ class ZIdentityClient:
     def reset_password(self, user_id: str) -> Dict:
         return self._direct_post(f"users/{user_id}:resetpassword")
 
-    def update_password(
-        self, user_id: str, password: str, reset_on_login: bool = False
-    ) -> Dict:
+    def update_password(self, user_id: str, password: str, reset_on_login: bool = False) -> Dict:
         return self._direct_put(
             f"users/{user_id}:updatepassword",
             json={"password": password, "resetPwdOnLogin": reset_on_login},
@@ -240,9 +238,7 @@ class ZIdentityClient:
     # API Clients
     # ------------------------------------------------------------------
 
-    def list_api_clients(
-        self, name: Optional[str] = None, limit: int = 500
-    ) -> List[Dict]:
+    def list_api_clients(self, name: Optional[str] = None, limit: int = 500) -> List[Dict]:
         params: Dict = {"limit": limit}
         if name:
             params["name[like]"] = name
@@ -257,9 +253,7 @@ class ZIdentityClient:
         result, resp, err = self._sdk.zidentity.api_client.get_api_client_secret(client_id)
         return _to_dict(_unwrap(result, resp, err))
 
-    def add_api_client_secret(
-        self, client_id: str, expires_at: Optional[str] = None
-    ) -> Dict:
+    def add_api_client_secret(self, client_id: str, expires_at: Optional[str] = None) -> Dict:
         kwargs = {}
         if expires_at:
             kwargs["expiresAt"] = expires_at

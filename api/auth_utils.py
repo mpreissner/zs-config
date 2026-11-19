@@ -5,7 +5,7 @@ import bcrypt
 import jwt
 
 _ALGORITHM = "HS256"
-_ACCESS_TTL_DEFAULT = 300    # 5 minutes; not configurable via UI
+_ACCESS_TTL_DEFAULT = 300  # 5 minutes; not configurable via UI
 _REFRESH_TTL_DEFAULT = 3600  # 60 minutes; configurable via admin settings
 
 # Generated fresh on every container start. All refresh tokens signed with a
@@ -20,6 +20,7 @@ def _secret() -> str:
 def _access_ttl() -> int:
     try:
         from db.database import get_setting
+
         v = get_setting("access_token_ttl")
         return int(v) if v else _ACCESS_TTL_DEFAULT
     except Exception:
@@ -29,6 +30,7 @@ def _access_ttl() -> int:
 def _refresh_ttl() -> int:
     try:
         from db.database import get_setting
+
         v = get_setting("refresh_token_ttl")
         return int(v) if v else _REFRESH_TTL_DEFAULT
     except Exception:
@@ -59,9 +61,15 @@ def issue_access_token(user, *, mfa_enroll: bool = False, roles=None, active_rol
 
     now = int(time.time())
     ttl = _access_ttl()
-    payload: dict = {"sub": str(user.id), "username": user.username, "role": active,
-                     "roles": list(roles),
-                     "fpc": user.force_password_change, "iat": now, "exp": now + ttl}
+    payload: dict = {
+        "sub": str(user.id),
+        "username": user.username,
+        "role": active,
+        "roles": list(roles),
+        "fpc": user.force_password_change,
+        "iat": now,
+        "exp": now + ttl,
+    }
     if mfa_enroll:
         payload["mfa_enroll"] = True
     return jwt.encode(payload, _secret(), algorithm=_ALGORITHM)

@@ -80,9 +80,7 @@ def roles_for_users(session, users) -> dict:
     return {uid: _order(roles) for uid, roles in out.items()}
 
 
-LAST_ADMIN_MESSAGE = (
-    "This change would leave the install with no active administrator"
-)
+LAST_ADMIN_MESSAGE = "This change would leave the install with no active administrator"
 
 
 def active_admin_count(session) -> int:
@@ -102,9 +100,7 @@ def active_admin_count(session) -> int:
 
     admins = {
         uid
-        for (uid,) in session.query(User.id).filter(
-            User.role == "admin", User.is_active.is_(True)
-        )
+        for (uid,) in session.query(User.id).filter(User.role == "admin", User.is_active.is_(True))
     }
     # "admin" is hardcoded where ROLE_ORDER is not: this counts who can still
     # unlock the deployment, and only one role does that.

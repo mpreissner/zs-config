@@ -26,7 +26,9 @@ def _tf_response(hcl: str, tenant_name: str, product: str) -> Response:
     return Response(
         content=hcl,
         media_type="text/plain; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{_slug(tenant_name)}_{product}.tf"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{_slug(tenant_name)}_{product}.tf"'
+        },
     )
 
 

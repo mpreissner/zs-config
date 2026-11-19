@@ -33,6 +33,7 @@ router = APIRouter(prefix="/api/v1/templates", tags=["Templates"])
 # Request / response schemas
 # ---------------------------------------------------------------------------
 
+
 class TemplatePreviewRequest(BaseModel):
     source_tenant_id: int
     snapshot_id: int
@@ -82,6 +83,7 @@ class TemplateApplyRequest(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _serialize(
     tmpl,
     source_tenant_name: Optional[str] = None,
@@ -100,9 +102,7 @@ def _serialize(
     from services import template_share_service as shares
 
     is_owner = bool(
-        user is not None
-        and tmpl.owner_user_id is not None
-        and tmpl.owner_user_id == user.user_id
+        user is not None and tmpl.owner_user_id is not None and tmpl.owner_user_id == user.user_id
     )
     return {
         "id": tmpl.id,
@@ -120,9 +120,7 @@ def _serialize(
         "visibility": tmpl.visibility or "private",
         "scope": tmpl.scope or "full",
         "is_owner": is_owner,
-        "can_manage": (
-            user is not None and shares.can_manage(tmpl, user.user_id, user.role)
-        ),
+        "can_manage": (user is not None and shares.can_manage(tmpl, user.user_id, user.role)),
         # The admin view is a work queue, not a library: it can hand the
         # template over or bin it, and nothing else.
         "can_apply": user is not None and user.role != "admin",
@@ -146,8 +144,7 @@ def _serialize_full(
         for rtype, entries in resources.items()
     }
     result["included_types"] = [
-        {"resource_type": rtype, "count": len(entries)}
-        for rtype, entries in resources.items()
+        {"resource_type": rtype, "count": len(entries)} for rtype, entries in resources.items()
     ]
     return result
 
@@ -158,6 +155,7 @@ def _get_tenant_name(tenant_id: Optional[int]) -> Optional[str]:
         return None
     from db.database import get_session
     from db.models import TenantConfig
+
     with get_session() as session:
         t = session.get(TenantConfig, tenant_id)
         return t.name if t else None
@@ -180,7 +178,9 @@ def _get_import_client(tenant_id: int):
             raise HTTPException(status_code=404, detail="Tenant not found")
         tenant_name = tenant.name
         client_id = tenant.client_id
-        client_secret = decrypt_secret(tenant.client_secret_enc) if tenant.client_secret_enc else None
+        client_secret = (
+            decrypt_secret(tenant.client_secret_enc) if tenant.client_secret_enc else None
+        )
         govcloud = tenant.govcloud
         gov_tier = tenant.gov_cloud_tier
         oneapi_base_url = tenant.oneapi_base_url
@@ -189,7 +189,9 @@ def _get_import_client(tenant_id: int):
     if not client_secret:
         raise HTTPException(status_code=503, detail="Tenant credentials not configured")
 
-    auth = ZscalerAuth(zidentity_base_url, client_id, client_secret, govcloud=govcloud, gov_tier=gov_tier)
+    auth = ZscalerAuth(
+        zidentity_base_url, client_id, client_secret, govcloud=govcloud, gov_tier=gov_tier
+    )
     client = ZIAClient(auth, oneapi_base_url)
     return client, tenant_name
 
@@ -197,6 +199,7 @@ def _get_import_client(tenant_id: int):
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
 
 @router.get("")
 def list_templates(user: AuthUser = Depends(require_auth)):
@@ -216,8 +219,7 @@ def list_templates(user: AuthUser = Depends(require_auth)):
         # Collect raw data while session is open; resolve tenant names afterwards
         # to avoid a nested get_session() call (SQLite write-lock rule).
         rows = [
-            _serialize(tmpl, user=user, share_count=counts.get(tmpl.id, 0))
-            for tmpl in templates
+            _serialize(tmpl, user=user, share_count=counts.get(tmpl.id, 0)) for tmpl in templates
         ]
         tenant_ids = [tmpl.source_tenant_id for tmpl in templates]
 
@@ -376,23 +378,25 @@ def create_template(
             tmpl_scope = tmpl.scope
 
         # Audit after session closes (SQLite write-lock rule)
-        pending_audit.append(dict(
-            product="ZIA",
-            operation="create_template",
-            action="CREATE",
-            status="SUCCESS",
-            resource_type="zia_template",
-            resource_id=str(tmpl_id),
-            resource_name=tmpl_name,
-            details={
-                "source_tenant_id": req.source_tenant_id,
-                "source_snapshot_id": req.snapshot_id,
-                "resource_count": tmpl_resource_count,
-                "stripped_types": tmpl_stripped_types,
-                "scope": tmpl_scope,
-                "visibility": req.visibility,
-            },
-        ))
+        pending_audit.append(
+            dict(
+                product="ZIA",
+                operation="create_template",
+                action="CREATE",
+                status="SUCCESS",
+                resource_type="zia_template",
+                resource_id=str(tmpl_id),
+                resource_name=tmpl_name,
+                details={
+                    "source_tenant_id": req.source_tenant_id,
+                    "source_snapshot_id": req.snapshot_id,
+                    "resource_count": tmpl_resource_count,
+                    "stripped_types": tmpl_stripped_types,
+                    "scope": tmpl_scope,
+                    "visibility": req.visibility,
+                },
+            )
+        )
 
     except ValueError as exc:
         err_str = str(exc)
@@ -412,6 +416,7 @@ def create_template(
     # Re-read the created template to return full data
     from db.database import get_session as _gs
     from db.models import ZIATemplate
+
     with _gs() as session:
         tmpl = session.get(ZIATemplate, tmpl_id)
         if not tmpl:
@@ -499,9 +504,11 @@ def update_template(
                 )
 
             if req.name is not None and req.name != tmpl.name:
-                clash = session.query(ZIATemplate).filter(
-                    ZIATemplate.name == req.name, ZIATemplate.id != template_id
-                ).first()
+                clash = (
+                    session.query(ZIATemplate)
+                    .filter(ZIATemplate.name == req.name, ZIATemplate.id != template_id)
+                    .first()
+                )
                 if clash is not None:
                     owner = clash.owner_username
                     suffix = f" (owned by {owner})" if owner else ""
@@ -603,16 +610,18 @@ def delete_template(
             tmpl_owner = tmpl.owner_username
             _delete(template_id, session)
 
-        pending_audit.append(dict(
-            product="ZIA",
-            operation="delete_template",
-            action="DELETE",
-            status="SUCCESS",
-            resource_type="zia_template",
-            resource_id=str(template_id),
-            resource_name=tmpl_name,
-            details={"owner": tmpl_owner},
-        ))
+        pending_audit.append(
+            dict(
+                product="ZIA",
+                operation="delete_template",
+                action="DELETE",
+                status="SUCCESS",
+                resource_type="zia_template",
+                resource_id=str(template_id),
+                resource_name=tmpl_name,
+                details={"owner": tmpl_owner},
+            )
+        )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
@@ -623,6 +632,7 @@ def delete_template(
 # ---------------------------------------------------------------------------
 # Sharing
 # ---------------------------------------------------------------------------
+
 
 def _load_manageable(template_id: int, user: AuthUser, session):
     """Fetch a template the caller is allowed to re-share, or raise.
@@ -697,19 +707,21 @@ def add_template_shares(
             tmpl_name = tmpl.name
 
         if created:
-            pending_audit.append(dict(
-                product="ZIA",
-                operation="share_template",
-                action="UPDATE",
-                status="SUCCESS",
-                resource_type="zia_template",
-                resource_id=str(template_id),
-                resource_name=tmpl_name,
-                details={
-                    "granted_user_ids": [c["user_id"] for c in created if c["user_id"]],
-                    "granted_group_ids": [c["group_id"] for c in created if c["group_id"]],
-                },
-            ))
+            pending_audit.append(
+                dict(
+                    product="ZIA",
+                    operation="share_template",
+                    action="UPDATE",
+                    status="SUCCESS",
+                    resource_type="zia_template",
+                    resource_id=str(template_id),
+                    resource_name=tmpl_name,
+                    details={
+                        "granted_user_ids": [c["user_id"] for c in created if c["user_id"]],
+                        "granted_group_ids": [c["group_id"] for c in created if c["group_id"]],
+                    },
+                )
+            )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
@@ -739,19 +751,21 @@ def remove_template_share(
             tmpl.updated_at = datetime.utcnow()
             tmpl_name = tmpl.name
 
-        pending_audit.append(dict(
-            product="ZIA",
-            operation="unshare_template",
-            action="UPDATE",
-            status="SUCCESS",
-            resource_type="zia_template",
-            resource_id=str(template_id),
-            resource_name=tmpl_name,
-            details={
-                "revoked_user_id": removed["user_id"],
-                "revoked_group_id": removed["group_id"],
-            },
-        ))
+        pending_audit.append(
+            dict(
+                product="ZIA",
+                operation="unshare_template",
+                action="UPDATE",
+                status="SUCCESS",
+                resource_type="zia_template",
+                resource_id=str(template_id),
+                resource_name=tmpl_name,
+                details={
+                    "revoked_user_id": removed["user_id"],
+                    "revoked_group_id": removed["group_id"],
+                },
+            )
+        )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
@@ -763,6 +777,7 @@ def remove_template_share(
 # Apply template handler — registered in tenants.py at
 # POST /api/v1/tenants/{tenant_id}/templates/apply (spec section 9.2)
 # ---------------------------------------------------------------------------
+
 
 def apply_template_to_tenant(
     tenant_id: int,
@@ -818,40 +833,52 @@ def apply_template_to_tenant(
         # None for a full template: it spans nearly every type anyway, and a wipe
         # — which only full templates can request — deletes across types its
         # snapshot never named.
-        scoped_types = (
-            sorted(snap_resources.keys()) if tmpl_scope == "scoped" else None
-        )
+        scoped_types = sorted(snap_resources.keys()) if tmpl_scope == "scoped" else None
 
         wipe_done = [0]
 
         def on_import_progress(resource_type: str, done: int, total: int):
-            store.append(job_id, {
-                "type": "progress", "phase": "import",
-                "resource_type": resource_type, "done": done, "total": total,
-            })
+            store.append(
+                job_id,
+                {
+                    "type": "progress",
+                    "phase": "import",
+                    "resource_type": resource_type,
+                    "done": done,
+                    "total": total,
+                },
+            )
 
         def on_wipe_progress(resource_type: str, record):
             wipe_done[0] += 1
-            store.append(job_id, {
-                "type": "progress", "phase": "wipe",
-                "resource_type": resource_type,
-                "name": record.name,
-                "status": record.status,
-                "done": wipe_done[0],
-            })
+            store.append(
+                job_id,
+                {
+                    "type": "progress",
+                    "phase": "wipe",
+                    "resource_type": resource_type,
+                    "name": record.name,
+                    "status": record.status,
+                    "done": wipe_done[0],
+                },
+            )
 
         push_totals: dict = {}
 
         def on_push_progress(_pass_num: int, resource_type: str, record):
             push_totals.setdefault(resource_type, {"done": 0})
             push_totals[resource_type]["done"] += 1
-            store.append(job_id, {
-                "type": "progress", "phase": "push",
-                "resource_type": resource_type,
-                "name": record.name,
-                "status": record.status,
-                "done": push_totals[resource_type]["done"],
-            })
+            store.append(
+                job_id,
+                {
+                    "type": "progress",
+                    "phase": "push",
+                    "resource_type": resource_type,
+                    "name": record.name,
+                    "status": record.status,
+                    "done": push_totals[resource_type]["done"],
+                },
+            )
 
         stop_fn = lambda: store.is_cancel_requested(job_id)
 
@@ -867,9 +894,13 @@ def apply_template_to_tenant(
                     )
                     wiped = sum(1 for r in wipe_records if r.is_deleted)
                     wipe_failed_items = [
-                        {"resource_type": r.resource_type, "name": r.name,
-                         "reason": r.status[len("failed:"):]}
-                        for r in wipe_records if r.is_failed
+                        {
+                            "resource_type": r.resource_type,
+                            "name": r.name,
+                            "reason": r.status[len("failed:") :],
+                        }
+                        for r in wipe_records
+                        if r.is_failed
                     ]
                 else:
                     wipe_records = []
@@ -903,6 +934,7 @@ def apply_template_to_tenant(
                 # _mark_deleted takes the same list, so types that were not
                 # re-read are not swept as stale.
                 from services.zia_import_service import ZIAImportService
+
                 ZIAImportService(client, tenant_id=tenant_id).run(
                     progress_callback=on_import_progress,
                     resource_types=scoped_types,
@@ -911,30 +943,34 @@ def apply_template_to_tenant(
             except _PushCancelled as exc:
                 rollback_records = service.rollback_pushed(exc.pushed_records)
                 rolled_back = sum(
-                    1 for r in rollback_records
+                    1
+                    for r in rollback_records
                     if r.status in ("rollback_deleted", "rollback_restored")
                 )
                 rollback_failed = sum(
                     1 for r in rollback_records if r.status.startswith("rollback_failed")
                 )
-                store.complete(job_id, {
-                    "cancelled": True,
-                    "rolled_back": rolled_back,
-                    "rollback_failed": rollback_failed,
-                })
+                store.complete(
+                    job_id,
+                    {
+                        "cancelled": True,
+                        "rolled_back": rolled_back,
+                        "rollback_failed": rollback_failed,
+                    },
+                )
                 return
 
             created = sum(1 for r in push_records if r.is_created)
             updated = sum(1 for r in push_records if r.is_updated)
             push_failed_items = [
-                {"resource_type": r.resource_type, "name": r.name,
-                 "reason": r.failure_reason}
-                for r in push_records if r.is_failed
+                {"resource_type": r.resource_type, "name": r.name, "reason": r.failure_reason}
+                for r in push_records
+                if r.is_failed
             ]
             warnings = [
-                {"resource_type": r.resource_type, "name": r.name,
-                 "warnings": r.warnings}
-                for r in push_records if r.warnings
+                {"resource_type": r.resource_type, "name": r.name, "warnings": r.warnings}
+                for r in push_records
+                if r.warnings
             ]
             failed_items = wipe_failed_items + push_failed_items
             total_failed = len(failed_items)
@@ -948,20 +984,32 @@ def apply_template_to_tenant(
             wipe_audit: list = []
             for r in wipe_records:
                 if r.is_deleted:
-                    wipe_audit.append(dict(
-                        product="ZIA", operation="apply_template", action="DELETE",
-                        status="success", tenant_id=tenant_id,
-                        resource_type=r.resource_type, resource_name=r.name,
-                        details=tmpl_ctx,
-                    ))
+                    wipe_audit.append(
+                        dict(
+                            product="ZIA",
+                            operation="apply_template",
+                            action="DELETE",
+                            status="success",
+                            tenant_id=tenant_id,
+                            resource_type=r.resource_type,
+                            resource_name=r.name,
+                            details=tmpl_ctx,
+                        )
+                    )
                 elif r.is_failed:
-                    wipe_audit.append(dict(
-                        product="ZIA", operation="apply_template", action="DELETE",
-                        status="failure", tenant_id=tenant_id,
-                        resource_type=r.resource_type, resource_name=r.name,
-                        details=tmpl_ctx,
-                        error_message=r.status[len("failed:"):],
-                    ))
+                    wipe_audit.append(
+                        dict(
+                            product="ZIA",
+                            operation="apply_template",
+                            action="DELETE",
+                            status="failure",
+                            tenant_id=tenant_id,
+                            resource_type=r.resource_type,
+                            resource_name=r.name,
+                            details=tmpl_ctx,
+                            error_message=r.status[len("failed:") :],
+                        )
+                    )
             audit_service.log_many(wipe_audit)
 
             push_audit: list = []
@@ -970,22 +1018,32 @@ def apply_template_to_tenant(
                     d = dict(tmpl_ctx)
                     if r.warnings:
                         d["warnings"] = r.warnings
-                    push_audit.append(dict(
-                        product="ZIA", operation="apply_template",
-                        action="CREATE" if r.is_created else "UPDATE",
-                        status="success", tenant_id=tenant_id,
-                        resource_type=r.resource_type, resource_name=r.name,
-                        details=d,
-                    ))
+                    push_audit.append(
+                        dict(
+                            product="ZIA",
+                            operation="apply_template",
+                            action="CREATE" if r.is_created else "UPDATE",
+                            status="success",
+                            tenant_id=tenant_id,
+                            resource_type=r.resource_type,
+                            resource_name=r.name,
+                            details=d,
+                        )
+                    )
                 elif r.is_failed:
-                    push_audit.append(dict(
-                        product="ZIA", operation="apply_template",
-                        action="CREATE",
-                        status="failure", tenant_id=tenant_id,
-                        resource_type=r.resource_type, resource_name=r.name,
-                        details=tmpl_ctx,
-                        error_message=r.failure_reason,
-                    ))
+                    push_audit.append(
+                        dict(
+                            product="ZIA",
+                            operation="apply_template",
+                            action="CREATE",
+                            status="failure",
+                            tenant_id=tenant_id,
+                            resource_type=r.resource_type,
+                            resource_name=r.name,
+                            details=tmpl_ctx,
+                            error_message=r.failure_reason,
+                        )
+                    )
             audit_service.log_many(push_audit)
 
             # Summary entry
@@ -1008,17 +1066,20 @@ def apply_template_to_tenant(
                 },
             )
 
-            store.complete(job_id, {
-                "status": status,
-                "template_name": tmpl_name,
-                "mode": "wipe" if req.wipe_mode else "delta",
-                "wiped": wiped,
-                "created": created,
-                "updated": updated,
-                "failed": total_failed,
-                "failed_items": failed_items,
-                "warnings": warnings,
-            })
+            store.complete(
+                job_id,
+                {
+                    "status": status,
+                    "template_name": tmpl_name,
+                    "mode": "wipe" if req.wipe_mode else "delta",
+                    "wiped": wiped,
+                    "created": created,
+                    "updated": updated,
+                    "failed": total_failed,
+                    "failed_items": failed_items,
+                    "warnings": warnings,
+                },
+            )
         except Exception as exc:
             # The job only ever surfaces str(exc); without this the container log
             # has nothing to work back from.

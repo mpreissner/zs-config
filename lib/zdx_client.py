@@ -102,8 +102,7 @@ class ZDXClient:
                     datapoints = m.get("datapoints") or []
                     # Most recent non-negative value
                     value = next(
-                        (dp["value"] for dp in reversed(datapoints)
-                         if dp.get("value", -1) >= 0),
+                        (dp["value"] for dp in reversed(datapoints) if dp.get("value", -1) >= 0),
                         None,
                     )
                     flat.append({"metric": metric_name, "value": value, "unit": unit})
@@ -175,19 +174,13 @@ class ZDXClient:
         kwargs: dict = {"session_name": session_name}
         if app_id:
             kwargs["app_id"] = app_id
-        result, resp, err = self._sdk.zdx.troubleshooting.start_deeptrace(
-            device_id, **kwargs
-        )
+        result, resp, err = self._sdk.zdx.troubleshooting.start_deeptrace(device_id, **kwargs)
         return _to_dict(_unwrap(result, resp, err))
 
     def get_deep_trace(self, device_id: str, trace_id: str) -> Dict:
-        result, resp, err = self._sdk.zdx.troubleshooting.get_deeptrace(
-            device_id, trace_id
-        )
+        result, resp, err = self._sdk.zdx.troubleshooting.get_deeptrace(device_id, trace_id)
         return _to_dict(_unwrap(result, resp, err))
 
     def stop_deep_trace(self, device_id: str, trace_id: str) -> None:
-        result, resp, err = self._sdk.zdx.troubleshooting.delete_deeptrace(
-            device_id, trace_id
-        )
+        result, resp, err = self._sdk.zdx.troubleshooting.delete_deeptrace(device_id, trace_id)
         _unwrap(result, resp, err)

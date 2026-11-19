@@ -91,6 +91,7 @@ def zpa_menu():
 # Certificate Management
 # ------------------------------------------------------------------
 
+
 def cert_menu(client, tenant):
     while True:
         render_banner()
@@ -118,6 +119,7 @@ def cert_menu(client, tenant):
 
 def _list_certificates(client, tenant):
     from services.zpa_service import ZPAService
+
     service = ZPAService(client, tenant_id=tenant.id)
     with console.status("Fetching certificates..."):
         try:
@@ -147,12 +149,15 @@ def _list_certificates(client, tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
 def _rotate_certificate(client, tenant):
     console.print("\n[bold]Rotate Certificate for Domain[/bold]")
-    console.print("[dim]This will upload a new cert and update all matching apps and PRA portals.[/dim]\n")
+    console.print(
+        "[dim]This will upload a new cert and update all matching apps and PRA portals.[/dim]\n"
+    )
 
     domain = questionary.text("Domain (e.g. *.example.com):").ask()
     if not domain:
@@ -164,9 +169,7 @@ def _rotate_certificate(client, tenant):
     if not all([cert_path, key_path]):
         return
 
-    confirmed = questionary.confirm(
-        f"Rotate certificate for '{domain}'?", default=True
-    ).ask()
+    confirmed = questionary.confirm(f"Rotate certificate for '{domain}'?", default=True).ask()
     if not confirmed:
         return
 
@@ -182,7 +185,9 @@ def _rotate_certificate(client, tenant):
             return
 
     console.print(f"\n[green]✓ Certificate rotation complete[/green]")
-    console.print(f"  New cert:    [bold]{result['cert_name']}[/bold] (ID: {result['new_cert_id']})")
+    console.print(
+        f"  New cert:    [bold]{result['cert_name']}[/bold] (ID: {result['new_cert_id']})"
+    )
     console.print(f"  Apps updated:    {result['apps_updated']}")
     console.print(f"  Portals updated: {result['portals_updated']}")
     console.print(f"  Old certs deleted: {result['certs_deleted']}")
@@ -200,8 +205,10 @@ def _rotate_certificate(client, tenant):
 # Config Import
 # ------------------------------------------------------------------
 
+
 def _reset_na_resources(client, tenant):
     from services.zpa_import_service import ZPAImportService
+
     service = ZPAImportService(client, tenant_id=tenant.id)
     disabled = service._get_disabled_resource_types()
     if not disabled:
@@ -209,7 +216,9 @@ def _reset_na_resources(client, tenant):
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
     console.print(f"\n[yellow]N/A resource types:[/yellow] {', '.join(disabled)}")
-    confirmed = questionary.confirm("Clear the N/A list? They will be retried on the next import.", default=False).ask()
+    confirmed = questionary.confirm(
+        "Clear the N/A list? They will be retried on the next import.", default=False
+    ).ask()
     if confirmed:
         service.clear_disabled_resource_types()
         console.print("[green]✓ N/A list cleared.[/green]")
@@ -247,8 +256,8 @@ def _import_config(client, tenant):
         sync = service.run(progress_callback=on_progress)
 
     # Summary
-    status_style = "green" if sync.status == "SUCCESS" else (
-        "yellow" if sync.status == "PARTIAL" else "red"
+    status_style = (
+        "green" if sync.status == "SUCCESS" else ("yellow" if sync.status == "PARTIAL" else "red")
     )
     console.print(f"\n[{status_style}]■ Sync {sync.status}[/{status_style}]")
     console.print(f"  Resources synced:  {sync.resources_synced}")
@@ -266,6 +275,7 @@ def _import_config(client, tenant):
 # ------------------------------------------------------------------
 # Application Segments
 # ------------------------------------------------------------------
+
 
 def app_segments_menu(client, tenant):
     while True:
@@ -381,6 +391,7 @@ def _list_segments(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -406,9 +417,7 @@ def _search_by_domain(tenant):
                 "raw_config": r.raw_config or {},
             }
             for r in resources
-            if search in " ".join(
-                (r.raw_config or {}).get("domain_names") or []
-            ).lower()
+            if search in " ".join((r.raw_config or {}).get("domain_names") or []).lower()
         ]
 
     if not rows:
@@ -433,6 +442,7 @@ def _search_by_domain(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -566,7 +576,10 @@ def _update_segment_enabled_in_db(tenant_id: int, zpa_id: str, enabled: bool) ->
 def _bulk_create(client, tenant):
     from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn
     from services.zpa_segment_service import (
-        parse_csv, dry_run, bulk_create, create_missing_groups,
+        parse_csv,
+        dry_run,
+        bulk_create,
+        create_missing_groups,
     )
 
     console.print("\n[bold]Bulk Create Application Segments from CSV[/bold]\n")
@@ -589,6 +602,7 @@ def _bulk_create(client, tenant):
             return
         # Re-parse skipping invalid: re-read without raising
         import csv as _csv
+
         rows = []
         with open(csv_path, newline="", encoding="utf-8-sig") as fh:
             for row in _csv.DictReader(fh):
@@ -671,8 +685,7 @@ def _bulk_create(client, tenant):
                             missing["server_group"].append(sg)
 
         fix = questionary.confirm(
-            f"Fix {len(missing_dep_rows)} rows with missing dependencies "
-            f"(create missing groups)?",
+            f"Fix {len(missing_dep_rows)} rows with missing dependencies (create missing groups)?",
             default=True,
         ).ask()
         if fix:
@@ -690,7 +703,11 @@ def _bulk_create(client, tenant):
             console.print("\n[dim]Re-validating...[/dim]")
             annotated = dry_run(tenant.id, rows)
             for row in annotated:
-                tag = "[green]READY[/green]" if row["_status"] == "READY" else f"[yellow]{row['_status']}[/yellow]"
+                tag = (
+                    "[green]READY[/green]"
+                    if row["_status"] == "READY"
+                    else f"[yellow]{row['_status']}[/yellow]"
+                )
                 console.print(f"  {tag}  {row['name']}")
 
     # 5. Count ready rows and confirm
@@ -703,8 +720,7 @@ def _bulk_create(client, tenant):
         return
 
     confirmed = questionary.confirm(
-        f"\nCreate {len(ready)} segment(s)? "
-        f"({len(not_ready)} will be skipped)",
+        f"\nCreate {len(ready)} segment(s)? ({len(not_ready)} will be skipped)",
         default=True,
     ).ask()
     if not confirmed:
@@ -750,6 +766,7 @@ def _bulk_create(client, tenant):
     # 9. Re-import application segments into local DB
     if result.created:
         from services.zpa_import_service import ZPAImportService
+
         with console.status(f"Syncing {result.created} new segment(s) to local DB..."):
             ZPAImportService(client, tenant.id).run(resource_types=["application"])
         console.print("[green]✓ Local DB updated.[/green]")
@@ -769,23 +786,48 @@ def _csv_field_reference():
     t.add_column("Accepted values / format")
 
     rows = [
-        ("name",                          "✓", "",              "Any string — must be unique within the tenant"),
-        ("domain_names",                  "✓", "",              "Semicolon-separated FQDNs or wildcards\n  e.g. app.example.com;*.internal.example.com"),
-        ("segment_group",                 "✓", "",              "Exact name of an existing Segment Group\n  (must be in local DB — run Import Config first)"),
-        ("server_groups",                 "✓", "",              "Semicolon-separated Segment Group names\n  e.g. SG-East;SG-West"),
-        ("tcp_ports",                     "if no udp", "",      "Semicolon-separated ports or ranges\n  e.g. 443  or  80;443;8080-8090"),
-        ("udp_ports",                     "if no tcp", "",      "Same format as tcp_ports\n  e.g. 53;123"),
-        ("description",                   "",  "(blank)",       "Free text"),
-        ("enabled",                       "",  "true",          "true / false"),
-        ("app_type",                      "",  "(blank)",       "Leave blank for standard segments (ZPA Client Connector access)\n  BROWSER_ACCESS  |  SIPA  |  INSPECT  |  SECURE_REMOTE_ACCESS\n  Only applies to clientless/browser-based segment types"),
-        ("bypass_type",                   "",  "NEVER",         "NEVER  |  ALWAYS  |  ON_NET"),
-        ("double_encrypt",                "",  "false",         "true / false"),
-        ("health_check_type",             "",  "DEFAULT",       "DEFAULT  |  NONE"),
-        ("health_reporting",              "",  "ON_ACCESS",     "NONE  |  ON_ACCESS  |  CONTINUOUS"),
-        ("icmp_access_type",              "",  "NONE",          "NONE  |  PING  |  PING_TRACEROUTING"),
-        ("passive_health_enabled",        "",  "true",          "true / false"),
-        ("is_cname_enabled",              "",  "true",          "true / false"),
-        ("select_connector_close_to_app", "",  "false",         "true / false"),
+        ("name", "✓", "", "Any string — must be unique within the tenant"),
+        (
+            "domain_names",
+            "✓",
+            "",
+            "Semicolon-separated FQDNs or wildcards\n  e.g. app.example.com;*.internal.example.com",
+        ),
+        (
+            "segment_group",
+            "✓",
+            "",
+            "Exact name of an existing Segment Group\n  (must be in local DB — run Import Config first)",
+        ),
+        (
+            "server_groups",
+            "✓",
+            "",
+            "Semicolon-separated Segment Group names\n  e.g. SG-East;SG-West",
+        ),
+        (
+            "tcp_ports",
+            "if no udp",
+            "",
+            "Semicolon-separated ports or ranges\n  e.g. 443  or  80;443;8080-8090",
+        ),
+        ("udp_ports", "if no tcp", "", "Same format as tcp_ports\n  e.g. 53;123"),
+        ("description", "", "(blank)", "Free text"),
+        ("enabled", "", "true", "true / false"),
+        (
+            "app_type",
+            "",
+            "(blank)",
+            "Leave blank for standard segments (ZPA Client Connector access)\n  BROWSER_ACCESS  |  SIPA  |  INSPECT  |  SECURE_REMOTE_ACCESS\n  Only applies to clientless/browser-based segment types",
+        ),
+        ("bypass_type", "", "NEVER", "NEVER  |  ALWAYS  |  ON_NET"),
+        ("double_encrypt", "", "false", "true / false"),
+        ("health_check_type", "", "DEFAULT", "DEFAULT  |  NONE"),
+        ("health_reporting", "", "ON_ACCESS", "NONE  |  ON_ACCESS  |  CONTINUOUS"),
+        ("icmp_access_type", "", "NONE", "NONE  |  PING  |  PING_TRACEROUTING"),
+        ("passive_health_enabled", "", "true", "true / false"),
+        ("is_cname_enabled", "", "true", "true / false"),
+        ("select_connector_close_to_app", "", "false", "true / false"),
     ]
 
     for row in rows:
@@ -809,14 +851,13 @@ def _export_template():
     from services.zpa_segment_service import CSV_FIELDNAMES, TEMPLATE_ROWS
 
     default_path = str(DEFAULT_WORK_DIR / "app_segment_template.csv")
-    out_path = questionary.path(
-        "Output path:", default=default_path
-    ).ask()
+    out_path = questionary.path("Output path:", default=default_path).ask()
     if not out_path:
         return
     out_path = os.path.expanduser(out_path)
 
     import csv as _csv
+
     with open(out_path, "w", newline="", encoding="utf-8") as fh:
         writer = _csv.DictWriter(fh, fieldnames=CSV_FIELDNAMES)
         writer.writeheader()
@@ -829,6 +870,7 @@ def _export_template():
 # ------------------------------------------------------------------
 # Privileged Remote Access
 # ------------------------------------------------------------------
+
 
 def privileged_access_menu(client, tenant):
     while True:
@@ -854,6 +896,7 @@ def privileged_access_menu(client, tenant):
 
 # PRA Portals
 # ------------------------------------------------------------------
+
 
 def pra_portals_menu(client, tenant):
     while True:
@@ -911,8 +954,7 @@ def _list_pra_portals(tenant):
 
     if not rows:
         console.print(
-            "[yellow]No PRA Portals in local DB. "
-            "Run [bold]Import Config[/bold] first.[/yellow]"
+            "[yellow]No PRA Portals in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
@@ -943,6 +985,7 @@ def _list_pra_portals(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -1003,6 +1046,7 @@ def _search_pra_by_domain(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -1021,9 +1065,7 @@ def _create_pra_portal(client, tenant):
     if not domain:
         return
 
-    description = questionary.text(
-        "Description (optional — blank to skip):"
-    ).ask() or ""
+    description = questionary.text("Description (optional — blank to skip):").ask() or ""
 
     # 2. Certificate selection
     with get_session() as session:
@@ -1033,10 +1075,7 @@ def _create_pra_portal(client, tenant):
             .order_by(ZPAResource.name)
             .all()
         )
-        certs = [
-            {"id": c.zpa_id, "name": c.name or c.zpa_id}
-            for c in cert_rows
-        ]
+        certs = [{"id": c.zpa_id, "name": c.name or c.zpa_id} for c in cert_rows]
 
     if not certs:
         console.print(
@@ -1047,10 +1086,7 @@ def _create_pra_portal(client, tenant):
 
     cert_choice = questionary.select(
         "Certificate:",
-        choices=[
-            questionary.Choice(f"{c['name']}  (ID: {c['id']})", value=c)
-            for c in certs
-        ],
+        choices=[questionary.Choice(f"{c['name']}  (ID: {c['id']})", value=c) for c in certs],
         instruction="(Ctrl+C to cancel)",
     ).ask()
     if cert_choice is None:
@@ -1061,9 +1097,7 @@ def _create_pra_portal(client, tenant):
     if enabled is None:
         return
 
-    notif_enabled = questionary.confirm(
-        "Enable user notification?", default=False
-    ).ask()
+    notif_enabled = questionary.confirm("Enable user notification?", default=False).ask()
     if notif_enabled is None:
         return
 
@@ -1072,9 +1106,7 @@ def _create_pra_portal(client, tenant):
         user_notification = questionary.text("Notification text/HTML:").ask() or ""
 
     # 4. Confirm
-    confirmed = questionary.confirm(
-        f"Create portal '{name}'?", default=True
-    ).ask()
+    confirmed = questionary.confirm(f"Create portal '{name}'?", default=True).ask()
     if not confirmed:
         return
 
@@ -1153,8 +1185,7 @@ def _toggle_pra_portal(client, tenant):
 
     if not rows:
         console.print(
-            "[yellow]No PRA Portals in local DB. "
-            "Run [bold]Import Config[/bold] first.[/yellow]"
+            "[yellow]No PRA Portals in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
@@ -1282,8 +1313,7 @@ def _delete_pra_portal(client, tenant):
 
     if not rows:
         console.print(
-            "[yellow]No PRA Portals in local DB. "
-            "Run [bold]Import Config[/bold] first.[/yellow]"
+            "[yellow]No PRA Portals in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
@@ -1409,6 +1439,7 @@ def _delete_certificate(client, tenant):
 # Connectors
 # ------------------------------------------------------------------
 
+
 def connectors_menu(client, tenant):
     while True:
         render_banner()
@@ -1474,8 +1505,7 @@ def _list_connectors(tenant):
 
     if not rows:
         console.print(
-            "[yellow]No App Connectors in local DB. "
-            "Run [bold]Import Config[/bold] first.[/yellow]"
+            "[yellow]No App Connectors in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
@@ -1505,6 +1535,7 @@ def _list_connectors(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -1562,6 +1593,7 @@ def _search_connectors(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -1589,8 +1621,7 @@ def _toggle_connector(client, tenant):
 
     if not rows:
         console.print(
-            "[yellow]No App Connectors in local DB. "
-            "Run [bold]Import Config[/bold] first.[/yellow]"
+            "[yellow]No App Connectors in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
@@ -1701,8 +1732,7 @@ def _rename_connector(client, tenant):
 
     if not rows:
         console.print(
-            "[yellow]No App Connectors in local DB. "
-            "Run [bold]Import Config[/bold] first.[/yellow]"
+            "[yellow]No App Connectors in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
@@ -1726,9 +1756,7 @@ def _rename_connector(client, tenant):
     if not new_name or new_name == old_name:
         return
 
-    confirmed = questionary.confirm(
-        f"Rename '{old_name}' → '{new_name}'?", default=True
-    ).ask()
+    confirmed = questionary.confirm(f"Rename '{old_name}' → '{new_name}'?", default=True).ask()
     if not confirmed:
         return
 
@@ -1808,8 +1836,7 @@ def _delete_connector(client, tenant):
 
     if not rows:
         console.print(
-            "[yellow]No App Connectors in local DB. "
-            "Run [bold]Import Config[/bold] first.[/yellow]"
+            "[yellow]No App Connectors in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
@@ -1902,6 +1929,7 @@ def _update_connector_enabled_in_db(tenant_id: int, zpa_id: str, enabled: bool) 
 # Connector Groups
 # ------------------------------------------------------------------
 
+
 def _list_connector_groups(tenant):
     from db.database import get_session
     from db.models import ZPAResource
@@ -1954,6 +1982,7 @@ def _list_connector_groups(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -2000,6 +2029,7 @@ def _search_connector_groups(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -2011,13 +2041,9 @@ def _create_connector_group(client, tenant):
     if not name:
         return
 
-    description = questionary.text(
-        "Description (optional — blank to skip):"
-    ).ask() or ""
+    description = questionary.text("Description (optional — blank to skip):").ask() or ""
 
-    confirmed = questionary.confirm(
-        f"Create connector group '{name}'?", default=True
-    ).ask()
+    confirmed = questionary.confirm(f"Create connector group '{name}'?", default=True).ask()
     if not confirmed:
         return
 
@@ -2077,7 +2103,7 @@ def _toggle_connector_group(client, tenant):
                 "name": r.name,
                 "zpa_id": r.zpa_id,
                 "location": (r.raw_config or {}).get("location")
-                    or (r.raw_config or {}).get("city_country", ""),
+                or (r.raw_config or {}).get("city_country", ""),
                 "enabled": (r.raw_config or {}).get("enabled", True),
             }
             for r in resources
@@ -2298,6 +2324,7 @@ def _update_connector_group_enabled_in_db(tenant_id: int, zpa_id: str, enabled: 
 # App Segment Groups
 # ------------------------------------------------------------------
 
+
 def segment_groups_menu(client, tenant):
     while True:
         render_banner()
@@ -2338,8 +2365,7 @@ def _list_segment_groups(tenant):
 
     if not rows:
         console.print(
-            "[yellow]No Segment Groups in local DB. "
-            "Run [bold]Import Config[/bold] first.[/yellow]"
+            "[yellow]No Segment Groups in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
@@ -2360,6 +2386,7 @@ def _list_segment_groups(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -2408,12 +2435,14 @@ def _search_segment_groups(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
 # ------------------------------------------------------------------
 # PRA Consoles
 # ------------------------------------------------------------------
+
 
 def pra_consoles_menu(client, tenant):
     while True:
@@ -2461,8 +2490,7 @@ def _list_pra_consoles(tenant):
 
     if not rows:
         console.print(
-            "[yellow]No PRA Consoles in local DB. "
-            "Run [bold]Import Config[/bold] first.[/yellow]"
+            "[yellow]No PRA Consoles in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
@@ -2481,6 +2509,7 @@ def _list_pra_consoles(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -2527,6 +2556,7 @@ def _search_pra_consoles(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -2553,8 +2583,7 @@ def _toggle_pra_console(client, tenant):
 
     if not rows:
         console.print(
-            "[yellow]No PRA Consoles in local DB. "
-            "Run [bold]Import Config[/bold] first.[/yellow]"
+            "[yellow]No PRA Consoles in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
@@ -2653,25 +2682,18 @@ def _delete_pra_console(client, tenant):
             .order_by(ZPAResource.name)
             .all()
         )
-        rows = [
-            {"name": r.name, "zpa_id": r.zpa_id}
-            for r in resources
-        ]
+        rows = [{"name": r.name, "zpa_id": r.zpa_id} for r in resources]
 
     if not rows:
         console.print(
-            "[yellow]No PRA Consoles in local DB. "
-            "Run [bold]Import Config[/bold] first.[/yellow]"
+            "[yellow]No PRA Consoles in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
     item = questionary.select(
         "Select console to delete:",
-        choices=[
-            questionary.Choice(r["name"], value=r)
-            for r in rows
-        ],
+        choices=[questionary.Choice(r["name"], value=r) for r in rows],
         instruction="(Ctrl+C to cancel)",
     ).ask()
 
@@ -2729,6 +2751,7 @@ def _delete_pra_console(client, tenant):
 # ------------------------------------------------------------------
 # Access Policy
 # ------------------------------------------------------------------
+
 
 def access_policy_menu(client, tenant):
     while True:
@@ -2808,6 +2831,7 @@ def _list_access_policy_rules(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -2857,6 +2881,7 @@ def _search_access_policy_rules(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -3023,7 +3048,9 @@ def _export_policy_rules_to_csv(tenant):
                 scim_group_map[rec.zpa_id] = (idp_n, rec.name)
 
     if not rows:
-        console.print("[yellow]No access policy rules in local DB. Run Import Config first.[/yellow]")
+        console.print(
+            "[yellow]No access policy rules in local DB. Run Import Config first.[/yellow]"
+        )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
@@ -3036,30 +3063,33 @@ def _export_policy_rules_to_csv(tenant):
     out_path = os.path.expanduser(out_path)
 
     from services.zpa_policy_service import _decode_conditions
+
     csv_rows = []
     for r in rows:
         cfg = r["raw_config"]
         cond = _decode_conditions(cfg, scim_group_map=scim_group_map)
-        csv_rows.append({
-            "id":                r["zpa_id"] or cfg.get("id") or "",
-            "name":              r["name"],
-            "action":            cfg.get("action") or "ALLOW",
-            "description":       cfg.get("description") or "",
-            "rule_order":        cfg.get("rule_order") or "",
-            "app_groups":        cond["app_groups"],
-            "applications":      cond["applications"],
-            "saml_attributes":   cond["saml_attributes"],
-            "scim_attributes":   cond["scim_attributes"],
-            "scim_groups":       cond["scim_groups"],
-            "client_types":      cond["client_types"],
-            "machine_groups":    cond["machine_groups"],
-            "trusted_networks":  cond["trusted_networks"],
-            "platforms":         cond["platforms"],
-            "country_codes":     cond["country_codes"],
-            "idp_names":         cond["idp_names"],
-            "posture_profiles":  cond["posture_profiles"],
-            "risk_factor_types": cond["risk_factor_types"],
-        })
+        csv_rows.append(
+            {
+                "id": r["zpa_id"] or cfg.get("id") or "",
+                "name": r["name"],
+                "action": cfg.get("action") or "ALLOW",
+                "description": cfg.get("description") or "",
+                "rule_order": cfg.get("rule_order") or "",
+                "app_groups": cond["app_groups"],
+                "applications": cond["applications"],
+                "saml_attributes": cond["saml_attributes"],
+                "scim_attributes": cond["scim_attributes"],
+                "scim_groups": cond["scim_groups"],
+                "client_types": cond["client_types"],
+                "machine_groups": cond["machine_groups"],
+                "trusted_networks": cond["trusted_networks"],
+                "platforms": cond["platforms"],
+                "country_codes": cond["country_codes"],
+                "idp_names": cond["idp_names"],
+                "posture_profiles": cond["posture_profiles"],
+                "risk_factor_types": cond["risk_factor_types"],
+            }
+        )
 
     with open(out_path, "w", newline="", encoding="utf-8") as fh:
         writer = _csv.DictWriter(fh, fieldnames=CSV_FIELDNAMES)
@@ -3080,6 +3110,7 @@ def _export_policy_template():
     out_path = os.path.expanduser(out_path)
 
     import csv as _csv
+
     with open(out_path, "w", newline="", encoding="utf-8") as fh:
         writer = _csv.DictWriter(fh, fieldnames=CSV_FIELDNAMES)
         writer.writeheader()
@@ -3120,7 +3151,9 @@ def _bulk_create_policy_rules(client, tenant):
 
     for idx, row in enumerate(annotated, start=1):
         status = row.get("_status", "")
-        status_cell = "[green]READY[/green]" if status == "READY" else "[yellow]MISSING_DEP[/yellow]"
+        status_cell = (
+            "[green]READY[/green]" if status == "READY" else "[yellow]MISSING_DEP[/yellow]"
+        )
         dry_table.add_row(
             str(idx),
             row.get("name", ""),
@@ -3179,12 +3212,15 @@ def _bulk_create_policy_rules(client, tenant):
 
     if result.created:
         from services.zpa_import_service import ZPAImportService
+
         with console.status(f"Syncing {result.created} new rule(s) to local DB..."):
             sync_log = ZPAImportService(client, tenant.id).run(resource_types=["policy_access"])
         if sync_log and sync_log.status == "SUCCESS":
             console.print("[green]✓ Local DB updated.[/green]")
         elif sync_log and sync_log.status == "PARTIAL":
-            console.print("[yellow]⚠ Local DB partially updated — some resources may be stale.[/yellow]")
+            console.print(
+                "[yellow]⚠ Local DB partially updated — some resources may be stale.[/yellow]"
+            )
         else:
             console.print("[red]✗ Local DB sync failed — run Import Config to refresh.[/red]")
 
@@ -3220,9 +3256,9 @@ def _sync_policy_rules(client, tenant):
     dry_table.add_column("Detail")
 
     ACTION_STYLE = {
-        "UPDATE":      "[yellow]UPDATE[/yellow]",
-        "CREATE":      "[green]CREATE[/green]",
-        "SKIP":        "[dim]SKIP[/dim]",
+        "UPDATE": "[yellow]UPDATE[/yellow]",
+        "CREATE": "[green]CREATE[/green]",
+        "SKIP": "[dim]SKIP[/dim]",
         "MISSING_DEP": "[red]MISSING[/red]",
     }
 
@@ -3243,14 +3279,18 @@ def _sync_policy_rules(client, tenant):
         dry_table.add_row("[red]DELETE[/red]", item["name"], f"id {item['zpa_id']} not in CSV")
 
     if classification.reorder_needed:
-        total_rules = len([e for e in classification.csv_rows if e.get("zpa_id") or e["action"] == "CREATE"])
+        total_rules = len(
+            [e for e in classification.csv_rows if e.get("zpa_id") or e["action"] == "CREATE"]
+        )
         dry_table.add_row("[blue]REORDER[/blue]", f"({total_rules} rules)", "sequence will change")
 
     console.print(dry_table)
 
     n_missing = len([e for e in classification.csv_rows if e["action"] == "MISSING_DEP"])
     if n_missing:
-        console.print(f"\n[red]⚠ {n_missing} row(s) have unresolved dependencies and will be skipped.[/red]")
+        console.print(
+            f"\n[red]⚠ {n_missing} row(s) have unresolved dependencies and will be skipped.[/red]"
+        )
 
     # Warn on stale IDs
     for item in classification.csv_rows:
@@ -3317,12 +3357,15 @@ def _sync_policy_rules(client, tenant):
 
     if result.updated or result.created or result.deleted or result.reordered:
         from services.zpa_import_service import ZPAImportService
+
         with console.status("Syncing changes to local DB..."):
             sync_log = ZPAImportService(client, tenant.id).run(resource_types=["policy_access"])
         if sync_log and sync_log.status == "SUCCESS":
             console.print("[green]✓ Local DB updated.[/green]")
         elif sync_log and sync_log.status == "PARTIAL":
-            console.print("[yellow]⚠ Local DB partially updated — some resources may be stale.[/yellow]")
+            console.print(
+                "[yellow]⚠ Local DB partially updated — some resources may be stale.[/yellow]"
+            )
         else:
             console.print("[red]✗ Local DB sync failed — run Import Config to refresh.[/red]")
 
@@ -3360,10 +3403,8 @@ def _delete_access_rule(client, tenant):
 
     rule = questionary.select(
         "Select rule to delete:",
-        choices=[
-            questionary.Choice(f"{r['name']}  [{r['action']}]", value=r)
-            for r in rows
-        ] + [questionary.Separator(), questionary.Choice("← Cancel", value=None)],
+        choices=[questionary.Choice(f"{r['name']}  [{r['action']}]", value=r) for r in rows]
+        + [questionary.Separator(), questionary.Choice("← Cancel", value=None)],
         instruction="(Ctrl+C to cancel)",
     ).ask()
 
@@ -3425,6 +3466,7 @@ def _delete_access_rule(client, tenant):
 # Identity & Directory views
 # ------------------------------------------------------------------
 
+
 def _list_saml_attributes(tenant):
     from db.database import get_session
     from db.models import ZPAResource
@@ -3440,8 +3482,7 @@ def _list_saml_attributes(tenant):
 
     if not rows:
         console.print(
-            "[yellow]No SAML attributes in local DB. "
-            "Run [bold]Import Config[/bold] first.[/yellow]"
+            "[yellow]No SAML attributes in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
@@ -3459,6 +3500,7 @@ def _list_saml_attributes(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -3505,6 +3547,7 @@ def _list_scim_attributes(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -3530,8 +3573,7 @@ def _list_scim_groups(tenant):
 
     if not rows:
         console.print(
-            "[yellow]No SCIM groups in local DB. "
-            "Run [bold]Import Config[/bold] first.[/yellow]"
+            "[yellow]No SCIM groups in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
@@ -3548,6 +3590,7 @@ def _list_scim_groups(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -3557,21 +3600,21 @@ def _list_scim_groups(tenant):
 
 # Well-known ZPA client type identifiers and their display names
 _CLIENT_TYPES = [
-    ("zpn_client_type_zapp",              "Zscaler Client Connector"),
+    ("zpn_client_type_zapp", "Zscaler Client Connector"),
     ("zpn_client_type_browser_isolation", "Cloud Browser Isolation"),
-    ("zpn_client_type_exporter",          "Clientless (ZPA Connector Exporter)"),
-    ("zpn_client_type_ip_anchoring",      "ZIA Service Edges"),
-    ("zpn_client_type_edge_connector",    "Edge Connector"),
-    ("zpn_client_type_machine_tunnel",    "Machine Tunnel"),
-    ("zpn_client_type_slogger",           "ZPA LSS"),
+    ("zpn_client_type_exporter", "Clientless (ZPA Connector Exporter)"),
+    ("zpn_client_type_ip_anchoring", "ZIA Service Edges"),
+    ("zpn_client_type_edge_connector", "Edge Connector"),
+    ("zpn_client_type_machine_tunnel", "Machine Tunnel"),
+    ("zpn_client_type_slogger", "ZPA LSS"),
 ]
 
 _PLATFORM_DISPLAY = {
-    "ios":       "iOS",
-    "android":   "Android",
-    "mac_os":    "macOS",
-    "windows":   "Windows",
-    "linux":     "Linux",
+    "ios": "iOS",
+    "android": "Android",
+    "mac_os": "macOS",
+    "windows": "Windows",
+    "linux": "Linux",
     "chrome_os": "ChromeOS",
 }
 
@@ -3591,6 +3634,7 @@ def _export_scoping_reference_md(tenant):
 
     with console.status("Building scoping reference..."):
         with get_session() as session:
+
             def _fetch(resource_type):
                 return (
                     session.query(ZPAResource)
@@ -3599,13 +3643,13 @@ def _export_scoping_reference_md(tenant):
                     .all()
                 )
 
-            idp_records    = _fetch("idp")
-            saml_records   = _fetch("saml_attribute")
+            idp_records = _fetch("idp")
+            saml_records = _fetch("saml_attribute")
             scim_a_records = _fetch("scim_attribute")
             scim_g_records = _fetch("scim_group")
-            machine_records= _fetch("machine_group")
-            network_records= _fetch("trusted_network")
-            posture_records= _fetch("posture_profile")
+            machine_records = _fetch("machine_group")
+            network_records = _fetch("trusted_network")
+            posture_records = _fetch("posture_profile")
 
             idp_map = {r.zpa_id: r.name for r in idp_records}
 
@@ -3700,7 +3744,9 @@ def _export_scoping_reference_md(tenant):
     lines.append("")
     lines.append("## SCIM User Attributes")
     lines.append("")
-    lines.append("CSV column: `scim_attributes` — format: `AttributeName=Value`  (e.g. `userName=alice@example.com`)")
+    lines.append(
+        "CSV column: `scim_attributes` — format: `AttributeName=Value`  (e.g. `userName=alice@example.com`)"
+    )
     lines.append("")
     if scim_a_records:
         lines.append("| Attribute Name | Identity Provider | Data Type |")
@@ -3804,6 +3850,7 @@ def _export_scoping_reference_md(tenant):
 # App Segments & Groups reference export
 # ------------------------------------------------------------------
 
+
 def _export_apps_reference_md(tenant):
     from datetime import datetime
     from db.database import get_session
@@ -3898,6 +3945,7 @@ def _export_apps_reference_md(tenant):
 # Service Edges
 # ------------------------------------------------------------------
 
+
 def service_edges_menu(client, tenant):
     while True:
         render_banner()
@@ -3941,8 +3989,7 @@ def _list_service_edges(tenant):
 
     if not rows:
         console.print(
-            "[yellow]No Service Edges in local DB. "
-            "Run [bold]Import Config[/bold] first.[/yellow]"
+            "[yellow]No Service Edges in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
@@ -3972,6 +4019,7 @@ def _list_service_edges(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -4029,6 +4077,7 @@ def _search_service_edges(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -4056,8 +4105,7 @@ def _toggle_service_edge(client, tenant):
 
     if not rows:
         console.print(
-            "[yellow]No Service Edges in local DB. "
-            "Run [bold]Import Config[/bold] first.[/yellow]"
+            "[yellow]No Service Edges in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
@@ -4148,7 +4196,10 @@ def _toggle_service_edge(client, tenant):
 # Shared helper
 # ------------------------------------------------------------------
 
-def _update_resource_enabled_in_db(tenant_id: int, resource_type: str, zpa_id: str, enabled: bool) -> None:
+
+def _update_resource_enabled_in_db(
+    tenant_id: int, resource_type: str, zpa_id: str, enabled: bool
+) -> None:
     from sqlalchemy.orm.attributes import flag_modified
     from db.database import get_session
     from db.models import ZPAResource

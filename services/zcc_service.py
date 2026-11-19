@@ -26,9 +26,7 @@ class ZCCService:
         os_type: Optional[int] = None,
         page_size: int = 500,
     ) -> List[Dict]:
-        result = self.client.list_devices(
-            username=username, os_type=os_type, page_size=page_size
-        )
+        result = self.client.list_devices(username=username, os_type=os_type, page_size=page_size)
         audit_service.log(
             product="ZCC",
             operation="list_devices",
@@ -71,9 +69,7 @@ class ZCCService:
         udids: Optional[List[str]] = None,
         os_type: Optional[int] = None,
     ) -> Dict:
-        result = self.client.force_remove_devices(
-            username=username, udids=udids, os_type=os_type
-        )
+        result = self.client.force_remove_devices(username=username, udids=udids, os_type=os_type)
         audit_service.log(
             product="ZCC",
             operation="force_remove_device",

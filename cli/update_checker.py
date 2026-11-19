@@ -13,8 +13,8 @@ import questionary
 from services.update_notify_service import DEPLOY_ONELINER, fetch_latest_version
 
 CHANGELOG_URL = "https://raw.githubusercontent.com/mpreissner/zs-config/main/CHANGELOG.md"
-REQUEST_TIMEOUT = 4          # version check (GitHub API)
-CHANGELOG_TIMEOUT = 10       # changelog fetch (raw.githubusercontent.com — can be slower)
+REQUEST_TIMEOUT = 4  # version check (GitHub API)
+CHANGELOG_TIMEOUT = 10  # changelog fetch (raw.githubusercontent.com — can be slower)
 
 console = Console()
 
@@ -95,6 +95,7 @@ def check_for_updates() -> bool:
             questionary.press_any_key_to_continue("Press any key to view changelog...").ask()
             from rich.markdown import Markdown
             from cli.scroll_view import render_rich_to_lines, scroll_view
+
             scroll_view(render_rich_to_lines(Markdown(sections)))
 
     console.print(
@@ -120,7 +121,12 @@ def check_plugin_updates() -> None:
 
     Runs silently when everything is current.
     """
-    from lib.plugin_manager import get_installed_plugins, fetch_manifest, install_plugin, effective_install_url
+    from lib.plugin_manager import (
+        get_installed_plugins,
+        fetch_manifest,
+        install_plugin,
+        effective_install_url,
+    )
     from lib.github_auth import get_token
     from rich.table import Table
 
@@ -140,7 +146,7 @@ def check_plugin_updates() -> None:
 
     # Build map of package → manifest entry for installed packages
     installed_map = {p["package"]: p for p in installed if not p.get("error")}
-    manifest_map  = {p["package"]: p for p in manifest_plugins}
+    manifest_map = {p["package"]: p for p in manifest_plugins}
 
     updates = []
     for pkg, inst in installed_map.items():
@@ -148,16 +154,18 @@ def check_plugin_updates() -> None:
         if not manifest:
             continue
         avail_ver = manifest.get("version", "")
-        inst_ver  = inst.get("version", "")
+        inst_ver = inst.get("version", "")
         try:
             if avail_ver and _parse_ver(avail_ver) > _parse_ver(inst_ver):
-                updates.append({
-                    "display_name": manifest.get("display_name", pkg),
-                    "package":      pkg,
-                    "installed":    inst_ver,
-                    "available":    avail_ver,
-                    "install_url":  effective_install_url(manifest),
-                })
+                updates.append(
+                    {
+                        "display_name": manifest.get("display_name", pkg),
+                        "package": pkg,
+                        "installed": inst_ver,
+                        "available": avail_ver,
+                        "install_url": effective_install_url(manifest),
+                    }
+                )
         except Exception:
             continue
 

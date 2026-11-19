@@ -19,10 +19,7 @@ import secrets
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 if os.environ.get("ZS_TUI_ONLY") == "1":
-    sys.exit(
-        "ZS_TUI_ONLY=1 is set. The FastAPI server will not start. "
-        "Run: python -m cli.z_config"
-    )
+    sys.exit("ZS_TUI_ONLY=1 is set. The FastAPI server will not start. Run: python -m cli.z_config")
 
 from contextlib import asynccontextmanager
 
@@ -68,13 +65,15 @@ def seed_admin_if_needed() -> str | None:
 
     temp_password = os.environ.get("ADMIN_INITIAL_PASSWORD") or secrets.token_urlsafe(15)
     with get_session() as session:
-        session.add(User(
-            username="admin",
-            role="admin",
-            password_hash=hash_password(temp_password),
-            force_password_change=True,
-            is_active=True,
-        ))
+        session.add(
+            User(
+                username="admin",
+                role="admin",
+                password_hash=hash_password(temp_password),
+                force_password_change=True,
+                is_active=True,
+            )
+        )
     return temp_password
 
 
@@ -85,6 +84,7 @@ async def lifespan(app: FastAPI):
         sys.exit("FATAL: JWT_SECRET must be set and at least 32 characters.")
 
     from db.database import init_db
+
     init_db()
 
     temp_password = seed_admin_if_needed()
@@ -92,15 +92,18 @@ async def lifespan(app: FastAPI):
         print(f"[zs-config] Admin account created. Initial password: {temp_password}", flush=True)
 
     from services.encryption_service import rotate_key_if_due
+
     rotate_key_if_due()
 
     from services.scheduled_task_service import start_scheduler, stop_scheduler
+
     start_scheduler()
 
     from services.update_notify_service import check_and_notify
     from datetime import datetime, timedelta
     from apscheduler.schedulers.background import BackgroundScheduler as _BS
     from apscheduler.triggers.interval import IntervalTrigger
+
     _update_scheduler = _BS()
     _update_scheduler.add_job(
         check_and_notify,
@@ -165,9 +168,13 @@ class MfaEnrollMiddleware(BaseHTTPMiddleware):
     _EXEMPT = {
         "/api/v1/auth/webauthn/register/begin",
         "/api/v1/auth/webauthn/register/complete",
-        "/api/v1/auth/logout", "/api/v1/auth/refresh",
+        "/api/v1/auth/logout",
+        "/api/v1/auth/refresh",
         "/api/v1/auth/login",
-        "/health", "/docs", "/openapi.json", "/redoc",
+        "/health",
+        "/docs",
+        "/openapi.json",
+        "/redoc",
     }
 
     async def dispatch(self, request, call_next):
@@ -186,11 +193,16 @@ class MfaEnrollMiddleware(BaseHTTPMiddleware):
 
 class ForcePasswordChangeMiddleware(BaseHTTPMiddleware):
     _EXEMPT = {
-        "/api/v1/auth/change-password", "/api/v1/auth/login",
-        "/api/v1/auth/logout", "/api/v1/auth/refresh",
+        "/api/v1/auth/change-password",
+        "/api/v1/auth/login",
+        "/api/v1/auth/logout",
+        "/api/v1/auth/refresh",
         "/api/v1/auth/webauthn/authenticate/begin",
         "/api/v1/auth/webauthn/authenticate/complete",
-        "/health", "/docs", "/openapi.json", "/redoc",
+        "/health",
+        "/docs",
+        "/openapi.json",
+        "/redoc",
     }
 
     async def dispatch(self, request, call_next):
@@ -243,9 +255,15 @@ _tenant_scope = [Depends(require_user)]
 
 app.include_router(zpa.router, prefix="/api/v1/zpa", tags=["ZPA"], dependencies=_tenant_scope)
 app.include_router(zia.router, prefix="/api/v1/zia", tags=["ZIA"], dependencies=_tenant_scope)
-app.include_router(zcc_router.router, prefix="/api/v1/zcc", tags=["ZCC"], dependencies=_tenant_scope)
-app.include_router(zdx_router.router, prefix="/api/v1/zdx", tags=["ZDX"], dependencies=_tenant_scope)
-app.include_router(zid_router.router, prefix="/api/v1/zid", tags=["ZID"], dependencies=_tenant_scope)
+app.include_router(
+    zcc_router.router, prefix="/api/v1/zcc", tags=["ZCC"], dependencies=_tenant_scope
+)
+app.include_router(
+    zdx_router.router, prefix="/api/v1/zdx", tags=["ZDX"], dependencies=_tenant_scope
+)
+app.include_router(
+    zid_router.router, prefix="/api/v1/zid", tags=["ZID"], dependencies=_tenant_scope
+)
 app.include_router(system.router)
 app.include_router(ssl_router.router)
 app.include_router(auth_router.router)
@@ -287,6 +305,7 @@ def get_audit_log(
     user: AuthUser = Depends(require_auth),
 ):
     from services import audit_service
+
     logs = audit_service.get_recent(tenant_id=tenant_id, product=product, limit=limit)
     return [
         {

@@ -84,6 +84,7 @@ def check_tenant_access(tenant_id: int, user: AuthUser) -> None:
     Must never be called from inside an existing with get_session() block.
     """
     from services.group_service import effective_tenant_ids
+
     if tenant_id not in effective_tenant_ids(user.user_id):
         raise HTTPException(status_code=404, detail="Tenant not found")
 

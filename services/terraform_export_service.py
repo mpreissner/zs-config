@@ -17,69 +17,85 @@ from db.models import ZIAResource, ZPAResource
 # ---------------------------------------------------------------------------
 
 ZIA_RESOURCE_MAP: Dict[str, str] = {
-    "url_category":                "zia_url_categories",
-    "url_filtering_rule":          "zia_url_filtering_rules",
-    "firewall_rule":               "zia_firewall_filtering_rules",
-    "firewall_dns_rule":           "zia_firewall_dns_rules",
-    "firewall_ips_rule":           "zia_firewall_ips_rules",
-    "ssl_inspection_rule":         "zia_ssl_inspection_rules",
-    "forwarding_rule":             "zia_forwarding_control_rule",
-    "ip_destination_group":        "zia_ip_destination_groups",
-    "ip_source_group":             "zia_ip_source_groups",
-    "network_service":             "zia_network_services",
-    "network_svc_group":           "zia_network_service_groups",
-    "rule_label":                  "zia_rule_labels",
-    "time_interval":               "zia_time_windows",
-    "location":                    "zia_location_management",
-    "admin_user":                  "zia_admin_users",
-    "department":                  "zia_user_management_departments",
-    "group":                       "zia_user_management_groups",
-    "user":                        "zia_user_management_users",
-    "dlp_engine":                  "zia_dlp_engines",
-    "dlp_dictionary":              "zia_dlp_dictionaries",
-    "dlp_web_rule":                "zia_dlp_web_rules",
-    "static_ip":                   "zia_traffic_forwarding_static_ip",
-    "vpn_credential":              "zia_traffic_forwarding_vpn_credentials",
-    "gre_tunnel":                  "zia_traffic_forwarding_gre_tunnel",
-    "sandbox_rule":                "zia_sandbox_rules",
-    "bandwidth_class":             "zia_bandwidth_classes",
-    "bandwidth_control_rule":      "zia_bandwidth_control_rules",
-    "nat_control_rule":            "zia_nat_control_rules",
-    "workload_group":              "zia_workload_groups",
+    "url_category": "zia_url_categories",
+    "url_filtering_rule": "zia_url_filtering_rules",
+    "firewall_rule": "zia_firewall_filtering_rules",
+    "firewall_dns_rule": "zia_firewall_dns_rules",
+    "firewall_ips_rule": "zia_firewall_ips_rules",
+    "ssl_inspection_rule": "zia_ssl_inspection_rules",
+    "forwarding_rule": "zia_forwarding_control_rule",
+    "ip_destination_group": "zia_ip_destination_groups",
+    "ip_source_group": "zia_ip_source_groups",
+    "network_service": "zia_network_services",
+    "network_svc_group": "zia_network_service_groups",
+    "rule_label": "zia_rule_labels",
+    "time_interval": "zia_time_windows",
+    "location": "zia_location_management",
+    "admin_user": "zia_admin_users",
+    "department": "zia_user_management_departments",
+    "group": "zia_user_management_groups",
+    "user": "zia_user_management_users",
+    "dlp_engine": "zia_dlp_engines",
+    "dlp_dictionary": "zia_dlp_dictionaries",
+    "dlp_web_rule": "zia_dlp_web_rules",
+    "static_ip": "zia_traffic_forwarding_static_ip",
+    "vpn_credential": "zia_traffic_forwarding_vpn_credentials",
+    "gre_tunnel": "zia_traffic_forwarding_gre_tunnel",
+    "sandbox_rule": "zia_sandbox_rules",
+    "bandwidth_class": "zia_bandwidth_classes",
+    "bandwidth_control_rule": "zia_bandwidth_control_rules",
+    "nat_control_rule": "zia_nat_control_rules",
+    "workload_group": "zia_workload_groups",
     "tenancy_restriction_profile": "zia_tenancy_restriction_profile",
 }
 
 ZPA_RESOURCE_MAP: Dict[str, str] = {
-    "application":         "zpa_application_segment",
-    "segment_group":       "zpa_segment_group",
-    "server_group":        "zpa_server_group",
+    "application": "zpa_application_segment",
+    "segment_group": "zpa_segment_group",
+    "server_group": "zpa_server_group",
     "app_connector_group": "zpa_app_connector_group",
-    "pra_portal":          "zpa_pra_portal_controller",
-    "pra_credential":      "zpa_pra_credential_controller",
-    "pra_console":         "zpa_pra_console_controller",
-    "policy_access":       "zpa_policy_access_rule",
-    "policy_timeout":      "zpa_policy_timeout_rule",
-    "policy_forwarding":   "zpa_policy_forwarding_rule",
-    "policy_inspection":   "zpa_policy_inspection_rule",
-    "policy_isolation":    "zpa_policy_isolation_rule",
-    "service_edge_group":  "zpa_service_edge_group",
-    "lss_config":          "zpa_lss_config_controller",
+    "pra_portal": "zpa_pra_portal_controller",
+    "pra_credential": "zpa_pra_credential_controller",
+    "pra_console": "zpa_pra_console_controller",
+    "policy_access": "zpa_policy_access_rule",
+    "policy_timeout": "zpa_policy_timeout_rule",
+    "policy_forwarding": "zpa_policy_forwarding_rule",
+    "policy_inspection": "zpa_policy_inspection_rule",
+    "policy_isolation": "zpa_policy_isolation_rule",
+    "service_edge_group": "zpa_service_edge_group",
+    "lss_config": "zpa_lss_config_controller",
 }
 
 ZPA_DATA_MAP: Dict[str, str] = {
-    "idp":              "zpa_idp_controller",
-    "trusted_network":  "zpa_trusted_network",
-    "enrollment_cert":  "zpa_enrollment_cert",
-    "saml_attribute":   "zpa_saml_attribute",
+    "idp": "zpa_idp_controller",
+    "trusted_network": "zpa_trusted_network",
+    "enrollment_cert": "zpa_enrollment_cert",
+    "saml_attribute": "zpa_saml_attribute",
 }
 
 # Fields that are read-only / computed and should not appear in .tf files.
 SKIP_FIELDS = {
-    "id", "last_modified_time", "last_modified_by", "modified_time", "modified_by",
-    "creation_time", "created_time", "created_by", "created_at", "updated_at",
-    "access_control", "creator_context", "extensions", "is_name_l10n_tag",
-    "external_id", "predefined", "default_rule", "is_default_rule",
-    "microtenant_name", "policy_migrated", "config_space",
+    "id",
+    "last_modified_time",
+    "last_modified_by",
+    "modified_time",
+    "modified_by",
+    "creation_time",
+    "created_time",
+    "created_by",
+    "created_at",
+    "updated_at",
+    "access_control",
+    "creator_context",
+    "extensions",
+    "is_name_l10n_tag",
+    "external_id",
+    "predefined",
+    "default_rule",
+    "is_default_rule",
+    "microtenant_name",
+    "policy_migrated",
+    "config_space",
 }
 
 # Secret attributes the providers accept.  The APIs never return the real
@@ -127,6 +143,7 @@ def _variable_block(name: str) -> str:
 # ---------------------------------------------------------------------------
 # HCL helpers
 # ---------------------------------------------------------------------------
+
 
 def _slug(name: str) -> str:
     """Return a valid Terraform label derived from a resource name."""
@@ -295,6 +312,7 @@ def _data_block(tf_type: str, label: str, fields: Dict[str, Any]) -> str:
 # Provider headers
 # ---------------------------------------------------------------------------
 
+
 def _header(product: str) -> str:
     return f'''\
 # =============================================================================
@@ -329,6 +347,7 @@ ZPA_HEADER = _header("zpa")
 # ---------------------------------------------------------------------------
 # Public generators
 # ---------------------------------------------------------------------------
+
 
 def _dedup_label(label: str, seen: Dict[str, int]) -> str:
     if label not in seen:

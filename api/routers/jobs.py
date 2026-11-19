@@ -33,6 +33,7 @@ def active_import_job(
 @router.get("/{job_id}/events")
 async def stream_job_events(job_id: str, _=Depends(require_auth_sse)):
     """SSE stream of progress events for a background job."""
+
     async def generate():
         cursor = 0
         while True:

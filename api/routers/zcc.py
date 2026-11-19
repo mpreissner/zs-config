@@ -14,8 +14,11 @@ router = APIRouter()
 
 # Password fields that must never appear in API responses or audit entries.
 _PASSWORD_FIELDS = {
-    "exitPassword", "zdxDisablePassword", "zdDisablePassword",
-    "zpaDisablePassword", "zdpDisablePassword",
+    "exitPassword",
+    "zdxDisablePassword",
+    "zdDisablePassword",
+    "zpaDisablePassword",
+    "zdpDisablePassword",
 }
 
 
@@ -98,7 +101,7 @@ def _fetch_pac_bypasses(pac_url: str, timeout: int = 4) -> List[Dict]:
         # Confirm varname.test(...) appears near a DIRECT return
         test_re = re.compile(rf"\b{re.escape(varname)}\.test\s*\(")
         for tm in test_re.finditer(content_nc):
-            ctx = content_nc[tm.start(): min(len(content_nc), tm.end() + 400)]
+            ctx = content_nc[tm.start() : min(len(content_nc), tm.end() + 400)]
             if "DIRECT" not in ctx:
                 continue
             # Extract alternation parts from the regex body to map to CIDRs
@@ -114,13 +117,11 @@ def _fetch_pac_bypasses(pac_url: str, timeout: int = 4) -> List[Dict]:
             break
 
     # ── 2. isInNet(x, "ip", "mask") → DIRECT ────────────────────────────────
-    innet_re = re.compile(
-        r'isInNet\s*\([^,)]+,\s*"([0-9.]+)"\s*,\s*"([0-9.]+)"\s*\)'
-    )
+    innet_re = re.compile(r'isInNet\s*\([^,)]+,\s*"([0-9.]+)"\s*,\s*"([0-9.]+)"\s*\)')
     for m in innet_re.finditer(content_nc):
         ip, mask = m.group(1), m.group(2)
         ctx_end = min(len(content_nc), m.end() + 300)
-        ctx = content_nc[m.start():ctx_end]
+        ctx = content_nc[m.start() : ctx_end]
         if "DIRECT" not in ctx:
             continue
         prefix = _mask_to_prefix(mask)
@@ -132,7 +133,7 @@ def _fetch_pac_bypasses(pac_url: str, timeout: int = 4) -> List[Dict]:
     for m in host_eq_re.finditer(content_nc):
         host = m.group(1)
         ctx_end = min(len(content_nc), m.end() + 200)
-        ctx = content_nc[m.start():ctx_end]
+        ctx = content_nc[m.start() : ctx_end]
         if "DIRECT" in ctx:
             _add(f"{host} → DIRECT", "host match")
 
@@ -143,13 +144,13 @@ def _fetch_pac_bypasses(pac_url: str, timeout: int = 4) -> List[Dict]:
         if "example" in pattern.lower():
             continue
         ctx_end = min(len(content_nc), m.end() + 200)
-        ctx = content_nc[m.start():ctx_end]
+        ctx = content_nc[m.start() : ctx_end]
         if "DIRECT" in ctx:
             _add(f"{pattern} → DIRECT", "shExpMatch")
 
     # ── 5. isPlainHostName → DIRECT ──────────────────────────────────────────
     for m in re.finditer(r"isPlainHostName\s*\(", content_nc):
-        ctx = content_nc[m.start(): min(len(content_nc), m.end() + 300)]
+        ctx = content_nc[m.start() : min(len(content_nc), m.end() + 300)]
         if "DIRECT" in ctx:
             _add("Plain hostnames (unqualified) → DIRECT", "isPlainHostName")
             break
@@ -169,8 +170,9 @@ def _derive_tunnel_mode(raw_fp: Optional[Dict]) -> str:
     """
     if not raw_fp:
         return "Unknown"
-    actions = (raw_fp.get("forwardingProfileActions") or
-               raw_fp.get("forwarding_profile_actions") or [])
+    actions = (
+        raw_fp.get("forwardingProfileActions") or raw_fp.get("forwarding_profile_actions") or []
+    )
     if not actions:
         return "Unknown"
     first = actions[0] if isinstance(actions[0], dict) else {}
@@ -191,8 +193,9 @@ def _detect_listening_proxy(raw_fp: Optional[Dict]) -> bool:
     """
     if not raw_fp:
         return False
-    actions = (raw_fp.get("forwardingProfileActions") or
-               raw_fp.get("forwarding_profile_actions") or [])
+    actions = (
+        raw_fp.get("forwardingProfileActions") or raw_fp.get("forwarding_profile_actions") or []
+    )
     if not actions:
         return False
     first = actions[0] if isinstance(actions[0], dict) else {}
@@ -209,13 +212,13 @@ def _detect_zpa(raw_fp: Optional[Dict]) -> bool:
     if not raw_fp:
         return False
     # camelCase ZPA actions (onNetPolicy from direct HTTP)
-    for action in (raw_fp.get("forwardingProfileZpaActions") or []):
+    for action in raw_fp.get("forwardingProfileZpaActions") or []:
         if isinstance(action, dict):
             at = action.get("actionType") or action.get("action_type") or 0
             if at and at != 0:
                 return True
     # snake_case ZPA actions (legacy forwarding_profile DB record)
-    for action in (raw_fp.get("forwarding_profile_zpa_actions") or []):
+    for action in raw_fp.get("forwarding_profile_zpa_actions") or []:
         if isinstance(action, dict):
             at = action.get("action_type") or action.get("actionType") or 0
             if at and at != 0:
@@ -244,7 +247,12 @@ def _extract_process_bypasses(raw_policy: Dict) -> List[Dict]:
             items = field_val if isinstance(field_val, list) else [field_val]
             for item in items:
                 if isinstance(item, dict):
-                    proc = item.get("processName") or item.get("process_name") or item.get("name") or str(item)
+                    proc = (
+                        item.get("processName")
+                        or item.get("process_name")
+                        or item.get("name")
+                        or str(item)
+                    )
                     bypasses.append({"processName": proc, "platform": platform})
                 elif isinstance(item, str) and item:
                     bypasses.append({"processName": item, "platform": platform})
@@ -260,12 +268,19 @@ def _extract_policy_targets(raw_policy: Dict, field: str) -> List[Dict]:
     for item in items:
         if isinstance(item, dict):
             name = str(
-                item.get("name") or item.get("userName") or item.get("groupName") or
-                item.get("deptName") or item.get("departmentName") or ""
+                item.get("name")
+                or item.get("userName")
+                or item.get("groupName")
+                or item.get("deptName")
+                or item.get("departmentName")
+                or ""
             )
             id_val = str(
-                item.get("id") or item.get("userId") or item.get("groupId") or
-                item.get("deptId") or ""
+                item.get("id")
+                or item.get("userId")
+                or item.get("groupId")
+                or item.get("deptId")
+                or ""
             )
             if name or id_val:
                 result.append({"id": id_val, "name": name})
@@ -301,16 +316,16 @@ def _build_traffic_profile(
     enable_pac = False
     custom_pac_len = None
     if raw_fp:
-        actions = (raw_fp.get("forwardingProfileActions") or
-                   raw_fp.get("forwarding_profile_actions") or [])
+        actions = (
+            raw_fp.get("forwardingProfileActions") or raw_fp.get("forwarding_profile_actions") or []
+        )
         if actions and isinstance(actions[0], dict):
             first = actions[0]
-            spd = (first.get("systemProxyData") or
-                   first.get("system_proxy_data") or {})
-            fp_pac_url = (spd.get("pacURL") or spd.get("pac_u_r_l") or
-                          spd.get("pac_url") or None)
-            enable_pac = bool(spd.get("enablePAC") or spd.get("enable_p_a_c") or
-                              spd.get("enable_pac"))
+            spd = first.get("systemProxyData") or first.get("system_proxy_data") or {}
+            fp_pac_url = spd.get("pacURL") or spd.get("pac_u_r_l") or spd.get("pac_url") or None
+            enable_pac = bool(
+                spd.get("enablePAC") or spd.get("enable_p_a_c") or spd.get("enable_pac")
+            )
             custom_pac = first.get("customPac") or first.get("custom_pac")
             if custom_pac:
                 custom_pac_len = len(str(custom_pac))
@@ -333,10 +348,12 @@ def _build_traffic_profile(
     port_bypasses = []
     for pb in _as_list(pe.get("sourcePortBasedBypasses")):
         if isinstance(pb, dict):
-            port_bypasses.append({
-                "port": str(pb.get("port", "")),
-                "protocol": str(pb.get("protocol", pb.get("proto", ""))),
-            })
+            port_bypasses.append(
+                {
+                    "port": str(pb.get("port", "")),
+                    "protocol": str(pb.get("protocol", pb.get("proto", ""))),
+                }
+            )
         elif isinstance(pb, str) and pb:
             if ":" in pb:
                 port, proto = pb.split(":", 1)
@@ -359,9 +376,13 @@ def _build_traffic_profile(
     for cidr in _as_list(pe.get("packetTunnelExcludeList")):
         tunnel_routes.append({"cidr": cidr, "direction": "exclude", "ipVersion": "ipv4"})
     for cidr in _as_list(pe.get("packetTunnelIncludeListForIPv6")):
-        tunnel_routes.append({"cidr": cidr.strip("[]"), "direction": "include", "ipVersion": "ipv6"})
+        tunnel_routes.append(
+            {"cidr": cidr.strip("[]"), "direction": "include", "ipVersion": "ipv6"}
+        )
     for cidr in _as_list(pe.get("packetTunnelExcludeListForIPv6")):
-        tunnel_routes.append({"cidr": cidr.strip("[]"), "direction": "exclude", "ipVersion": "ipv6"})
+        tunnel_routes.append(
+            {"cidr": cidr.strip("[]"), "direction": "exclude", "ipVersion": "ipv6"}
+        )
 
     # DNS routes — also comma-separated strings
     dns_routes = []
@@ -376,8 +397,7 @@ def _build_traffic_profile(
     # Trusted networks from forwarding profile (camelCase from direct HTTP or snake_case legacy)
     trusted_networks: List[str] = []
     if raw_fp:
-        trusted_networks = (raw_fp.get("trustedNetworks") or
-                            raw_fp.get("trusted_networks") or [])
+        trusted_networks = raw_fp.get("trustedNetworks") or raw_fp.get("trusted_networks") or []
 
     # Policy targeting — users/groups/departments may be empty (means all users)
     device_type = raw_policy.get("device_type") or None
@@ -492,6 +512,7 @@ class SnapshotRestoreRequest(BaseModel):
 # Devices
 # ------------------------------------------------------------------
 
+
 @router.get("/{tenant}/devices")
 def list_devices(
     tenant: str,
@@ -541,6 +562,7 @@ def get_device_otp(
 # ------------------------------------------------------------------
 # Configuration resources — DB-first reads
 # ------------------------------------------------------------------
+
 
 def _db_resources(tenant_name: str, user: AuthUser, resource_type: str) -> List[Dict]:
     """Return raw_config dicts from ZCCResource for the given resource_type."""
@@ -635,6 +657,7 @@ def list_process_apps(tenant: str, user: AuthUser = Depends(require_auth)):
 # ------------------------------------------------------------------
 # Traffic Profile
 # ------------------------------------------------------------------
+
 
 @router.get("/{tenant}/traffic-profile/{policy_id}")
 def get_traffic_profile(
@@ -740,13 +763,15 @@ def get_traffic_profile(
                 rc = row.raw_config or {}
                 blob = rc.get("appDataBlob") or []
                 blob_v6 = rc.get("appDataBlobV6") or []
-                result.append({
-                    "id": row.zcc_id,
-                    "appName": rc.get("appName") or row.name or row.zcc_id,
-                    "cidrs": blob if isinstance(blob, list) else [blob],
-                    "cidrsV6": blob_v6 if isinstance(blob_v6, list) else [blob_v6],
-                    "source": source,
-                })
+                result.append(
+                    {
+                        "id": row.zcc_id,
+                        "appName": rc.get("appName") or row.name or row.zcc_id,
+                        "cidrs": blob if isinstance(blob, list) else [blob],
+                        "cidrsV6": blob_v6 if isinstance(blob_v6, list) else [blob_v6],
+                        "source": source,
+                    }
+                )
             return result
 
         predefined_ip_bypasses = _resolve_ip_apps("ip_app_predefined", bypass_app_ids, "predefined")
@@ -766,22 +791,37 @@ def get_traffic_profile(
             )
             for row in svc_rows:
                 rc = row.raw_config or {}
-                proc_names = rc.get("process_names") or rc.get("processNames") or rc.get("app_process_names") or []
-                app_service_bypasses.append({
-                    "id": row.zcc_id,
-                    "appName": rc.get("appName") or row.name or row.zcc_id,
-                    "processNames": proc_names if isinstance(proc_names, list) else [proc_names],
-                })
+                proc_names = (
+                    rc.get("process_names")
+                    or rc.get("processNames")
+                    or rc.get("app_process_names")
+                    or []
+                )
+                app_service_bypasses.append(
+                    {
+                        "id": row.zcc_id,
+                        "appName": rc.get("appName") or row.name or row.zcc_id,
+                        "processNames": proc_names
+                        if isinstance(proc_names, list)
+                        else [proc_names],
+                    }
+                )
 
     return _build_traffic_profile(
-        raw_policy, raw_fp, zia_pac_file_id, zia_pac_file_name,
-        predefined_ip_bypasses, custom_ip_bypasses, app_service_bypasses,
+        raw_policy,
+        raw_fp,
+        zia_pac_file_id,
+        zia_pac_file_name,
+        predefined_ip_bypasses,
+        custom_ip_bypasses,
+        app_service_bypasses,
     )
 
 
 # ------------------------------------------------------------------
 # Snapshots
 # ------------------------------------------------------------------
+
 
 @router.post("/{tenant}/snapshots")
 def create_snapshot(
@@ -865,7 +905,9 @@ def restore_snapshot(
     if body.target_tenant:
         tgt = _get_tenant(body.target_tenant)
         if not tgt:
-            raise HTTPException(status_code=404, detail=f"Target tenant '{body.target_tenant}' not found")
+            raise HTTPException(
+                status_code=404, detail=f"Target tenant '{body.target_tenant}' not found"
+            )
         tgt_auth = ZscalerAuth(
             tgt.zidentity_base_url,
             tgt.client_id,
@@ -874,7 +916,9 @@ def restore_snapshot(
             gov_tier=tgt.gov_cloud_tier,
         )
         try:
-            target_client = ZCCClient(tgt_auth, tgt.oneapi_base_url, tgt.zia_cloud, tgt.zia_tenant_id)
+            target_client = ZCCClient(
+                tgt_auth, tgt.oneapi_base_url, tgt.zia_cloud, tgt.zia_tenant_id
+            )
         except ZCCUnavailableError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         target_tenant_id = tgt.id

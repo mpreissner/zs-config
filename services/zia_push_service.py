@@ -65,15 +65,15 @@ from services.zia_import_service import (
 # way, narrowed import or not.
 REFERENCE_TYPES: Set[str] = {
     "location",
-    "location_lite",   # predefined locations — _ref_resolved unions these in
+    "location_lite",  # predefined locations — _ref_resolved unions these in
     "location_group",
     "department",
     "group",
     "user",
     "device_group",
     "url_category",
-    "dlp_engine",      # _usable_dlp_engine_ids
-    "proxy_gateway",   # matched by name so a report can name the target's own
+    "dlp_engine",  # _usable_dlp_engine_ids
+    "proxy_gateway",  # matched by name so a report can name the target's own
 }
 
 
@@ -102,7 +102,7 @@ PUSH_ORDER: List[str] = [
     # Tier 2 — aggregate objects
     "network_svc_group",
     "network_app_group",
-    "proxy",                # references root_certificate above
+    "proxy",  # references root_certificate above
     # Tier 2.5 — tenant-wide settings (before rules: provisions One-Click rules,
     # enables admin rank, and sets other policy toggles)
     "url_filter_cloud_app_settings",
@@ -168,20 +168,22 @@ WIPE_ORDER: List[str] = [
 # pushed rules land at the correct ranks without conflicts.  All other WIPE_ORDER
 # types are unordered objects (groups, labels, categories, etc.) that can be safely
 # updated in-place when a template already contains them.
-_ORDERED_WIPE_TYPES: frozenset = frozenset({
-    "url_filtering_rule",
-    "firewall_rule",
-    "firewall_dns_rule",
-    "firewall_ips_rule",
-    "ssl_inspection_rule",
-    "nat_control_rule",
-    "forwarding_rule",
-    "dlp_web_rule",
-    "bandwidth_control_rule",
-    "traffic_capture_rule",
-    "cloud_app_control_rule",
-    "sandbox_rule",
-})
+_ORDERED_WIPE_TYPES: frozenset = frozenset(
+    {
+        "url_filtering_rule",
+        "firewall_rule",
+        "firewall_dns_rule",
+        "firewall_ips_rule",
+        "ssl_inspection_rule",
+        "nat_control_rule",
+        "forwarding_rule",
+        "dlp_web_rule",
+        "bandwidth_control_rule",
+        "traffic_capture_rule",
+        "cloud_app_control_rule",
+        "sandbox_rule",
+    }
+)
 
 # Types that are env-specific or read-only in the SDK — skip entirely
 SKIP_TYPES: set = {
@@ -190,18 +192,18 @@ SKIP_TYPES: set = {
     "department",
     "admin_user",
     "admin_role",
-    "location_group",       # read-only in SDK
-    "location",             # tenant-specific; Full Clone only
-    "location_lite",        # predefined/system locations (Road Warrior etc.) — imported for ID remapping only
-    "device_group",         # predefined OS/platform groups (Windows, iOS, etc.) — imported for ID remapping only
+    "location_group",  # read-only in SDK
+    "location",  # tenant-specific; Full Clone only
+    "location_lite",  # predefined/system locations (Road Warrior etc.) — imported for ID remapping only
+    "device_group",  # predefined OS/platform groups (Windows, iOS, etc.) — imported for ID remapping only
     # Third-party proxy chaining: the certificate and the proxy below it are
     # pushed (see PUSH_ORDER); the gateway that joins them is not.  It has no
     # write endpoint on the OneAPI gateway — POST answers 405 Allow: GET,OPTIONS
     # — so it and the forwarding rule that points at it stay manual.  Both are
     # reported rather than dropped: see _proxychain_manual_steps.
     "proxy_gateway",
-    "network_app",          # system-defined, read-only
-    "cloud_app_policy",     # reference data, not policy
+    "network_app",  # system-defined, read-only
+    "cloud_app_policy",  # reference data, not policy
     "cloud_app_ssl_policy",
     # Full Clone-only types — pushed via _push_full_clone_entry, never via classify_baseline
     "static_ip",
@@ -213,17 +215,17 @@ SKIP_TYPES: set = {
 # Specific resource names that are system-managed and must never be pushed,
 # even when the 'predefined' flag is absent from the API response.
 SKIP_NAMED: dict = {
-    "network_service":    {"ZSCALER_PROXY_NW_SERVICES"},
+    "network_service": {"ZSCALER_PROXY_NW_SERVICES"},
     # "CIPA Compliance Rule" is a Zscaler-reserved name; the API rejects any
     # attempt to create or rename a custom rule with this name.
     "url_filtering_rule": {"CIPA Compliance Rule"},
     # Zscaler ships these DNS rules in every tenant but doesn't flag them as
     # predefined=True.  They can be managed/deleted by the user, but must never
     # be wiped during wipe-floor since they're Zscaler-provided defaults.
-    "firewall_dns_rule":  {"Risky DNS categories", "Risky DNS tunnels"},
+    "firewall_dns_rule": {"Risky DNS categories", "Risky DNS tunnels"},
     # The SDK SandboxRules model omits default_rule, so _is_zscaler_managed can't
     # detect it via the boolean field.  Guard by name as a belt-and-suspenders fallback.
-    "sandbox_rule":       {"Default BA Rule"},
+    "sandbox_rule": {"Default BA Rule"},
     # "Smart Isolation One Click Rule" is auto-provisioned by the enableSmartIsolation
     # toggle in browser_control_settings.  The API does return predefined=True for it,
     # but guard by name as well so the rule is never accidentally wiped or re-created
@@ -238,10 +240,10 @@ SKIP_NAMED: dict = {
 #   url_filter_cloud_app_settings — O365/UCaaS/CIPA toggles
 #   browser_control_settings      — Smart Isolation toggle (ssl_inspection_rule)
 _ONE_CLICK_RULE_TYPES: set = {
-    "url_filtering_rule",     # CIPA Compliance Rule  (enableCIPACompliance)
-    "ssl_inspection_rule",    # O365 One Click, UCaaS One Click, Smart Isolation One Click Rule
-    "firewall_rule",          # O365 One Click, UCaaS One Click, Block malicious IPs
-    "firewall_dns_rule",      # O365 One Click, UCaaS One Click, DNS risk rules
+    "url_filtering_rule",  # CIPA Compliance Rule  (enableCIPACompliance)
+    "ssl_inspection_rule",  # O365 One Click, UCaaS One Click, Smart Isolation One Click Rule
+    "firewall_rule",  # O365 One Click, UCaaS One Click, Block malicious IPs
+    "firewall_dns_rule",  # O365 One Click, UCaaS One Click, DNS risk rules
 }
 
 # Fields always stripped from raw_config before comparison and before push.
@@ -253,15 +255,15 @@ READONLY_FIELDS: set = {
     "predefined",
     "last_modified_by",
     "last_modified_time",
-    "last_mod_time",      # alternate timestamp field used by some resources (e.g. location_group)
+    "last_mod_time",  # alternate timestamp field used by some resources (e.g. location_group)
     "created_by",
     "creation_time",
     "created_at",
     "updated_at",
     "modified_time",
     "modified_by",
-    "modified_at",        # server-assigned timestamp on cloud_app_instance
-    "instance_id",        # cloud_app_instance PK — tenant-local, positional on update
+    "modified_at",  # server-assigned timestamp on cloud_app_instance
+    "instance_id",  # cloud_app_instance PK — tenant-local, positional on update
     "last_modified_by_user",
     "is_deleted",
     "db_category_index",
@@ -277,89 +279,92 @@ READONLY_FIELDS: set = {
 
 # Resource types that can be deleted during wipe or baseline enforcement.
 _DELETE_METHODS: Dict[str, str] = {
-    "rule_label":             "delete_rule_label",
-    "time_interval":          "delete_time_interval",
-    "bandwidth_class":        "delete_bandwidth_class",
-    "url_category":           "delete_url_category",
-    "ip_destination_group":   "delete_ip_destination_group",
-    "ip_source_group":        "delete_ip_source_group",
-    "network_service":        "delete_network_service",
-    "network_svc_group":      "delete_network_svc_group",
-    "network_app_group":      "delete_network_app_group",
-    "url_filtering_rule":     "delete_url_filtering_rule",
-    "firewall_rule":          "delete_firewall_rule",
-    "firewall_dns_rule":      "delete_firewall_dns_rule",
-    "firewall_ips_rule":      "delete_firewall_ips_rule",
-    "ssl_inspection_rule":    "delete_ssl_inspection_rule",
-    "nat_control_rule":       "delete_nat_control_rule",
-    "forwarding_rule":        "delete_forwarding_rule",
-    "dlp_web_rule":           "delete_dlp_web_rule",
+    "rule_label": "delete_rule_label",
+    "time_interval": "delete_time_interval",
+    "bandwidth_class": "delete_bandwidth_class",
+    "url_category": "delete_url_category",
+    "ip_destination_group": "delete_ip_destination_group",
+    "ip_source_group": "delete_ip_source_group",
+    "network_service": "delete_network_service",
+    "network_svc_group": "delete_network_svc_group",
+    "network_app_group": "delete_network_app_group",
+    "url_filtering_rule": "delete_url_filtering_rule",
+    "firewall_rule": "delete_firewall_rule",
+    "firewall_dns_rule": "delete_firewall_dns_rule",
+    "firewall_ips_rule": "delete_firewall_ips_rule",
+    "ssl_inspection_rule": "delete_ssl_inspection_rule",
+    "nat_control_rule": "delete_nat_control_rule",
+    "forwarding_rule": "delete_forwarding_rule",
+    "dlp_web_rule": "delete_dlp_web_rule",
     "bandwidth_control_rule": "delete_bandwidth_control_rule",
-    "traffic_capture_rule":   "delete_traffic_capture_rule",
-    "cloud_app_control_rule": None,   # handled via delete_cloud_app_rule(rule_type, id)
-    "cloud_app_instance":     "delete_cloud_app_instance",
-    "sandbox_rule":           "delete_sandbox_rule",
-    "workload_group":                "delete_workload_group",
-    "dlp_engine":                    "delete_dlp_engine",
-    "dlp_dictionary":                "delete_dlp_dictionary",
-    "tenancy_restriction_profile":   "delete_tenancy_restriction_profile",
-    "location":                      "delete_location",
+    "traffic_capture_rule": "delete_traffic_capture_rule",
+    "cloud_app_control_rule": None,  # handled via delete_cloud_app_rule(rule_type, id)
+    "cloud_app_instance": "delete_cloud_app_instance",
+    "sandbox_rule": "delete_sandbox_rule",
+    "workload_group": "delete_workload_group",
+    "dlp_engine": "delete_dlp_engine",
+    "dlp_dictionary": "delete_dlp_dictionary",
+    "tenancy_restriction_profile": "delete_tenancy_restriction_profile",
+    "location": "delete_location",
     # Full Clone types
-    "static_ip":                     "delete_static_ip",
-    "vpn_credential":                "delete_vpn_credential",
-    "gre_tunnel":                    "delete_gre_tunnel",
-    "sublocation":                   "delete_sublocation",
+    "static_ip": "delete_static_ip",
+    "vpn_credential": "delete_vpn_credential",
+    "gre_tunnel": "delete_gre_tunnel",
+    "sublocation": "delete_sublocation",
 }
 
 _WRITE_METHODS: Dict[str, Tuple[str, str]] = {
-    "rule_label":             ("create_rule_label",             "update_rule_label"),
-    "time_interval":          ("create_time_interval",          "update_time_interval"),
-    "workload_group":         ("create_workload_group",         "update_workload_group"),
-    "bandwidth_class":        ("create_bandwidth_class",        "update_bandwidth_class"),
-    "url_category":           ("create_url_category",          "update_url_category"),
-    "ip_destination_group":   ("create_ip_destination_group",  "update_ip_destination_group"),
-    "ip_source_group":        ("create_ip_source_group",       "update_ip_source_group"),
-    "network_service":        ("create_network_service",       "update_network_service"),
-    "network_svc_group":      ("create_network_svc_group",     "update_network_svc_group"),
-    "network_app_group":      ("create_network_app_group",     "update_network_app_group"),
-    "dlp_engine":             ("create_dlp_engine",            "update_dlp_engine"),
-    "dlp_dictionary":         ("create_dlp_dictionary",        "update_dlp_dictionary"),
-    "location":               ("create_location",              "update_location"),
-    "url_filtering_rule":     ("create_url_filtering_rule",    "update_url_filtering_rule"),
-    "firewall_rule":          ("create_firewall_rule",         "update_firewall_rule"),
-    "firewall_dns_rule":      ("create_firewall_dns_rule",     "update_firewall_dns_rule"),
-    "firewall_ips_rule":      ("create_firewall_ips_rule",     "update_firewall_ips_rule"),
-    "ssl_inspection_rule":    ("create_ssl_inspection_rule",   "update_ssl_inspection_rule"),
-    "nat_control_rule":       ("create_nat_control_rule",      "update_nat_control_rule"),
-    "forwarding_rule":        ("create_forwarding_rule",       "update_forwarding_rule"),
-    "dlp_web_rule":           ("create_dlp_web_rule",         "update_dlp_web_rule"),
-    "bandwidth_control_rule": ("create_bandwidth_control_rule","update_bandwidth_control_rule"),
-    "traffic_capture_rule":   ("create_traffic_capture_rule",  "update_traffic_capture_rule"),
-    "tenancy_restriction_profile":   ("create_tenancy_restriction_profile",
-                                      "update_tenancy_restriction_profile"),
-    "sandbox_rule":                  ("create_sandbox_rule",   "update_sandbox_rule"),
+    "rule_label": ("create_rule_label", "update_rule_label"),
+    "time_interval": ("create_time_interval", "update_time_interval"),
+    "workload_group": ("create_workload_group", "update_workload_group"),
+    "bandwidth_class": ("create_bandwidth_class", "update_bandwidth_class"),
+    "url_category": ("create_url_category", "update_url_category"),
+    "ip_destination_group": ("create_ip_destination_group", "update_ip_destination_group"),
+    "ip_source_group": ("create_ip_source_group", "update_ip_source_group"),
+    "network_service": ("create_network_service", "update_network_service"),
+    "network_svc_group": ("create_network_svc_group", "update_network_svc_group"),
+    "network_app_group": ("create_network_app_group", "update_network_app_group"),
+    "dlp_engine": ("create_dlp_engine", "update_dlp_engine"),
+    "dlp_dictionary": ("create_dlp_dictionary", "update_dlp_dictionary"),
+    "location": ("create_location", "update_location"),
+    "url_filtering_rule": ("create_url_filtering_rule", "update_url_filtering_rule"),
+    "firewall_rule": ("create_firewall_rule", "update_firewall_rule"),
+    "firewall_dns_rule": ("create_firewall_dns_rule", "update_firewall_dns_rule"),
+    "firewall_ips_rule": ("create_firewall_ips_rule", "update_firewall_ips_rule"),
+    "ssl_inspection_rule": ("create_ssl_inspection_rule", "update_ssl_inspection_rule"),
+    "nat_control_rule": ("create_nat_control_rule", "update_nat_control_rule"),
+    "forwarding_rule": ("create_forwarding_rule", "update_forwarding_rule"),
+    "dlp_web_rule": ("create_dlp_web_rule", "update_dlp_web_rule"),
+    "bandwidth_control_rule": ("create_bandwidth_control_rule", "update_bandwidth_control_rule"),
+    "traffic_capture_rule": ("create_traffic_capture_rule", "update_traffic_capture_rule"),
+    "tenancy_restriction_profile": (
+        "create_tenancy_restriction_profile",
+        "update_tenancy_restriction_profile",
+    ),
+    "sandbox_rule": ("create_sandbox_rule", "update_sandbox_rule"),
     # Listed for membership checks only — the create/update calls themselves go
     # through _push_cloud_app_instance, which knows the instance_id PK.
-    "cloud_app_instance":            ("create_cloud_app_instance",
-                                      "update_cloud_app_instance"),
-    "proxy":                         ("create_proxy",         "update_proxy"),
+    "cloud_app_instance": ("create_cloud_app_instance", "update_cloud_app_instance"),
+    "proxy": ("create_proxy", "update_proxy"),
     # Certificate material is create-only — see _CREATE_ONLY_TYPES.  The update
     # slot is never reached; it repeats the create name rather than lying about
     # an update endpoint the push cannot address.
-    "root_certificate":              ("create_root_certificate",
-                                      "create_root_certificate"),
+    "root_certificate": ("create_root_certificate", "create_root_certificate"),
     # Singletons — no create path; use update method for both entries
-    "url_filter_cloud_app_settings": ("update_url_filter_cloud_app_settings",
-                                      "update_url_filter_cloud_app_settings"),
-    "advanced_settings":             ("update_advanced_settings",
-                                      "update_advanced_settings"),
-    "browser_control_settings":      ("update_browser_control_settings",
-                                      "update_browser_control_settings"),
+    "url_filter_cloud_app_settings": (
+        "update_url_filter_cloud_app_settings",
+        "update_url_filter_cloud_app_settings",
+    ),
+    "advanced_settings": ("update_advanced_settings", "update_advanced_settings"),
+    "browser_control_settings": (
+        "update_browser_control_settings",
+        "update_browser_control_settings",
+    ),
     # Full Clone types
-    "static_ip":      ("create_static_ip",      "update_static_ip"),
-    "vpn_credential": ("create_vpn_credential",  "update_vpn_credential"),
-    "gre_tunnel":     ("create_gre_tunnel",       "update_gre_tunnel"),
-    "sublocation":    ("create_sublocation",      "update_sublocation"),
+    "static_ip": ("create_static_ip", "update_static_ip"),
+    "vpn_credential": ("create_vpn_credential", "update_vpn_credential"),
+    "gre_tunnel": ("create_gre_tunnel", "update_gre_tunnel"),
+    "sublocation": ("create_sublocation", "update_sublocation"),
 }
 
 # Types that are created when absent and left alone when present.
@@ -374,14 +379,14 @@ _CREATE_ONLY_TYPES: Set[str] = {"root_certificate"}
 # GET methods for live configVersion fetch before UPDATE.
 # Only types with single-record GET endpoints are listed.
 _GET_METHODS: Dict[str, str] = {
-    "url_category":         "get_url_category",
-    "url_filtering_rule":   "get_url_filtering_rule",
-    "firewall_rule":        "get_firewall_rule",
-    "firewall_dns_rule":    "get_firewall_dns_rule",
-    "firewall_ips_rule":    "get_firewall_ips_rule",
-    "ssl_inspection_rule":  "get_ssl_inspection_rule",
-    "dlp_engine":           "get_dlp_engine",
-    "dlp_dictionary":       "get_dlp_dictionary",
+    "url_category": "get_url_category",
+    "url_filtering_rule": "get_url_filtering_rule",
+    "firewall_rule": "get_firewall_rule",
+    "firewall_dns_rule": "get_firewall_dns_rule",
+    "firewall_ips_rule": "get_firewall_ips_rule",
+    "ssl_inspection_rule": "get_ssl_inspection_rule",
+    "dlp_engine": "get_dlp_engine",
+    "dlp_dictionary": "get_dlp_dictionary",
     # cloud_app_control_rule requires rule_type — handled separately
 }
 
@@ -389,11 +394,12 @@ _GET_METHODS: Dict[str, str] = {
 # Data classes
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class PushRecord:
     resource_type: str
     name: str
-    status: str   # "created" | "updated" | "deleted" | "skipped" | "failed:<reason>"
+    status: str  # "created" | "updated" | "deleted" | "skipped" | "failed:<reason>"
     warnings: List[str] = None  # type: ignore[assignment]
     zia_id: Optional[str] = None  # set on created/updated records; used by rollback
 
@@ -428,13 +434,14 @@ class PushRecord:
     @property
     def failure_reason(self) -> str:
         if self.is_failed:
-            reason = self.status[len("failed:"):]
-            return reason[len("permanent:"):] if reason.startswith("permanent:") else reason
+            reason = self.status[len("failed:") :]
+            return reason[len("permanent:") :] if reason.startswith("permanent:") else reason
         return ""
 
 
 class _PushCancelled(Exception):
     """Raised by push_classified when a stop_fn signals cancellation."""
+
     def __init__(self, pushed_records: "List[PushRecord]"):
         self.pushed_records = pushed_records
 
@@ -462,7 +469,8 @@ class WipeRecord:
 @dataclass
 class WipeResult:
     """Classification output from classify_wipe() — no mutations made."""
-    to_delete: List[WipeRecord]   # user-created resources to delete
+
+    to_delete: List[WipeRecord]  # user-created resources to delete
 
     @property
     def delete_count(self) -> int:
@@ -480,9 +488,11 @@ class WipeResult:
 # Dry-run result
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class DryRunResult:
     """Classification output from classify_baseline() — no API writes made."""
+
     # Skipped records (predefined, identical config, SKIP_TYPES)
     skipped: List[PushRecord]
     # Entries queued to push, keyed by resource_type; each entry dict has
@@ -495,13 +505,11 @@ class DryRunResult:
 
     @property
     def create_count(self) -> int:
-        return sum(1 for v in self.pending.values()
-                   for e in v if e.get("__action") == "create")
+        return sum(1 for v in self.pending.values() for e in v if e.get("__action") == "create")
 
     @property
     def update_count(self) -> int:
-        return sum(1 for v in self.pending.values()
-                   for e in v if e.get("__action") == "update")
+        return sum(1 for v in self.pending.values() for e in v if e.get("__action") == "update")
 
     @property
     def skip_count(self) -> int:
@@ -527,7 +535,9 @@ class DryRunResult:
             out[r.resource_type]["delete"] += 1
         return out
 
-    def changes_by_action(self) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]], List[Tuple[str, str]]]:
+    def changes_by_action(
+        self,
+    ) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]], List[Tuple[str, str]]]:
         """Return (creates, updates, deletes) as lists of (resource_type, display_name) tuples."""
         creates, updates, deletes = [], [], []
         for rtype, entries in self.pending.items():
@@ -546,18 +556,21 @@ class DryRunResult:
 # Push service
 # ---------------------------------------------------------------------------
 
+
 class ZIAPushService:
     def __init__(self, client, tenant_id: int, full_clone: bool = False):
         self._client = client
         self._tenant_id = tenant_id
         self._full_clone = full_clone
-        self._id_remap: Dict[str, str] = {}          # source_id (str) → target_id (str)
+        self._id_remap: Dict[str, str] = {}  # source_id (str) → target_id (str)
         self._target_known_ids: Dict[str, set] = {}  # resource_type → set of zia_ids in target
         # cloud_app_instance name → target instance_id, built lazily on first
         # resolve and reused for the rest of the push.
         self._instance_name_index: Optional[Dict[str, str]] = None
-        self._usable_dlp_engine_ids: set = set()     # target DLP engine IDs that can be used in rules
-        self._cbi_profile_map: Dict[str, dict] = {}  # profile name (lower) → {id, name, url, default}
+        self._usable_dlp_engine_ids: set = set()  # target DLP engine IDs that can be used in rules
+        self._cbi_profile_map: Dict[
+            str, dict
+        ] = {}  # profile name (lower) → {id, name, url, default}
         # Tracks static IPs created during a Full Clone push (source_id → target_id).
         # Used to clear GRE tunnel sourceIp references that we cannot replicate.
         self._created_static_ip_ids: Dict[str, str] = {}
@@ -587,6 +600,7 @@ class ZIAPushService:
                 (rules) should not be in this map.
         """
         from services.zia_import_service import ZIAImportService
+
         import_svc = ZIAImportService(self._client, self._tenant_id)
         import_svc.run(progress_callback=import_progress_callback)
 
@@ -612,12 +626,14 @@ class ZIAPushService:
                     continue
                 if name and name in preserved:
                     continue  # in template — push phase will update it
-                to_delete.append(WipeRecord(
-                    resource_type=rtype,
-                    name=name or zia_id,
-                    zia_id=zia_id,
-                    status="pending_delete",
-                ))
+                to_delete.append(
+                    WipeRecord(
+                        resource_type=rtype,
+                        name=name or zia_id,
+                        zia_id=zia_id,
+                        status="pending_delete",
+                    )
+                )
 
         return WipeResult(to_delete=to_delete)
 
@@ -682,6 +698,7 @@ class ZIAPushService:
         """
         if not skip_import:
             from services.zia_import_service import ZIAImportService
+
             import_svc = ZIAImportService(self._client, self._tenant_id)
             narrowed = (
                 sorted(set(import_resource_types) | REFERENCE_TYPES)
@@ -697,8 +714,7 @@ class ZIAPushService:
         # Build a lookup of all IDs currently in the target so cross-tenant ref
         # filtering can strip IDs that don't exist in this environment.
         self._target_known_ids = {
-            rtype: set(type_data.keys())
-            for rtype, type_data in existing.items()
+            rtype: set(type_data.keys()) for rtype, type_data in existing.items()
         }
         # DLP engine IDs present in the target tenant that can be referenced in rules.
         # All engine IDs are included — both named engines (custom_dlp_engine=True,
@@ -747,8 +763,11 @@ class ZIAPushService:
                 for entry in entries:
                     raw = entry.get("raw_config", {})
                     new_urls.extend(
-                        raw.get("whitelist_urls") or raw.get("whitelistUrls") or
-                        raw.get("blacklist_urls") or raw.get("blacklistUrls") or []
+                        raw.get("whitelist_urls")
+                        or raw.get("whitelistUrls")
+                        or raw.get("blacklist_urls")
+                        or raw.get("blacklistUrls")
+                        or []
                     )
                 if new_urls:
                     pending[rtype] = list(entries)
@@ -781,19 +800,23 @@ class ZIAPushService:
                         # Predefined DLP dictionaries (custom:false): the API rejects
                         # pattern/phrase edits but allows confidence_threshold updates
                         # via GET-then-PUT.  Queue an update when the threshold differs.
-                        if (rtype == "dlp_dictionary"
-                                and raw_config.get("custom") == False  # noqa: E712
-                                and raw_config.get("confidence_threshold") is not None):
+                        if (
+                            rtype == "dlp_dictionary"
+                            and raw_config.get("custom") == False  # noqa: E712
+                            and raw_config.get("confidence_threshold") is not None
+                        ):
                             tgt_conf = existing_entry["raw_config"].get("confidence_threshold")
                             bl_conf = raw_config["confidence_threshold"]
                             if bl_conf != tgt_conf:
                                 pending.setdefault(rtype, []).append(
-                                    dict(entry,
-                                         __action="update",
-                                         __target_id=target_id,
-                                         __display_name=display_name,
-                                         __managed=True,
-                                         __confidence_threshold=bl_conf)
+                                    dict(
+                                        entry,
+                                        __action="update",
+                                        __target_id=target_id,
+                                        __display_name=display_name,
+                                        __managed=True,
+                                        __confidence_threshold=bl_conf,
+                                    )
                                 )
                                 continue
 
@@ -803,23 +826,33 @@ class ZIAPushService:
                         # handled by the reverse-insert mechanism — exclude order
                         # from comparison so order-only diffs don't trigger updates.
                         _ORDERED_MANAGED_TYPES = {
-                            "ssl_inspection_rule", "url_filtering_rule", "forwarding_rule",
-                            "firewall_rule", "firewall_dns_rule", "firewall_ips_rule",
-                            "nat_control_rule", "sandbox_rule",
+                            "ssl_inspection_rule",
+                            "url_filtering_rule",
+                            "forwarding_rule",
+                            "firewall_rule",
+                            "firewall_dns_rule",
+                            "firewall_ips_rule",
+                            "nat_control_rule",
+                            "sandbox_rule",
                         }
                         if raw_config.get("predefined") and rtype in _ORDERED_MANAGED_TYPES:
                             _bl = {k: v for k, v in raw_config.items() if k != "order"}
-                            _ex = {k: v for k, v in existing_entry["raw_config"].items() if k != "order"}
+                            _ex = {
+                                k: v
+                                for k, v in existing_entry["raw_config"].items()
+                                if k != "order"
+                            }
                         else:
                             _bl, _ex = raw_config, existing_entry["raw_config"]
-                        if (_is_writable(raw_config)
-                                and not self._configs_match(rtype, _bl, _ex)):
+                        if _is_writable(raw_config) and not self._configs_match(rtype, _bl, _ex):
                             pending.setdefault(rtype, []).append(
-                                dict(entry,
-                                     __action="update",
-                                     __target_id=target_id,
-                                     __display_name=display_name,
-                                     __managed=True)
+                                dict(
+                                    entry,
+                                    __action="update",
+                                    __target_id=target_id,
+                                    __display_name=display_name,
+                                    __managed=True,
+                                )
                             )
                             continue
                         # Found in target and configs match (or read-only): nothing to push.
@@ -831,14 +864,15 @@ class ZIAPushService:
                     # settings push provisions it.  Disabled/absent rules are left as
                     # skipped — toggle=OFF / rule-absent is equivalent behaviour to
                     # toggle=OFF / rule-disabled; the settings push handles both.
-                    if (rtype in _ONE_CLICK_RULE_TYPES
-                            and raw_config.get("state") == "ENABLED"):
+                    if rtype in _ONE_CLICK_RULE_TYPES and raw_config.get("state") == "ENABLED":
                         pending.setdefault(rtype, []).append(
-                            dict(entry,
-                                 __action="update",
-                                 __display_name=display_name,
-                                 __managed=True,
-                                 __one_click_pending=True)
+                            dict(
+                                entry,
+                                __action="update",
+                                __display_name=display_name,
+                                __managed=True,
+                                __one_click_pending=True,
+                            )
                         )
                         continue
                     # Settings singletons always exist in every tenant — queue an
@@ -846,11 +880,13 @@ class ZIAPushService:
                     # import, or stale DB).  Use the hardcoded singleton ID "1".
                     if rtype in SETTINGS_SINGLETONS and _is_writable(raw_config):
                         pending.setdefault(rtype, []).append(
-                            dict(entry,
-                                 __action="update",
-                                 __target_id="1",
-                                 __display_name=display_name,
-                                 __managed=True)
+                            dict(
+                                entry,
+                                __action="update",
+                                __target_id="1",
+                                __display_name=display_name,
+                                __managed=True,
+                            )
                         )
                         continue
                     skipped.append(PushRecord(rtype, display_name, "skipped"))
@@ -913,11 +949,13 @@ class ZIAPushService:
                 # string ID that is identical across tenants but often have an empty
                 # display name.  _find_existing_user skips empty names, so fall back
                 # to a direct slot-ID lookup when the name match fails.
-                if (not existing_entry
-                        and not name
-                        and rtype == "url_category"
-                        and source_id
-                        and source_id in existing_for_type):
+                if (
+                    not existing_entry
+                    and not name
+                    and rtype == "url_category"
+                    and source_id
+                    and source_id in existing_for_type
+                ):
                     existing_entry = existing_for_type[source_id]
 
                 if existing_entry:
@@ -936,17 +974,18 @@ class ZIAPushService:
                         skipped.append(PushRecord(rtype, display_name, "skipped"))
                         continue
 
-                    queued = dict(entry,
-                                  __action="update",
-                                  __target_id=target_id,
-                                  __display_name=display_name,
-                                  __managed=False,
-                                  __target_order=existing_entry.get("raw_config", {}).get("order"))
+                    queued = dict(
+                        entry,
+                        __action="update",
+                        __target_id=target_id,
+                        __display_name=display_name,
+                        __managed=False,
+                        __target_order=existing_entry.get("raw_config", {}).get("order"),
+                    )
                 else:
-                    queued = dict(entry,
-                                  __action="create",
-                                  __display_name=display_name,
-                                  __managed=False)
+                    queued = dict(
+                        entry, __action="create", __display_name=display_name, __managed=False
+                    )
 
                 pending.setdefault(rtype, []).append(queued)
 
@@ -954,7 +993,7 @@ class ZIAPushService:
         # Skipping a template's gateway without a word would leave the operator to
         # work out for themselves why the chain does not carry traffic, so report
         # each one with what to build.
-        for gw_entry in (resources.get("proxy_gateway") or []):
+        for gw_entry in resources.get("proxy_gateway") or []:
             rec = PushRecord(
                 "proxy_gateway",
                 gw_entry.get("name") or str(gw_entry.get("id") or "?"),
@@ -987,11 +1026,13 @@ class ZIAPushService:
                 if name in SKIP_NAMED.get(rtype, set()):
                     continue
 
-                to_delete.append(PushRecord(
-                    resource_type=rtype,
-                    name=name or zia_id,
-                    status=f"pending_delete:{zia_id}",
-                ))
+                to_delete.append(
+                    PushRecord(
+                        resource_type=rtype,
+                        name=name or zia_id,
+                        status=f"pending_delete:{zia_id}",
+                    )
+                )
 
         # Rule ordering strategy:
         #
@@ -1006,10 +1047,17 @@ class ZIAPushService:
         #
         # Sequence: creates first (descending), then updates (ascending).
         _ORDERED_RULE_TYPES = (
-            "ssl_inspection_rule", "url_filtering_rule", "forwarding_rule",
-            "firewall_rule", "firewall_dns_rule", "firewall_ips_rule",
-            "nat_control_rule", "dlp_web_rule", "bandwidth_control_rule",
-            "traffic_capture_rule", "sandbox_rule",
+            "ssl_inspection_rule",
+            "url_filtering_rule",
+            "forwarding_rule",
+            "firewall_rule",
+            "firewall_dns_rule",
+            "firewall_ips_rule",
+            "nat_control_rule",
+            "dlp_web_rule",
+            "bandwidth_control_rule",
+            "traffic_capture_rule",
+            "sandbox_rule",
         )
         for rtype in _ORDERED_RULE_TYPES:
             if rtype not in pending:
@@ -1032,9 +1080,7 @@ class ZIAPushService:
                         if (e.get("raw_config", {}).get("order") or 0) > 0
                     ]
                     insertion_point = max(managed_positive_orders, default=0) + 1
-                creates.sort(
-                    key=lambda e: e.get("raw_config", {}).get("order") or 0, reverse=True
-                )
+                creates.sort(key=lambda e: e.get("raw_config", {}).get("order") or 0, reverse=True)
                 for entry in creates:
                     entry["raw_config"] = dict(entry["raw_config"], order=insertion_point)
                     entry["__set_order"] = True
@@ -1124,13 +1170,16 @@ class ZIAPushService:
         try:
             # Pass 1a — settings singletons (provisions one-click rules on the target)
             if settings_pending:
-                _, pass1a_records = self._single_pass(settings_pending, 1, progress_callback, stop_fn)
+                _, pass1a_records = self._single_pass(
+                    settings_pending, 1, progress_callback, stop_fn
+                )
                 all_records.extend(pass1a_records)
 
             # Re-import one-click rule types so newly provisioned rules are visible,
             # then resolve __one_click_pending entries to real target IDs.
             if one_click_pending:
                 from services.zia_import_service import ZIAImportService
+
                 _reimport_svc = ZIAImportService(self._client, self._tenant_id)
                 _reimport_svc.run(resource_types=list(one_click_pending.keys()))
                 refreshed = self._load_existing_from_db()
@@ -1154,11 +1203,13 @@ class ZIAPushService:
                             other_managed_pending.setdefault(rtype, []).append(entry)
                         else:
                             dname = entry.get("__display_name") or name or "?"
-                            all_records.append(PushRecord(
-                                resource_type=rtype,
-                                name=dname,
-                                status="skipped:one_click_not_provisioned",
-                            ))
+                            all_records.append(
+                                PushRecord(
+                                    resource_type=rtype,
+                                    name=dname,
+                                    status="skipped:one_click_not_provisioned",
+                                )
+                            )
                             order = (entry.get("raw_config") or {}).get("order") or 0
                             if order > 0:
                                 unprovisioned_orders_by_type.setdefault(rtype, []).append(order)
@@ -1184,7 +1235,9 @@ class ZIAPushService:
 
             # Pass 1b — remaining managed resources (including resolved one-click items)
             if other_managed_pending:
-                _, pass1b_records = self._single_pass(other_managed_pending, 1, progress_callback, stop_fn)
+                _, pass1b_records = self._single_pass(
+                    other_managed_pending, 1, progress_callback, stop_fn
+                )
                 all_records.extend(pass1b_records)
 
             # Pass 2+ — user-defined resources with multi-pass retry
@@ -1194,7 +1247,9 @@ class ZIAPushService:
                 pass_num += 1
                 prev_count = sum(len(v) for v in pending.values())
 
-                new_pending, pass_records = self._single_pass(pending, pass_num, progress_callback, stop_fn)
+                new_pending, pass_records = self._single_pass(
+                    pending, pass_num, progress_callback, stop_fn
+                )
                 all_records.extend(pass_records)
                 pending = new_pending
 
@@ -1203,11 +1258,13 @@ class ZIAPushService:
                         for entry in entries:
                             last_err = entry.get("__last_error", "unknown error")
                             dname = entry.get("__display_name") or entry.get("name") or "?"
-                            all_records.append(PushRecord(
-                                resource_type=rtype,
-                                name=dname,
-                                status=f"failed:{last_err} (stable, no progress)",
-                            ))
+                            all_records.append(
+                                PushRecord(
+                                    resource_type=rtype,
+                                    name=dname,
+                                    status=f"failed:{last_err} (stable, no progress)",
+                                )
+                            )
                     break
 
         except _PushCancelled as exc:
@@ -1264,8 +1321,12 @@ class ZIAPushService:
                 if state:
                     rb = self._rollback_update(rtype, rec.name, rec.zia_id, state["raw_config"])
                 else:
-                    rb = PushRecord(rtype, rec.name, "rollback_skipped:pre_push_state_missing",
-                                    zia_id=rec.zia_id)
+                    rb = PushRecord(
+                        rtype,
+                        rec.name,
+                        "rollback_skipped:pre_push_state_missing",
+                        zia_id=rec.zia_id,
+                    )
             else:
                 continue
             rollback_records.append(rb)
@@ -1281,16 +1342,22 @@ class ZIAPushService:
             if resource_type == "cloud_app_control_rule":
                 from db.database import get_session
                 from db.models import ZIAResource
+
                 with get_session() as session:
-                    row = session.query(ZIAResource).filter_by(
-                        tenant_id=self._tenant_id,
-                        resource_type=resource_type,
-                        zia_id=zia_id,
-                    ).first()
+                    row = (
+                        session.query(ZIAResource)
+                        .filter_by(
+                            tenant_id=self._tenant_id,
+                            resource_type=resource_type,
+                            zia_id=zia_id,
+                        )
+                        .first()
+                    )
                     rule_type = (row.raw_config or {}).get("type") if row else None
                 if not rule_type:
-                    return PushRecord(resource_type, name,
-                                      "rollback_failed:cloud_app_rule missing type in DB")
+                    return PushRecord(
+                        resource_type, name, "rollback_failed:cloud_app_rule missing type in DB"
+                    )
                 self._client.delete_cloud_app_rule(rule_type, zia_id)
             elif method_name:
                 getattr(self._client, method_name)(zia_id)
@@ -1359,12 +1426,14 @@ class ZIAPushService:
                     continue
                 if zia_id in snap_ids or (name and name in snap_names):
                     continue  # resource is in the snapshot — keep it
-                candidates.append(PushRecord(
-                    resource_type=rtype,
-                    name=name or zia_id,
-                    status=f"pending_delete:{zia_id}",
-                    warnings=[],
-                ))
+                candidates.append(
+                    PushRecord(
+                        resource_type=rtype,
+                        name=name or zia_id,
+                        status=f"pending_delete:{zia_id}",
+                        warnings=[],
+                    )
+                )
 
         return candidates
 
@@ -1400,6 +1469,7 @@ class ZIAPushService:
 
         # Fresh import of only the affected resource types
         from services.zia_import_service import ZIAImportService
+
         import_svc = ZIAImportService(self._client, self._tenant_id)
         import_svc.run(
             resource_types=list(rtypes_to_check),
@@ -1411,12 +1481,14 @@ class ZIAPushService:
         still_present: List[PushRecord] = []
         for rtype, zia_id, original_rec in pairs:
             if zia_id in existing.get(rtype, {}):
-                still_present.append(PushRecord(
-                    resource_type=rtype,
-                    name=original_rec.name,
-                    status="failed:still_present",
-                    warnings=[],
-                ))
+                still_present.append(
+                    PushRecord(
+                        resource_type=rtype,
+                        name=original_rec.name,
+                        status="failed:still_present",
+                        warnings=[],
+                    )
+                )
 
         return still_present
 
@@ -1526,10 +1598,9 @@ class ZIAPushService:
         push_records: List[PushRecord] = []
         self._created_static_ip_ids = {}
 
-        ordered_fc_types = (
-            [t for t in self._FC_PUSH_PREFIX if t in clone_resources]
-            + [t for t in self._FC_PUSH_SUFFIX if t in clone_resources]
-        )
+        ordered_fc_types = [t for t in self._FC_PUSH_PREFIX if t in clone_resources] + [
+            t for t in self._FC_PUSH_SUFFIX if t in clone_resources
+        ]
 
         for rtype in ordered_fc_types:
             entries = clone_resources.get(rtype) or []
@@ -1553,18 +1624,18 @@ class ZIAPushService:
         _WIPE_ORDER_FC = self._FC_WIPE_PREFIX + self._FC_WIPE_SUFFIX
 
         _FC_LIST_METHODS: Dict[str, str] = {
-            "static_ip":      "list_static_ips",
+            "static_ip": "list_static_ips",
             "vpn_credential": "list_vpn_credentials",
-            "gre_tunnel":     "list_gre_tunnels",
-            "location":       "list_locations",
-            "sublocation":    "list_sublocations",
+            "gre_tunnel": "list_gre_tunnels",
+            "location": "list_locations",
+            "sublocation": "list_sublocations",
         }
         _FC_ID_FIELDS: Dict[str, str] = {
             "vpn_credential": "id",
-            "gre_tunnel":     "id",
-            "static_ip":      "id",
-            "location":       "id",
-            "sublocation":    "id",
+            "gre_tunnel": "id",
+            "static_ip": "id",
+            "location": "id",
+            "sublocation": "id",
         }
 
         records: List[WipeRecord] = []
@@ -1603,7 +1674,7 @@ class ZIAPushService:
         """
         raw_config = dict(entry.get("raw_config") or entry)
         source_id = str(raw_config.get("id", entry.get("id", "")))
-        name = (raw_config.get("name") or entry.get("name") or source_id or "?")
+        name = raw_config.get("name") or entry.get("name") or source_id or "?"
         warnings: List[str] = []
 
         if resource_type not in _WRITE_METHODS:
@@ -1655,8 +1726,14 @@ class ZIAPushService:
                     f"static IP registered in the target tenant; configure manually after clone"
                 )
             # primary_dest_vip and secondary_dest_vip are auto-assigned by ZIA
-            for f in ("primary_dest_vip", "secondaryDestVip", "secondary_dest_vip",
-                      "primaryDestVip", "last_modification_time", "lastModificationTime"):
+            for f in (
+                "primary_dest_vip",
+                "secondaryDestVip",
+                "secondary_dest_vip",
+                "primaryDestVip",
+                "last_modification_time",
+                "lastModificationTime",
+            ):
                 payload.pop(f, None)
 
         elif resource_type == "sublocation":
@@ -1668,8 +1745,15 @@ class ZIAPushService:
                     payload["parentId"] = int(remapped)
                     payload.pop("parent_id", None)
             # Clear the same location-specific fields
-            for f in ("ip_addresses", "ipAddresses", "vpn_credentials", "vpnCredentials",
-                      "dynamiclocation_groups", "static_location_groups", "child_count"):
+            for f in (
+                "ip_addresses",
+                "ipAddresses",
+                "vpn_credentials",
+                "vpnCredentials",
+                "dynamiclocation_groups",
+                "static_location_groups",
+                "child_count",
+            ):
                 payload.pop(f, None)
 
         elif resource_type == "static_ip":
@@ -1691,8 +1775,11 @@ class ZIAPushService:
         except Exception as exc:
             exc_str = str(exc)
             # 409 → resource already exists on target; try update by name
-            if ("409" in exc_str or "DUPLICATE_ITEM" in exc_str
-                    or "already exists" in exc_str.lower()):
+            if (
+                "409" in exc_str
+                or "DUPLICATE_ITEM" in exc_str
+                or "already exists" in exc_str.lower()
+            ):
                 found_id = self._find_by_name_live(resource_type, name)
                 if found_id:
                     if source_id:
@@ -1722,18 +1809,23 @@ class ZIAPushService:
             if rtype == "cloud_app_control_rule":
                 from db.database import get_session
                 from db.models import ZIAResource
+
                 with get_session() as session:
                     rec = (
                         session.query(ZIAResource)
-                        .filter_by(tenant_id=self._tenant_id,
-                                   resource_type=rtype,
-                                   zia_id=item.zia_id)
+                        .filter_by(
+                            tenant_id=self._tenant_id, resource_type=rtype, zia_id=item.zia_id
+                        )
                         .first()
                     )
                     rule_type = (rec.raw_config or {}).get("type") if rec else None
                 if not rule_type:
-                    return WipeRecord(rtype, item.name, item.zia_id,
-                                      "failed:permanent:cloud_app_rule missing type in DB")
+                    return WipeRecord(
+                        rtype,
+                        item.name,
+                        item.zia_id,
+                        "failed:permanent:cloud_app_rule missing type in DB",
+                    )
                 self._client.delete_cloud_app_rule(rule_type, item.zia_id)
             elif method_name:
                 getattr(self._client, method_name)(item.zia_id)
@@ -1742,8 +1834,9 @@ class ZIAPushService:
             return WipeRecord(rtype, item.name, item.zia_id, "deleted")
         except Exception as exc:
             exc_str = str(exc)
-            permanent = bool(re.search(r'"status"\s*:\s*(400|403|404)', exc_str)) or \
-                        any(s in exc_str for s in ("NOT_SUBSCRIBED", "not licensed"))
+            permanent = bool(re.search(r'"status"\s*:\s*(400|403|404)', exc_str)) or any(
+                s in exc_str for s in ("NOT_SUBSCRIBED", "not licensed")
+            )
             prefix = "failed:permanent:" if permanent else "failed:"
             return WipeRecord(rtype, item.name, item.zia_id, f"{prefix}{exc_str[:150]}")
 
@@ -1812,7 +1905,9 @@ class ZIAPushService:
                     return entry
         return None
 
-    def _configs_match(self, resource_type: str, baseline_config: dict, existing_config: dict) -> bool:
+    def _configs_match(
+        self, resource_type: str, baseline_config: dict, existing_config: dict
+    ) -> bool:
         """Return True if the push payloads for both configs are semantically identical.
 
         Compares _build_payload output rather than raw configs so that environment-specific
@@ -1936,7 +2031,9 @@ class ZIAPushService:
                 norm_warning = payload.pop("__norm_warning", None)
                 if norm_warning:
                     warnings.append(norm_warning)
-                if resource_type == "browser_control_settings" and payload.get("enableSmartBrowserIsolation"):
+                if resource_type == "browser_control_settings" and payload.get(
+                    "enableSmartBrowserIsolation"
+                ):
                     target_seq = current.get("smartIsolationProfileId")
                     target_profile = current.get("smartIsolationProfile")
                     if target_seq and target_profile:
@@ -1954,10 +2051,7 @@ class ZIAPushService:
                             "has not been activated on this tenant; enable it once via "
                             "the web UI, then re-push to keep it in sync"
                         )
-                merged = {
-                    k: v for k, v in current.items()
-                    if k not in SETTINGS_METADATA_FIELDS
-                }
+                merged = {k: v for k, v in current.items() if k not in SETTINGS_METADATA_FIELDS}
                 merged.update(payload)
                 getattr(self._client, _WRITE_METHODS[resource_type][1])(target_id, merged)
                 rec = PushRecord(resource_type=resource_type, name=name, status="updated")
@@ -1968,10 +2062,12 @@ class ZIAPushService:
 
         # Predefined DLP dictionaries: only confidence_threshold can be synced.
         # GET the full camelCase payload, overwrite confidenceThreshold, PUT back.
-        if (resource_type == "dlp_dictionary"
-                and action == "update"
-                and target_id
-                and entry.get("__confidence_threshold")):
+        if (
+            resource_type == "dlp_dictionary"
+            and action == "update"
+            and target_id
+            and entry.get("__confidence_threshold")
+        ):
             conf = entry["__confidence_threshold"]
             try:
                 current = self._client.zia_get(f"/zia/api/v1/dlpDictionaries/{target_id}")
@@ -1991,13 +2087,19 @@ class ZIAPushService:
         # Predefined One-Click rules (ssl_inspection_rule, firewall_rule, etc.) only accept
         # order and rank on update — sending the full payload is rejected by the API.
         _ONE_CLICK_RULE_TYPES = {
-            "ssl_inspection_rule", "url_filtering_rule", "firewall_rule",
-            "forwarding_rule", "nat_control_rule", "dlp_web_rule",
+            "ssl_inspection_rule",
+            "url_filtering_rule",
+            "firewall_rule",
+            "forwarding_rule",
+            "nat_control_rule",
+            "dlp_web_rule",
         }
-        if (resource_type in _ONE_CLICK_RULE_TYPES
-                and action == "update"
-                and target_id
-                and raw_config.get("predefined")):
+        if (
+            resource_type in _ONE_CLICK_RULE_TYPES
+            and action == "update"
+            and target_id
+            and raw_config.get("predefined")
+        ):
             full_payload = self._build_payload(resource_type, raw_config)
             # GET the raw camelCase payload from the API (SDK as_dict() returns
             # snake_case which the API rejects; also strip server-set read-only fields).
@@ -2005,30 +2107,31 @@ class ZIAPushService:
             # {id, name} update fails with "order cannot be null".  Use GET-then-PUT
             # to preserve the target's current state while satisfying the API contract.
             _RULE_API_PATHS = {
-                "firewall_rule":       "/zia/api/v1/firewallFilteringRules",
+                "firewall_rule": "/zia/api/v1/firewallFilteringRules",
                 "ssl_inspection_rule": "/zia/api/v1/sslInspectionRules",
             }
-            _RO_FIELDS = {"lastModifiedTime", "lastModifiedBy", "accessControl",
-                          "defaultDnsRuleNameUsed", "predefined", "defaultRule"}
+            _RO_FIELDS = {
+                "lastModifiedTime",
+                "lastModifiedBy",
+                "accessControl",
+                "defaultDnsRuleNameUsed",
+                "predefined",
+                "defaultRule",
+            }
             if resource_type in _RULE_API_PATHS:
                 # GET raw camelCase, strip server-set RO fields, PUT back.
                 # Order is NOT updated — handled by insertion_point mechanism.
                 try:
-                    current = self._client.zia_get(
-                        f"{_RULE_API_PATHS[resource_type]}/{target_id}"
-                    )
+                    current = self._client.zia_get(f"{_RULE_API_PATHS[resource_type]}/{target_id}")
                     current = {k: v for k, v in current.items() if k not in _RO_FIELDS}
-                    self._client.zia_put(
-                        f"{_RULE_API_PATHS[resource_type]}/{target_id}", current
-                    )
+                    self._client.zia_put(f"{_RULE_API_PATHS[resource_type]}/{target_id}", current)
                     return PushRecord(resource_type=resource_type, name=name, status="updated")
                 except Exception as exc:
                     return self._classify_error(resource_type, name, exc)
             else:
                 # Preserve target's existing rank — admin rank may not be enabled.
                 # Order is NOT updated — handled by insertion_point mechanism.
-                restricted = {"id": target_id,
-                              "name": full_payload.get("name")}
+                restricted = {"id": target_id, "name": full_payload.get("name")}
                 try:
                     self._do_update(resource_type, target_id, update_method, restricted)
                     return PushRecord(resource_type=resource_type, name=name, status="updated")
@@ -2040,18 +2143,22 @@ class ZIAPushService:
         # non-order fields that differ.  Order is NOT updated here — it is handled
         # naturally by the reverse-insert mechanism (insertion_point).
         # Snake_case or minimal payloads cause 400/500 errors from the API.
-        if (resource_type == "firewall_dns_rule"
-                and action == "update"
-                and target_id
-                and raw_config.get("predefined")):
-            _RO_FIELDS_DNS = {"lastModifiedTime", "lastModifiedBy", "accessControl",
-                               "defaultDnsRuleNameUsed"}
+        if (
+            resource_type == "firewall_dns_rule"
+            and action == "update"
+            and target_id
+            and raw_config.get("predefined")
+        ):
+            _RO_FIELDS_DNS = {
+                "lastModifiedTime",
+                "lastModifiedBy",
+                "accessControl",
+                "defaultDnsRuleNameUsed",
+            }
             try:
                 current = self._client.zia_get(f"/zia/api/v1/firewallDnsRules/{target_id}")
                 current = {k: v for k, v in current.items() if k not in _RO_FIELDS_DNS}
-                self._client.zia_put(
-                    f"/zia/api/v1/firewallDnsRules/{target_id}", current
-                )
+                self._client.zia_put(f"/zia/api/v1/firewallDnsRules/{target_id}", current)
                 return PushRecord(resource_type=resource_type, name=name, status="updated")
             except Exception as exc:
                 return self._classify_error(resource_type, name, exc)
@@ -2063,7 +2170,7 @@ class ZIAPushService:
         # Detect cbi_profile remapped to a different profile (name mismatch or fallback to default).
         if resource_type == "url_filtering_rule":
             baseline_cbi = raw_config.get("cbi_profile")
-            payload_cbi  = payload.get("cbi_profile")
+            payload_cbi = payload.get("cbi_profile")
             if isinstance(baseline_cbi, dict) and baseline_cbi.get("id"):
                 baseline_cbi_name = baseline_cbi.get("name", "")
                 if not payload_cbi:
@@ -2084,10 +2191,18 @@ class ZIAPushService:
             # constraint errors when other rules occupy intermediate positions.
             # In wipe-first mode this is moot (all rules are creates after wipe).
             _ORDERED_RULE_TYPES = {
-                "url_filtering_rule", "ssl_inspection_rule", "firewall_rule",
-                "firewall_dns_rule", "firewall_ips_rule", "forwarding_rule",
-                "nat_control_rule", "dlp_web_rule", "bandwidth_control_rule",
-                "traffic_capture_rule", "cloud_app_control_rule", "sandbox_rule",
+                "url_filtering_rule",
+                "ssl_inspection_rule",
+                "firewall_rule",
+                "firewall_dns_rule",
+                "firewall_ips_rule",
+                "forwarding_rule",
+                "nat_control_rule",
+                "dlp_web_rule",
+                "bandwidth_control_rule",
+                "traffic_capture_rule",
+                "cloud_app_control_rule",
+                "sandbox_rule",
             }
             update_payload = payload
             if resource_type in _ORDERED_RULE_TYPES and not entry.get("__managed"):
@@ -2105,8 +2220,13 @@ class ZIAPushService:
                         update_payload = {k: v for k, v in payload.items() if k != "order"}
             try:
                 self._do_update(resource_type, target_id, update_method, update_payload)
-                return PushRecord(resource_type=resource_type, name=name, status="updated",
-                                  warnings=record_warnings, zia_id=str(target_id))
+                return PushRecord(
+                    resource_type=resource_type,
+                    name=name,
+                    status="updated",
+                    warnings=record_warnings,
+                    zia_id=str(target_id),
+                )
             except Exception as exc:
                 return self._classify_error(resource_type, name, exc)
 
@@ -2116,20 +2236,33 @@ class ZIAPushService:
             new_target_id = str(result.get("id", ""))
             if source_id and new_target_id:
                 self._register_remap(source_id, new_target_id)
-            return PushRecord(resource_type=resource_type, name=name, status="created",
-                              warnings=record_warnings, zia_id=new_target_id or None)
+            return PushRecord(
+                resource_type=resource_type,
+                name=name,
+                status="created",
+                warnings=record_warnings,
+                zia_id=new_target_id or None,
+            )
         except Exception as exc:
             exc_str = str(exc)
-            if ("409" in exc_str or "DUPLICATE_ITEM" in exc_str
-                    or "already exists" in exc_str.lower() or "conflict" in exc_str.lower()):
+            if (
+                "409" in exc_str
+                or "DUPLICATE_ITEM" in exc_str
+                or "already exists" in exc_str.lower()
+                or "conflict" in exc_str.lower()
+            ):
                 found_id = self._find_by_name_live(resource_type, name)
                 if found_id:
                     if source_id:
                         self._register_remap(source_id, found_id)
                     try:
                         self._do_update(resource_type, found_id, update_method, payload)
-                        return PushRecord(resource_type=resource_type, name=name, status="updated",
-                                          zia_id=found_id)
+                        return PushRecord(
+                            resource_type=resource_type,
+                            name=name,
+                            status="updated",
+                            zia_id=found_id,
+                        )
                     except Exception as upd_exc:
                         return self._classify_error(resource_type, name, upd_exc)
                 # Name lookup failed (likely transient — rate limit on the list call).
@@ -2145,14 +2278,14 @@ class ZIAPushService:
     # resources, so a reference that finds no match is dropped by the normalizers.
     # (payload field, resource type, operator remediation hint)
     _SCOPE_CHECKS = [
-        ("locations",       "location",          "create locations manually"),
-        ("location_groups", "location_group",    "create location groups manually"),
-        ("groups",          "group",             "create groups manually"),
-        ("departments",     "department",        "create departments manually"),
-        ("users",           "user",              "assign users manually"),
-        ("devices",         "device",            "assign devices manually"),
-        ("device_groups",   "device_group",      "assign device groups manually"),
-        ("zpa_app_segments","zpa_app_segment",   "provision ZPA app segments, then re-enable"),
+        ("locations", "location", "create locations manually"),
+        ("location_groups", "location_group", "create location groups manually"),
+        ("groups", "group", "create groups manually"),
+        ("departments", "department", "create departments manually"),
+        ("users", "user", "assign users manually"),
+        ("devices", "device", "assign devices manually"),
+        ("device_groups", "device_group", "assign device groups manually"),
+        ("zpa_app_segments", "zpa_app_segment", "provision ZPA app segments, then re-enable"),
         ("cloud_app_instances", "cloud_app_instance", "create cloud app instances manually"),
     ]
 
@@ -2185,15 +2318,18 @@ class ZIAPushService:
                     v.get("name", str(v.get("id", "?"))) if isinstance(v, dict) else str(v)
                     for v in baseline_vals
                 ]
-                record_warnings.append(
-                    f"{field} scope stripped — {hint}: {', '.join(names)}"
-                )
+                record_warnings.append(f"{field} scope stripped — {hint}: {', '.join(names)}")
         if scope_was_stripped:
             payload = dict(payload, state="DISABLED")
             if action == "create":
-                record_warnings.insert(0, "rule inserted DISABLED — scope fields stripped (see below)")
+                record_warnings.insert(
+                    0, "rule inserted DISABLED — scope fields stripped (see below)"
+                )
             else:
-                record_warnings.insert(0, "rule kept DISABLED — scope fields still stripped; resolve manually before enabling (see below)")
+                record_warnings.insert(
+                    0,
+                    "rule kept DISABLED — scope fields still stripped; resolve manually before enabling (see below)",
+                )
         return payload, record_warnings
 
     def _push_cloud_app_rule(
@@ -2222,8 +2358,12 @@ class ZIAPushService:
         if action == "update" and target_id:
             try:
                 self._client.update_cloud_app_rule(rule_type, target_id, payload)
-                return PushRecord(resource_type="cloud_app_control_rule", name=name,
-                                  status="updated", warnings=record_warnings)
+                return PushRecord(
+                    resource_type="cloud_app_control_rule",
+                    name=name,
+                    status="updated",
+                    warnings=record_warnings,
+                )
             except Exception as exc:
                 return self._classify_error("cloud_app_control_rule", name, exc)
 
@@ -2235,12 +2375,20 @@ class ZIAPushService:
             new_target_id = str(result.get("id", ""))
             if source_id and new_target_id:
                 self._register_remap(source_id, new_target_id)
-            return PushRecord(resource_type="cloud_app_control_rule", name=name,
-                              status="created", warnings=record_warnings)
+            return PushRecord(
+                resource_type="cloud_app_control_rule",
+                name=name,
+                status="created",
+                warnings=record_warnings,
+            )
         except Exception as exc:
             exc_str = str(exc)
-            if ("409" in exc_str or "DUPLICATE_ITEM" in exc_str
-                    or "already exists" in exc_str.lower() or "conflict" in exc_str.lower()):
+            if (
+                "409" in exc_str
+                or "DUPLICATE_ITEM" in exc_str
+                or "already exists" in exc_str.lower()
+                or "conflict" in exc_str.lower()
+            ):
                 try:
                     existing_rules = self._client.list_cloud_app_rules(rule_type)
                     found = next((r for r in existing_rules if r.get("name") == name), None)
@@ -2250,7 +2398,9 @@ class ZIAPushService:
                             self._register_remap(source_id, found_id)
                         try:
                             self._client.update_cloud_app_rule(rule_type, found_id, payload)
-                            return PushRecord(resource_type="cloud_app_control_rule", name=name, status="updated")
+                            return PushRecord(
+                                resource_type="cloud_app_control_rule", name=name, status="updated"
+                            )
                         except Exception as upd_exc:
                             return self._classify_error("cloud_app_control_rule", name, upd_exc)
                 except Exception:
@@ -2296,8 +2446,9 @@ class ZIAPushService:
                 self._client.update_cloud_app_instance(str(target_id), payload)
                 if source_id:
                     self._register_remap(source_id, target_id)
-                return PushRecord(resource_type=rtype, name=name, status="updated",
-                                  zia_id=str(target_id))
+                return PushRecord(
+                    resource_type=rtype, name=name, status="updated", zia_id=str(target_id)
+                )
             except Exception as exc:
                 return self._classify_error(rtype, name, exc)
 
@@ -2309,8 +2460,7 @@ class ZIAPushService:
                 self._register_remap(source_id, found_id)
             try:
                 self._client.update_cloud_app_instance(found_id, payload)
-                return PushRecord(resource_type=rtype, name=name, status="updated",
-                                  zia_id=found_id)
+                return PushRecord(resource_type=rtype, name=name, status="updated", zia_id=found_id)
             except Exception as exc:
                 return self._classify_error(rtype, name, exc)
 
@@ -2318,16 +2468,21 @@ class ZIAPushService:
             result = self._client.create_cloud_app_instance(payload) or {}
         except Exception as exc:
             exc_str = str(exc)
-            if ("409" in exc_str or "DUPLICATE_ITEM" in exc_str
-                    or "already exists" in exc_str.lower() or "conflict" in exc_str.lower()):
+            if (
+                "409" in exc_str
+                or "DUPLICATE_ITEM" in exc_str
+                or "already exists" in exc_str.lower()
+                or "conflict" in exc_str.lower()
+            ):
                 dup_id = self._find_instance_by_name(rtype, name, live_only=True)
                 if dup_id:
                     if source_id:
                         self._register_remap(source_id, dup_id)
                     try:
                         self._client.update_cloud_app_instance(dup_id, payload)
-                        return PushRecord(resource_type=rtype, name=name,
-                                          status="updated", zia_id=dup_id)
+                        return PushRecord(
+                            resource_type=rtype, name=name, status="updated", zia_id=dup_id
+                        )
                     except Exception as upd_exc:
                         return self._classify_error(rtype, name, upd_exc)
                 # Non-permanent so the multi-pass retry gets another go — the
@@ -2346,13 +2501,14 @@ class ZIAPushService:
             return PushRecord(
                 resource_type=rtype,
                 name=name,
-                status=("failed:permanent:created but the API returned no instance_id; "
-                        "rule scoping cannot be resolved"),
+                status=(
+                    "failed:permanent:created but the API returned no instance_id; "
+                    "rule scoping cannot be resolved"
+                ),
             )
         if source_id:
             self._register_remap(source_id, new_target_id)
-        return PushRecord(resource_type=rtype, name=name, status="created",
-                          zia_id=new_target_id)
+        return PushRecord(resource_type=rtype, name=name, status="created", zia_id=new_target_id)
 
     def _find_instance_by_name(
         self,
@@ -2398,23 +2554,34 @@ class ZIAPushService:
         records = []
         for entry in entries:
             raw_config = entry.get("raw_config", {})
-            urls = (raw_config.get("whitelist_urls") or raw_config.get("whitelistUrls") or
-                    raw_config.get("blacklist_urls") or raw_config.get("blacklistUrls") or [])
+            urls = (
+                raw_config.get("whitelist_urls")
+                or raw_config.get("whitelistUrls")
+                or raw_config.get("blacklist_urls")
+                or raw_config.get("blacklistUrls")
+                or []
+            )
             if not urls:
-                records.append(PushRecord(resource_type=resource_type, name=resource_type, status="skipped"))
+                records.append(
+                    PushRecord(resource_type=resource_type, name=resource_type, status="skipped")
+                )
                 continue
             try:
                 if resource_type == "allowlist":
                     self._client.add_to_allowlist(urls)
                 else:
                     self._client.add_to_denylist(urls)
-                records.append(PushRecord(resource_type=resource_type, name=resource_type, status="updated"))
+                records.append(
+                    PushRecord(resource_type=resource_type, name=resource_type, status="updated")
+                )
             except Exception as exc:
-                records.append(PushRecord(
-                    resource_type=resource_type,
-                    name=resource_type,
-                    status=f"failed:permanent:{exc}",
-                ))
+                records.append(
+                    PushRecord(
+                        resource_type=resource_type,
+                        name=resource_type,
+                        status=f"failed:permanent:{exc}",
+                    )
+                )
         return records
 
     def _delete_one(self, resource_type: str, name: str, zia_id: str) -> PushRecord:
@@ -2430,18 +2597,23 @@ class ZIAPushService:
             if resource_type == "cloud_app_control_rule":
                 from db.database import get_session
                 from db.models import ZIAResource
+
                 with get_session() as session:
                     rec = (
                         session.query(ZIAResource)
-                        .filter_by(tenant_id=self._tenant_id,
-                                   resource_type=resource_type,
-                                   zia_id=zia_id)
+                        .filter_by(
+                            tenant_id=self._tenant_id, resource_type=resource_type, zia_id=zia_id
+                        )
                         .first()
                     )
                     rule_type = (rec.raw_config or {}).get("type") if rec else None
                 if not rule_type:
-                    return PushRecord(resource_type, name, "skipped",
-                                      warnings=["could not delete — rule type not found in DB"])
+                    return PushRecord(
+                        resource_type,
+                        name,
+                        "skipped",
+                        warnings=["could not delete — rule type not found in DB"],
+                    )
                 self._client.delete_cloud_app_rule(rule_type, zia_id)
             elif method_name:
                 getattr(self._client, method_name)(zia_id)
@@ -2450,14 +2622,21 @@ class ZIAPushService:
             return PushRecord(resource_type, name, "deleted")
         except Exception as exc:
             reason = self._classify_error(resource_type, name, exc).failure_reason
-            return PushRecord(resource_type, name, "skipped",
-                              warnings=[f"could not delete — {reason} (may be Zscaler-managed or have active dependencies)"])
+            return PushRecord(
+                resource_type,
+                name,
+                "skipped",
+                warnings=[
+                    f"could not delete — {reason} (may be Zscaler-managed or have active dependencies)"
+                ],
+            )
 
     def _classify_error(self, resource_type: str, name: str, exc: Exception) -> PushRecord:
         """Classify an exception as permanent (4xx) or transient."""
         exc_str = str(exc)
-        permanent = bool(re.search(r'"status"\s*:\s*(400|403|404)', exc_str)) or \
-                    any(s in exc_str for s in ("NOT_SUBSCRIBED", "not licensed"))
+        permanent = bool(re.search(r'"status"\s*:\s*(400|403|404)', exc_str)) or any(
+            s in exc_str for s in ("NOT_SUBSCRIBED", "not licensed")
+        )
         prefix = "failed:permanent:" if permanent else "failed:"
         return PushRecord(
             resource_type=resource_type,
@@ -2481,30 +2660,30 @@ class ZIAPushService:
         """Apply per-type payload normalization (embed stripping, empty field handling,
         flat string array remapping)."""
         handlers = {
-            "ssl_inspection_rule":    self._norm_ssl_inspection_rule,
-            "firewall_rule":          self._norm_firewall_rule,
-            "firewall_dns_rule":      self._norm_firewall_dns_rule,
-            "firewall_ips_rule":      self._norm_firewall_ips_rule,
-            "forwarding_rule":        self._norm_forwarding_rule,
-            "nat_control_rule":       self._norm_nat_control_rule,
-            "url_filtering_rule":     self._norm_url_filtering_rule,
-            "dlp_web_rule":           self._norm_dlp_web_rule,
+            "ssl_inspection_rule": self._norm_ssl_inspection_rule,
+            "firewall_rule": self._norm_firewall_rule,
+            "firewall_dns_rule": self._norm_firewall_dns_rule,
+            "firewall_ips_rule": self._norm_firewall_ips_rule,
+            "forwarding_rule": self._norm_forwarding_rule,
+            "nat_control_rule": self._norm_nat_control_rule,
+            "url_filtering_rule": self._norm_url_filtering_rule,
+            "dlp_web_rule": self._norm_dlp_web_rule,
             "bandwidth_control_rule": self._norm_bandwidth_control_rule,
-            "traffic_capture_rule":   self._norm_traffic_capture_rule,
+            "traffic_capture_rule": self._norm_traffic_capture_rule,
             "cloud_app_control_rule": self._norm_cloud_app_control_rule,
-            "cloud_app_instance":     self._norm_cloud_app_instance,
-            "location":               self._norm_location,
-            "proxy":                  self._norm_proxy,
-            "root_certificate":       self._norm_root_certificate,
-            "sandbox_rule":                  self._norm_sandbox_rule,
+            "cloud_app_instance": self._norm_cloud_app_instance,
+            "location": self._norm_location,
+            "proxy": self._norm_proxy,
+            "root_certificate": self._norm_root_certificate,
+            "sandbox_rule": self._norm_sandbox_rule,
             "url_filter_cloud_app_settings": self._norm_url_filter_cloud_app_settings,
-            "advanced_settings":             self._norm_advanced_settings,
-            "browser_control_settings":      self._norm_browser_control_settings,
+            "advanced_settings": self._norm_advanced_settings,
+            "browser_control_settings": self._norm_browser_control_settings,
             # Full Clone types
-            "static_ip":      self._norm_static_ip,
+            "static_ip": self._norm_static_ip,
             "vpn_credential": self._norm_vpn_credential,
-            "gre_tunnel":     self._norm_gre_tunnel,
-            "sublocation":    self._norm_sublocation,
+            "gre_tunnel": self._norm_gre_tunnel,
+            "sublocation": self._norm_sublocation,
         }
         handler = handlers.get(resource_type)
         if handler:
@@ -2548,22 +2727,35 @@ class ZIAPushService:
     def _norm_ssl_inspection_rule(self, cfg: dict) -> dict:
         # CRITICAL: locations contains full embedded objects — reduce to [{id: X}]
         # locations and location_groups are env-specific → filter to target's known IDs
-        self._norm_ref_fields(cfg,
-            ref_fields=("source_ip_groups", "dest_ip_groups", "workload_groups",
-                        "proxy_gateways", "time_windows", "labels"),
+        self._norm_ref_fields(
+            cfg,
+            ref_fields=(
+                "source_ip_groups",
+                "dest_ip_groups",
+                "workload_groups",
+                "proxy_gateways",
+                "time_windows",
+                "labels",
+            ),
             resolved_fields=(
-                ("locations",       "location"),
+                ("locations", "location"),
                 ("location_groups", "location_group"),
-                ("groups",          "group"),
-                ("departments",     "department"),
-                ("users",           "user"),
-                ("devices",         "device"),
-                ("device_groups",   "device_group"),
+                ("groups", "group"),
+                ("departments", "department"),
+                ("users", "user"),
+                ("devices", "device"),
+                ("device_groups", "device_group"),
                 ("zpa_app_segments", "zpa_app_segment"),
             ),
-            empty_strip=("device_trust_levels", "platforms", "user_agent_types",
-                         "cloud_applications", "proxy_gateways",
-                         "url_categories", "time_windows"),
+            empty_strip=(
+                "device_trust_levels",
+                "platforms",
+                "user_agent_types",
+                "cloud_applications",
+                "proxy_gateways",
+                "url_categories",
+                "time_windows",
+            ),
         )
         if cfg.get("url_categories"):
             cfg["url_categories"] = self._remap_str_list(cfg["url_categories"])
@@ -2573,28 +2765,46 @@ class ZIAPushService:
         if isinstance(action, dict):
             sub = action.get("decrypt_sub_actions")
             if isinstance(sub, dict):
-                for old, new in (("min_client_tls_version", "minClientTLSVersion"),
-                                 ("min_server_tls_version", "minServerTLSVersion")):
+                for old, new in (
+                    ("min_client_tls_version", "minClientTLSVersion"),
+                    ("min_server_tls_version", "minServerTLSVersion"),
+                ):
                     if old in sub:
                         sub[new] = sub.pop(old)
         return cfg
 
     def _norm_firewall_rule(self, cfg: dict) -> dict:
         # nw_services contains full embedded objects with port specs — reduce to [{id: X}]
-        self._norm_ref_fields(cfg,
-            ref_fields=("src_ip_groups", "src_ipv6_groups", "dest_ip_groups", "dest_ipv6_groups",
-                        "nw_services", "nw_service_groups", "nw_applications",
-                        "nw_application_groups", "workload_groups", "time_windows", "labels"),
+        self._norm_ref_fields(
+            cfg,
+            ref_fields=(
+                "src_ip_groups",
+                "src_ipv6_groups",
+                "dest_ip_groups",
+                "dest_ipv6_groups",
+                "nw_services",
+                "nw_service_groups",
+                "nw_applications",
+                "nw_application_groups",
+                "workload_groups",
+                "time_windows",
+                "labels",
+            ),
             resolved_fields=(
-                ("locations",       "location"),
+                ("locations", "location"),
                 ("location_groups", "location_group"),
-                ("groups",          "group"),
-                ("departments",     "department"),
-                ("users",           "user"),
+                ("groups", "group"),
+                ("departments", "department"),
+                ("users", "user"),
                 ("zpa_app_segments", "zpa_app_segment"),
             ),
-            empty_strip=("device_trust_levels", "src_ips", "dest_addresses",
-                         "dest_countries", "source_countries"),
+            empty_strip=(
+                "device_trust_levels",
+                "src_ips",
+                "dest_addresses",
+                "dest_countries",
+                "source_countries",
+            ),
         )
         return cfg
 
@@ -2602,36 +2812,63 @@ class ZIAPushService:
         # Strip server-computed fields that cause schema failures
         for f in ("default_dns_rule_name_used", "is_web_eun_enabled"):
             cfg.pop(f, None)
-        self._norm_ref_fields(cfg,
-            ref_fields=("src_ip_groups", "src_ipv6_groups", "dest_ip_groups", "dest_ipv6_groups",
-                        "applications", "application_groups", "devices", "device_groups",
-                        "time_windows", "labels"),
+        self._norm_ref_fields(
+            cfg,
+            ref_fields=(
+                "src_ip_groups",
+                "src_ipv6_groups",
+                "dest_ip_groups",
+                "dest_ipv6_groups",
+                "applications",
+                "application_groups",
+                "devices",
+                "device_groups",
+                "time_windows",
+                "labels",
+            ),
             resolved_fields=(
-                ("locations",       "location"),
+                ("locations", "location"),
                 ("location_groups", "location_group"),
-                ("groups",          "group"),
-                ("departments",     "department"),
-                ("users",           "user"),
+                ("groups", "group"),
+                ("departments", "department"),
+                ("users", "user"),
             ),
             empty_strip=("src_ips", "dest_addresses", "dest_countries"),
         )
         return cfg
 
     def _norm_firewall_ips_rule(self, cfg: dict) -> dict:
-        self._norm_ref_fields(cfg,
-            ref_fields=("src_ip_groups", "src_ipv6_groups", "dest_ip_groups", "dest_ipv6_groups",
-                        "nw_services", "nw_service_groups", "devices", "device_groups",
-                        "time_windows", "labels", "threat_categories"),
+        self._norm_ref_fields(
+            cfg,
+            ref_fields=(
+                "src_ip_groups",
+                "src_ipv6_groups",
+                "dest_ip_groups",
+                "dest_ipv6_groups",
+                "nw_services",
+                "nw_service_groups",
+                "devices",
+                "device_groups",
+                "time_windows",
+                "labels",
+                "threat_categories",
+            ),
             resolved_fields=(
-                ("locations",        "location"),
-                ("location_groups",  "location_group"),
-                ("groups",           "group"),
-                ("departments",      "department"),
-                ("users",            "user"),
+                ("locations", "location"),
+                ("location_groups", "location_group"),
+                ("groups", "group"),
+                ("departments", "department"),
+                ("users", "user"),
                 ("zpa_app_segments", "zpa_app_segment"),
             ),
-            empty_strip=("src_ips", "dest_addresses", "dest_countries", "source_countries",
-                         "dest_ip_categories", "res_categories"),
+            empty_strip=(
+                "src_ips",
+                "dest_addresses",
+                "dest_countries",
+                "source_countries",
+                "dest_ip_categories",
+                "res_categories",
+            ),
         )
         return cfg
 
@@ -2650,21 +2887,32 @@ class ZIAPushService:
         # this path some other way (a re-push comparison, a hand-built config)
         # cannot carry a source-tenant gateway ID into the target.
         cfg.pop("proxy_gateway", None)
-        self._norm_ref_fields(cfg,
-            ref_fields=("src_ip_groups", "src_ipv6_groups", "dest_ip_groups", "dest_ipv6_groups",
-                        "nw_services", "nw_service_groups", "nw_applications",
-                        "nw_application_groups", "ec_groups", "time_windows", "labels"),
+        self._norm_ref_fields(
+            cfg,
+            ref_fields=(
+                "src_ip_groups",
+                "src_ipv6_groups",
+                "dest_ip_groups",
+                "dest_ipv6_groups",
+                "nw_services",
+                "nw_service_groups",
+                "nw_applications",
+                "nw_application_groups",
+                "ec_groups",
+                "time_windows",
+                "labels",
+            ),
             resolved_fields=(
-                ("locations",                       "location"),
-                ("location_groups",                 "location_group"),
-                ("groups",                          "group"),
-                ("departments",                     "department"),
-                ("users",                           "user"),
-                ("devices",                         "device"),
-                ("device_groups",                   "device_group"),
-                ("zpa_app_segments",                "zpa_app_segment"),
-                ("zpa_application_segments",        "zpa_app_segment"),
-                ("zpa_application_segment_groups",  "zpa_app_segment"),
+                ("locations", "location"),
+                ("location_groups", "location_group"),
+                ("groups", "group"),
+                ("departments", "department"),
+                ("users", "user"),
+                ("devices", "device"),
+                ("device_groups", "device_group"),
+                ("zpa_app_segments", "zpa_app_segment"),
+                ("zpa_application_segments", "zpa_app_segment"),
+                ("zpa_application_segment_groups", "zpa_app_segment"),
             ),
             empty_strip=("src_ips", "dest_addresses", "dest_countries", "time_windows"),
         )
@@ -2701,8 +2949,16 @@ class ZIAPushService:
         the operator attaches one by hand — so an unresolved reference is
         dropped rather than treated as fatal.
         """
-        keep = ("name", "description", "type", "address", "port", "cert",
-                "insert_xau_header", "base64_encode_xau_header")
+        keep = (
+            "name",
+            "description",
+            "type",
+            "address",
+            "port",
+            "cert",
+            "insert_xau_header",
+            "base64_encode_xau_header",
+        )
         body = {k: cfg[k] for k in keep if cfg.get(k) is not None}
         cert = body.get("cert")
         if isinstance(cert, dict) and cert.get("id"):
@@ -2712,37 +2968,60 @@ class ZIAPushService:
         return body
 
     def _norm_nat_control_rule(self, cfg: dict) -> dict:
-        self._norm_ref_fields(cfg,
-            ref_fields=("src_ip_groups", "src_ipv6_groups", "dest_ip_groups", "dest_ipv6_groups",
-                        "nw_services", "nw_service_groups", "devices", "device_groups",
-                        "time_windows", "labels"),
+        self._norm_ref_fields(
+            cfg,
+            ref_fields=(
+                "src_ip_groups",
+                "src_ipv6_groups",
+                "dest_ip_groups",
+                "dest_ipv6_groups",
+                "nw_services",
+                "nw_service_groups",
+                "devices",
+                "device_groups",
+                "time_windows",
+                "labels",
+            ),
             resolved_fields=(
-                ("locations",       "location"),
+                ("locations", "location"),
                 ("location_groups", "location_group"),
-                ("groups",          "group"),
-                ("departments",     "department"),
-                ("users",           "user"),
+                ("groups", "group"),
+                ("departments", "department"),
+                ("users", "user"),
             ),
             empty_strip=("src_ips", "dest_addresses", "dest_countries"),
         )
         return cfg
 
     def _norm_url_filtering_rule(self, cfg: dict) -> dict:
-        self._norm_ref_fields(cfg,
-            ref_fields=("source_ip_groups", "workload_groups", "override_users",
-                        "override_groups", "time_windows", "labels"),
+        self._norm_ref_fields(
+            cfg,
+            ref_fields=(
+                "source_ip_groups",
+                "workload_groups",
+                "override_users",
+                "override_groups",
+                "time_windows",
+                "labels",
+            ),
             resolved_fields=(
-                ("locations",       "location"),
+                ("locations", "location"),
                 ("location_groups", "location_group"),
-                ("groups",          "group"),
-                ("departments",     "department"),
-                ("users",           "user"),
-                ("device_groups",   "device_group"),
-                ("devices",         "device"),
+                ("groups", "group"),
+                ("departments", "department"),
+                ("users", "user"),
+                ("device_groups", "device_group"),
+                ("devices", "device"),
                 ("zpa_app_segments", "zpa_app_segment"),
             ),
-            empty_strip=("device_trust_levels", "user_agent_types", "user_risk_score_levels",
-                         "time_windows", "url_categories", "url_categories2"),
+            empty_strip=(
+                "device_trust_levels",
+                "user_agent_types",
+                "user_risk_score_levels",
+                "time_windows",
+                "url_categories",
+                "url_categories2",
+            ),
         )
         if cfg.get("url_categories"):
             cfg["url_categories"] = self._remap_str_list(cfg["url_categories"])
@@ -2754,19 +3033,28 @@ class ZIAPushService:
             profile_name = (cbi.get("name") or "").lower()
             matched = self._cbi_profile_map.get(profile_name)
             if matched:
-                cfg["cbi_profile"] = {"id": matched["id"], "name": matched.get("name", ""),
-                                      "url": matched.get("url", "")}
+                cfg["cbi_profile"] = {
+                    "id": matched["id"],
+                    "name": matched.get("name", ""),
+                    "url": matched.get("url", ""),
+                }
             else:
                 # Fall back to default profile if available.
                 # Direct HTTP uses camelCase (defaultProfile); handle both just in case.
                 default = next(
-                    (p for p in self._cbi_profile_map.values()
-                     if p.get("defaultProfile") or p.get("default_profile")),
+                    (
+                        p
+                        for p in self._cbi_profile_map.values()
+                        if p.get("defaultProfile") or p.get("default_profile")
+                    ),
                     None,
                 )
                 if default:
-                    cfg["cbi_profile"] = {"id": default["id"], "name": default.get("name", ""),
-                                          "url": default.get("url", "")}
+                    cfg["cbi_profile"] = {
+                        "id": default["id"],
+                        "name": default.get("name", ""),
+                        "url": default.get("url", ""),
+                    }
                 else:
                     cfg.pop("cbi_profile", None)
                     # ISOLATE requires cbi_profile; the API rejects it without one.
@@ -2775,8 +3063,8 @@ class ZIAPushService:
                         cfg["action"] = "CAUTION"
                         existing_warn = cfg.get("__norm_warning") or ""
                         cfg["__norm_warning"] = (
-                            (existing_warn + "; " if existing_warn else "") +
-                            "action changed ISOLATE→CAUTION: no matching CBI isolation profile "
+                            (existing_warn + "; " if existing_warn else "")
+                            + "action changed ISOLATE→CAUTION: no matching CBI isolation profile "
                             "in target (create a matching profile, then restore this rule)"
                         )
         return cfg
@@ -2789,31 +3077,39 @@ class ZIAPushService:
             remapped = [
                 {"id": type(e["id"])(self._id_remap.get(str(e["id"]), e["id"]))}
                 for e in cfg["dlp_engines"]
-                if e.get("id") and self._id_remap.get(str(e["id"]), str(e["id"])) in self._usable_dlp_engine_ids
+                if e.get("id")
+                and self._id_remap.get(str(e["id"]), str(e["id"])) in self._usable_dlp_engine_ids
             ]
             if remapped:
                 cfg["dlp_engines"] = remapped
             else:
                 cfg.pop("dlp_engines", None)
-        self._norm_ref_fields(cfg,
-            ref_fields=("source_ip_groups", "workload_groups",
-                        "time_windows", "labels"),
+        self._norm_ref_fields(
+            cfg,
+            ref_fields=("source_ip_groups", "workload_groups", "time_windows", "labels"),
             resolved_fields=(
-                ("locations",        "location"),
-                ("location_groups",  "location_group"),
-                ("groups",           "group"),
-                ("departments",      "department"),
-                ("users",            "user"),
+                ("locations", "location"),
+                ("location_groups", "location_group"),
+                ("groups", "group"),
+                ("departments", "department"),
+                ("users", "user"),
                 ("zpa_app_segments", "zpa_app_segment"),
             ),
             empty_strip=(
-                "file_types", "user_risk_score_levels",
+                "file_types",
+                "user_risk_score_levels",
                 # SDK returns empty arrays for unused fields — strip them to avoid API errors
                 "dlp_content_locations_scopes",
-                "excluded_groups", "excluded_departments", "excluded_users",
-                "included_domain_profiles", "excluded_domain_profiles",
-                "cloud_applications", "url_categories",
-                "workload_groups", "source_ip_groups", "zpa_app_segments",
+                "excluded_groups",
+                "excluded_departments",
+                "excluded_users",
+                "included_domain_profiles",
+                "excluded_domain_profiles",
+                "cloud_applications",
+                "url_categories",
+                "workload_groups",
+                "source_ip_groups",
+                "zpa_app_segments",
                 # dlp_engines may be absent in source (after filtering system engines) or
                 # empty-list in target — normalise both to absent for comparison.
                 "dlp_engines",
@@ -2838,40 +3134,49 @@ class ZIAPushService:
         # Strip read-only / server-computed fields.
         for f in ("default_rule", "cbi_profile_id"):
             cfg.pop(f, None)
-        self._norm_ref_fields(cfg,
+        self._norm_ref_fields(
+            cfg,
             ref_fields=("time_windows", "labels"),
             resolved_fields=(
-                ("locations",       "location"),
+                ("locations", "location"),
                 ("location_groups", "location_group"),
-                ("groups",          "group"),
-                ("departments",     "department"),
-                ("users",           "user"),
+                ("groups", "group"),
+                ("departments", "department"),
+                ("users", "user"),
             ),
-            empty_strip=("url_categories", "file_types", "protocols",
-                         "ba_policy_categories", "zpa_app_segments",
-                         "device_trust_levels", "user_agent_types"),
+            empty_strip=(
+                "url_categories",
+                "file_types",
+                "protocols",
+                "ba_policy_categories",
+                "zpa_app_segments",
+                "device_trust_levels",
+                "user_agent_types",
+            ),
         )
         return cfg
 
     def _norm_bandwidth_control_rule(self, cfg: dict) -> dict:
-        self._norm_ref_fields(cfg,
+        self._norm_ref_fields(
+            cfg,
             ref_fields=("bandwidth_classes", "time_windows", "labels"),
             resolved_fields=(
-                ("locations",       "location"),
+                ("locations", "location"),
                 ("location_groups", "location_group"),
             ),
         )
         return cfg
 
     def _norm_traffic_capture_rule(self, cfg: dict) -> dict:
-        self._norm_ref_fields(cfg,
+        self._norm_ref_fields(
+            cfg,
             ref_fields=("src_ip_groups", "dest_ip_groups", "time_windows", "labels"),
             resolved_fields=(
-                ("locations",       "location"),
+                ("locations", "location"),
                 ("location_groups", "location_group"),
-                ("groups",          "group"),
-                ("departments",     "department"),
-                ("users",           "user"),
+                ("groups", "group"),
+                ("departments", "department"),
+                ("users", "user"),
             ),
         )
         return cfg
@@ -2884,8 +3189,13 @@ class ZIAPushService:
         # static_location_groups: membership is managed from the group side, not writable here.
         # child_count: read-only counter.
         # extranet/extranet_ip_pool/extranet_dns with id=0: null references that the API rejects.
-        for f in ("vpn_credentials", "ip_addresses", "dynamiclocation_groups",
-                  "static_location_groups", "child_count"):
+        for f in (
+            "vpn_credentials",
+            "ip_addresses",
+            "dynamiclocation_groups",
+            "static_location_groups",
+            "child_count",
+        ):
             cfg.pop(f, None)
         for f in ("extranet", "extranet_ip_pool", "extranet_dns"):
             val = cfg.get(f)
@@ -2917,9 +3227,10 @@ class ZIAPushService:
         cfg.pop("smart_isolation_profile", None)
         # smartIsolationUsers / smartIsolationGroups are env-specific references;
         # strip IDs that don't exist in the target.  The API uses camelCase.
-        self._norm_ref_fields(cfg,
+        self._norm_ref_fields(
+            cfg,
             resolved_fields=(
-                ("smartIsolationUsers",  "user"),
+                ("smartIsolationUsers", "user"),
                 ("smartIsolationGroups", "group"),
             ),
         )
@@ -2931,16 +3242,17 @@ class ZIAPushService:
         # the field entirely (sending [] or ["ANY"] is rejected as invalid).
         if not cfg.get("applications"):
             cfg.pop("applications", None)
-        self._norm_ref_fields(cfg,
+        self._norm_ref_fields(
+            cfg,
             ref_fields=("time_windows", "labels"),
             resolved_fields=(
-                ("locations",              "location"),
-                ("location_groups",        "location_group"),
-                ("groups",                 "group"),
-                ("departments",            "department"),
-                ("users",                  "user"),
-                ("tenancy_profile_ids",    "tenancy_restriction_profile"),
-                ("cloud_app_instances",    "cloud_app_instance"),
+                ("locations", "location"),
+                ("location_groups", "location_group"),
+                ("groups", "group"),
+                ("departments", "department"),
+                ("users", "user"),
+                ("tenancy_profile_ids", "tenancy_restriction_profile"),
+                ("cloud_app_instances", "cloud_app_instance"),
             ),
             empty_strip=("device_trust_levels", "user_agent_types", "user_risk_score_levels"),
         )
@@ -2960,9 +3272,11 @@ class ZIAPushService:
             for ident in idents:
                 if not isinstance(ident, dict):
                     continue
-                entry = {k: v for k, v in ident.items()
-                         if k not in ("instance_id", "modified_at", "modified_by")
-                         and v is not None}
+                entry = {
+                    k: v
+                    for k, v in ident.items()
+                    if k not in ("instance_id", "modified_at", "modified_by") and v is not None
+                }
                 if entry:
                     cleaned.append(entry)
             if cleaned:
@@ -2979,10 +3293,22 @@ class ZIAPushService:
 
     def _norm_static_ip(self, cfg: dict) -> dict:
         # Strip read-only server-computed fields; keep ip_address and comment.
-        for f in ("managed_by", "last_modification_time", "lastModificationTime",
-                  "routable_ip", "routableIp", "geo_override", "geoOverride",
-                  "latitude", "longitude", "city", "country_code", "countryCode",
-                  "region_code", "regionCode"):
+        for f in (
+            "managed_by",
+            "last_modification_time",
+            "lastModificationTime",
+            "routable_ip",
+            "routableIp",
+            "geo_override",
+            "geoOverride",
+            "latitude",
+            "longitude",
+            "city",
+            "country_code",
+            "countryCode",
+            "region_code",
+            "regionCode",
+        ):
             cfg.pop(f, None)
         return cfg
 
@@ -2990,19 +3316,32 @@ class ZIAPushService:
         # PSK handling — mask detection happens in _push_full_clone_entry;
         # for baseline-push comparison purposes, strip psk so masked/empty
         # credentials don't trigger spurious updates.
-        for f in ("psk", "preSharedKey", "location", "locationId",
-                  "managed_by", "last_modification_time", "lastModificationTime"):
+        for f in (
+            "psk",
+            "preSharedKey",
+            "location",
+            "locationId",
+            "managed_by",
+            "last_modification_time",
+            "lastModificationTime",
+        ):
             cfg.pop(f, None)
         return cfg
 
     def _norm_gre_tunnel(self, cfg: dict) -> dict:
         # source_ip references a static IP registered to this org — must be cleared.
         # dest VIPs are auto-assigned by ZIA.
-        for f in ("source_ip", "sourceIp",
-                  "primary_dest_vip", "primaryDestVip",
-                  "secondary_dest_vip", "secondaryDestVip",
-                  "last_modification_time", "lastModificationTime",
-                  "managed_by"):
+        for f in (
+            "source_ip",
+            "sourceIp",
+            "primary_dest_vip",
+            "primaryDestVip",
+            "secondary_dest_vip",
+            "secondaryDestVip",
+            "last_modification_time",
+            "lastModificationTime",
+            "managed_by",
+        ):
             cfg.pop(f, None)
         return cfg
 
@@ -3061,7 +3400,7 @@ class ZIAPushService:
             for entry in (existing.get(resource_type) or {}).values()
             if entry.get("name")
         }
-        for src_entry in (baseline.get("resources", {}).get(resource_type) or []):
+        for src_entry in baseline.get("resources", {}).get(resource_type) or []:
             src_id = str(src_entry.get("id", ""))
             src_name = (src_entry.get("name") or "").lower()
             if src_id and src_name and src_name in target_by_name:
@@ -3074,6 +3413,7 @@ class ZIAPushService:
         back empty rather than absent, so callers can report it as a step the
         operator still owns instead of silently dropping it.
         """
+
         def index(rtype: str) -> dict:
             return {
                 str(entry.get("id")): entry
@@ -3108,7 +3448,9 @@ class ZIAPushService:
         if proxy_cfg.get("address"):
             parts.append(str(proxy_cfg["address"]))
         if proxy_cfg.get("port"):
-            parts[-1:] = [f"{parts[-1]}:{proxy_cfg['port']}"] if parts else [f"port {proxy_cfg['port']}"]
+            parts[-1:] = (
+                [f"{parts[-1]}:{proxy_cfg['port']}"] if parts else [f"port {proxy_cfg['port']}"]
+            )
         if proxy_cfg.get("insert_xau_header"):
             parts.append(
                 "X-Authenticated-User header"
@@ -3123,16 +3465,15 @@ class ZIAPushService:
             done.append(f"root certificate '{chain['cert_name']}'")
         if chain["proxy_in_template"] and chain["proxy_name"]:
             summary = self._proxy_summary(chain["proxy_cfg"])
-            done.append(
-                f"proxy '{chain['proxy_name']}'" + (f" ({summary})" if summary else "")
-            )
+            done.append(f"proxy '{chain['proxy_name']}'" + (f" ({summary})" if summary else ""))
         if extra:
             done.append(extra)
         if not done:
             return ""
         return (
-            "Already handled by this push: " + "; ".join(done) +
-            " — check the push results, then point the gateway at the proxy."
+            "Already handled by this push: "
+            + "; ".join(done)
+            + " — check the push results, then point the gateway at the proxy."
         )
 
     def _proxy_gateway_manual_steps(self, gw_entry: dict, resources: dict) -> List[str]:
@@ -3182,7 +3523,8 @@ class ZIAPushService:
         gw_name = gw_ref.get("name") or chain["gateway_name"] or "(unnamed)"
 
         dest_groups = [
-            g.get("name") for g in (raw_config.get("dest_ip_groups") or [])
+            g.get("name")
+            for g in (raw_config.get("dest_ip_groups") or [])
             if isinstance(g, dict) and g.get("name")
         ]
         dest_text = ", ".join(f"'{g}'" for g in dest_groups) or "(none recorded)"
@@ -3198,8 +3540,11 @@ class ZIAPushService:
         steps.append(
             f"1. Proxy gateway '{gw_name}'"
             + (f" — primary proxy '{chain['proxy_name']}'" if chain["proxy_name"] else "")
-            + (f", fail closed: {'yes' if chain['gateway_cfg'].get('fail_closed') else 'no'}"
-               if chain["gateway_cfg"] else "")
+            + (
+                f", fail closed: {'yes' if chain['gateway_cfg'].get('fail_closed') else 'no'}"
+                if chain["gateway_cfg"]
+                else ""
+            )
             + "."
         )
         steps.append(
@@ -3212,8 +3557,11 @@ class ZIAPushService:
         extra = ""
         carried = [g for g in dest_groups if g in pushed_groups]
         if carried:
-            extra = "destination IP group" + ("s " if len(carried) > 1 else " ") + \
-                ", ".join(f"'{g}'" for g in carried)
+            extra = (
+                "destination IP group"
+                + ("s " if len(carried) > 1 else " ")
+                + ", ".join(f"'{g}'" for g in carried)
+            )
         note = self._proxychain_handled_note(chain, extra)
         if note:
             steps.append(note)
@@ -3228,14 +3576,22 @@ class ZIAPushService:
         """Reduce embedded object array to [{id: X}] — strips extra fields."""
         if not arr:
             return arr
-        return [{"id": item["id"]} for item in arr if isinstance(item, dict) and item.get("id") is not None]
+        return [
+            {"id": item["id"]}
+            for item in arr
+            if isinstance(item, dict) and item.get("id") is not None
+        ]
 
     @staticmethod
     def _ref_named(arr: list) -> list:
         """Reduce embedded object array to [{id: X, name: Y}]."""
         if not arr:
             return arr
-        return [{"id": i["id"], "name": i.get("name", "")} for i in arr if isinstance(i, dict) and i.get("id") is not None]
+        return [
+            {"id": i["id"], "name": i.get("name", "")}
+            for i in arr
+            if isinstance(i, dict) and i.get("id") is not None
+        ]
 
     def _ref_resolved(self, arr: list, resource_type: str) -> list:
         """Like _ref() but strips IDs that can't be resolved in the target tenant.
@@ -3284,8 +3640,7 @@ class ZIAPushService:
         (e.g. "ADULT_SEX_EDUCATION") won't be in _id_remap, so they pass through
         unchanged via the dict .get() default.
         """
-        return [self._id_remap.get(str(s), s) if isinstance(s, str) else s
-                for s in lst]
+        return [self._id_remap.get(str(s), s) if isinstance(s, str) else s for s in lst]
 
     def _get_config_version(self, resource_type: str, target_id: str) -> Optional[int]:
         """Live GET a resource to retrieve its current configVersion.
@@ -3326,9 +3681,8 @@ class ZIAPushService:
         except Exception as exc:
             exc_str = str(exc).lower()
             rank_required = "must have" in exc_str or ("rank" in exc_str and "required" in exc_str)
-            rank_invalid = (
-                "not allowed at order" in exc_str
-                or ("rank" in exc_str and "400" in exc_str and not rank_required)
+            rank_invalid = "not allowed at order" in exc_str or (
+                "rank" in exc_str and "400" in exc_str and not rank_required
             )
             if rank_invalid:
                 fallback = {k: v for k, v in payload.items() if k not in ("rank", "order")}
@@ -3340,6 +3694,7 @@ class ZIAPushService:
         Only called when a create unexpectedly 409s (snapshot was stale).
         """
         from services.zia_import_service import RESOURCE_DEFINITIONS
+
         defn = next(
             (d for d in RESOURCE_DEFINITIONS if d.resource_type == resource_type),
             None,
@@ -3362,6 +3717,7 @@ class ZIAPushService:
 # Module-level helpers
 # ---------------------------------------------------------------------------
 
+
 def _is_zscaler_managed(resource_type: str, raw_config: dict) -> bool:
     """Return True if this resource is owned/managed by Zscaler across all tenants.
 
@@ -3378,8 +3734,11 @@ def _is_zscaler_managed(resource_type: str, raw_config: dict) -> bool:
       Includes: "Smart Isolation One Click Rule" (ssl_inspection_rule, predefined=True in API
       but guarded by name as belt-and-suspenders in case raw_config was captured without it)
     """
-    if resource_type in ("url_filter_cloud_app_settings", "advanced_settings",
-                         "browser_control_settings"):
+    if resource_type in (
+        "url_filter_cloud_app_settings",
+        "advanced_settings",
+        "browser_control_settings",
+    ):
         return True  # singletons — always present in every tenant, never created/deleted
     # access_control:"READ_ONLY" — Zscaler explicitly marks managed resources that cannot be
     # deleted or replaced.  This catches cloud_app_control_rule entries and named DLP engines
@@ -3473,9 +3832,8 @@ def _is_proxychain(raw_config: dict) -> bool:
     Either signal is enough: the forwarding method itself, or a gateway
     reference left on a rule whose method was renamed in a later API version.
     """
-    return (
-        raw_config.get("forward_method") == "PROXYCHAIN"
-        or bool((raw_config.get("proxy_gateway") or {}).get("id"))
+    return raw_config.get("forward_method") == "PROXYCHAIN" or bool(
+        (raw_config.get("proxy_gateway") or {}).get("id")
     )
 
 

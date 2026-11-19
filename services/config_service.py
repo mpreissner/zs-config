@@ -148,7 +148,9 @@ def get_tenant(name: str) -> Optional[TenantConfig]:
 def list_tenants() -> List[TenantConfig]:
     """Return all active tenants."""
     with get_session() as session:
-        return session.query(TenantConfig).filter_by(is_active=True).order_by(TenantConfig.name).all()
+        return (
+            session.query(TenantConfig).filter_by(is_active=True).order_by(TenantConfig.name).all()
+        )
 
 
 def update_tenant(
@@ -178,7 +180,9 @@ def update_tenant(
         if govcloud is not None:
             tenant.govcloud = govcloud
             # Tier only means anything for GovCloud tenants; clear it otherwise.
-            tenant.gov_cloud_tier = (gov_tier or tenant.gov_cloud_tier or DEFAULT_GOV_TIER) if govcloud else None
+            tenant.gov_cloud_tier = (
+                (gov_tier or tenant.gov_cloud_tier or DEFAULT_GOV_TIER) if govcloud else None
+            )
         elif gov_tier is not None and tenant.govcloud:
             tenant.gov_cloud_tier = gov_tier
         if client_id is not None:

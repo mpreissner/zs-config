@@ -35,8 +35,16 @@ from services.zpa_service import ZPAService
 
 def _load_from_env():
     """Return (auth, customer_id, oneapi_url) from environment variables."""
-    missing = [v for v in ("ZIDENTITY_BASE_URL", "ZSCALER_CLIENT_ID", "ZSCALER_CLIENT_SECRET", "ZPA_CUSTOMER_ID")
-               if not os.environ.get(v)]
+    missing = [
+        v
+        for v in (
+            "ZIDENTITY_BASE_URL",
+            "ZSCALER_CLIENT_ID",
+            "ZSCALER_CLIENT_SECRET",
+            "ZPA_CUSTOMER_ID",
+        )
+        if not os.environ.get(v)
+    ]
     if missing:
         print(f"ERROR: Missing required environment variables: {', '.join(missing)}")
         sys.exit(1)
@@ -46,7 +54,12 @@ def _load_from_env():
         os.environ["ZSCALER_CLIENT_ID"],
         os.environ["ZSCALER_CLIENT_SECRET"],
     )
-    return auth, os.environ["ZPA_CUSTOMER_ID"], os.environ.get("ONEAPI_BASE_URL", "https://api.zsapi.net"), None
+    return (
+        auth,
+        os.environ["ZPA_CUSTOMER_ID"],
+        os.environ.get("ONEAPI_BASE_URL", "https://api.zsapi.net"),
+        None,
+    )
 
 
 def _load_from_db(tenant_name: str):
@@ -119,6 +132,7 @@ def main():
     except Exception as e:
         print(f"✗ ERROR: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 

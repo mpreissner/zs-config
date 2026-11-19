@@ -13,12 +13,14 @@ console = Console()
 
 def _active_tenant_label() -> str:
     from cli.session import get_active_tenant
+
     t = get_active_tenant()
     return f"  Switch Tenant  (active: {t.name})" if t else "  Switch Tenant"
 
 
 def _zia_label() -> str:
     from cli.session import get_active_tenant, has_zia_pending
+
     t = get_active_tenant()
     if t and has_zia_pending(t.id):
         return "  ZIA ⚠  Zscaler Internet Access"
@@ -34,6 +36,7 @@ def _zcc_available() -> bool:
     visible; get_zcc_client() catches the case after the tenant is picked.
     """
     from cli.session import get_active_tenant
+
     t = get_active_tenant()
     return not (t and t.govcloud)
 
@@ -43,6 +46,7 @@ def main_menu(tui_only: bool = False):
         render_banner()
 
         from lib.plugin_manager import get_installed_plugins
+
         plugins = [p for p in get_installed_plugins() if not p.get("error")]
 
         choices = [
@@ -59,7 +63,9 @@ def main_menu(tui_only: bool = False):
         if plugins:
             choices.append(questionary.Separator())
             for p in plugins:
-                choices.append(questionary.Choice(f"  {p['name']}", value=f"__plugin__{p['entry_point']}"))
+                choices.append(
+                    questionary.Choice(f"  {p['name']}", value=f"__plugin__{p['entry_point']}")
+                )
 
         choices += [
             questionary.Separator(),
@@ -76,6 +82,7 @@ def main_menu(tui_only: bool = False):
         # questionary.Question.application lazily creates the prompt_toolkit
         # Application; we merge in our key binding before running it.
         from prompt_toolkit.key_binding import KeyBindings, merge_key_bindings
+
         _plugin_kb = KeyBindings()
 
         @_plugin_kb.add("c-]")
@@ -83,33 +90,37 @@ def main_menu(tui_only: bool = False):
             event.app.exit(result="__plugins__")
 
         app = q.application
-        app.key_bindings = merge_key_bindings(
-            [app.key_bindings or KeyBindings(), _plugin_kb]
-        )
+        app.key_bindings = merge_key_bindings([app.key_bindings or KeyBindings(), _plugin_kb])
         choice = app.run()
 
         if choice == "__plugins__":
             from cli.menus.plugin_menu import plugin_menu
+
             plugin_menu()
         elif isinstance(choice, str) and choice.startswith("__plugin__"):
-            entry_point = choice[len("__plugin__"):]
+            entry_point = choice[len("__plugin__") :]
             plugin = next((p for p in plugins if p["entry_point"] == entry_point), None)
             if plugin:
                 plugin["menu"]()
         elif choice == "zpa":
             from cli.menus.zpa_menu import zpa_menu
+
             zpa_menu()
         elif choice == "zia":
             from cli.menus.zia_menu import zia_menu
+
             zia_menu()
         elif choice == "zcc":
             from cli.menus.zcc_menu import zcc_menu
+
             zcc_menu()
         elif choice == "zdx":
             from cli.menus.zdx_menu import zdx_menu
+
             zdx_menu()
         elif choice == "zidentity":
             from cli.menus.zidentity_menu import zidentity_menu
+
             zidentity_menu()
         elif choice == "switch_tenant":
             _switch_tenant()
@@ -119,14 +130,17 @@ def main_menu(tui_only: bool = False):
             audit_menu()
         elif choice in ("exit", None):
             from cli.session import get_active_tenant, has_zia_pending
+
             t = get_active_tenant()
             if t and has_zia_pending(t.id):
-                console.print(Panel(
-                    "[yellow]You have unactivated ZIA changes.[/yellow]\n"
-                    "Go to [bold]ZIA → Activation[/bold] to push them before exiting.",
-                    border_style="yellow",
-                    title="Pending Activation",
-                ))
+                console.print(
+                    Panel(
+                        "[yellow]You have unactivated ZIA changes.[/yellow]\n"
+                        "Go to [bold]ZIA → Activation[/bold] to push them before exiting.",
+                        border_style="yellow",
+                        title="Pending Activation",
+                    )
+                )
                 if not questionary.confirm("Exit anyway?", default=False).ask():
                     continue
             console.print("[dim]Goodbye.[/dim]")
@@ -136,6 +150,7 @@ def main_menu(tui_only: bool = False):
 def _test_token(zidentity_url: str, client_id: str, client_secret: str):
     """Return (True, None) on success or (False, error_str) on failure."""
     from lib.auth import ZscalerAuth
+
     try:
         ZscalerAuth(zidentity_url, client_id, client_secret).get_token()
         return True, None
@@ -166,7 +181,9 @@ def verify_and_activate_tenant(tenant) -> bool:
             "What would you like to do?",
             choices=[
                 questionary.Choice("Edit credentials", value="edit"),
-                questionary.Choice("Continue anyway (credentials may be a transient issue)", value="force"),
+                questionary.Choice(
+                    "Continue anyway (credentials may be a transient issue)", value="force"
+                ),
                 questionary.Choice("Cancel", value="cancel"),
             ],
         ).ask()
@@ -174,7 +191,9 @@ def verify_and_activate_tenant(tenant) -> bool:
             _edit_tenant_credentials(tenant.name)
         elif action == "force":
             set_active_tenant(tenant)
-            console.print(f"[yellow]⚠ Active tenant set to [bold]{tenant.name}[/bold] (token unverified)[/yellow]")
+            console.print(
+                f"[yellow]⚠ Active tenant set to [bold]{tenant.name}[/bold] (token unverified)[/yellow]"
+            )
             return True
         return False
 
@@ -195,14 +214,16 @@ def verify_and_activate_tenant(tenant) -> bool:
     console.print(f"[green]✓ Active tenant: [bold]{tenant.name}[/bold][/green]")
 
     if subs_changed:
-        console.print(Panel(
-            "[yellow]Subscription changes detected for this tenant.[/yellow]\n"
-            "Features or products may have been added or removed.\n\n"
-            "[bold]Recommendation:[/bold] Run [cyan]Import Config[/cyan] for ZIA, ZPA, and ZCC "
-            "to ensure your local database reflects the current tenant state.",
-            title="[bold yellow]⚠ Subscriptions Changed[/bold yellow]",
-            border_style="yellow",
-        ))
+        console.print(
+            Panel(
+                "[yellow]Subscription changes detected for this tenant.[/yellow]\n"
+                "Features or products may have been added or removed.\n\n"
+                "[bold]Recommendation:[/bold] Run [cyan]Import Config[/cyan] for ZIA, ZPA, and ZCC "
+                "to ensure your local database reflects the current tenant state.",
+                title="[bold yellow]⚠ Subscriptions Changed[/bold yellow]",
+                border_style="yellow",
+            )
+        )
 
     return True
 
@@ -214,12 +235,14 @@ def _switch_tenant():
 
     current = get_active_tenant()
     if current and has_zia_pending(current.id):
-        console.print(Panel(
-            "[yellow]You have unactivated ZIA changes for the current tenant.[/yellow]\n"
-            "Go to [bold]ZIA → Activation[/bold] to push them first.",
-            border_style="yellow",
-            title="Pending Activation",
-        ))
+        console.print(
+            Panel(
+                "[yellow]You have unactivated ZIA changes for the current tenant.[/yellow]\n"
+                "Go to [bold]ZIA → Activation[/bold] to push them first.",
+                border_style="yellow",
+                title="Pending Activation",
+            )
+        )
         if not questionary.confirm("Switch tenant anyway?", default=False).ask():
             return
 
@@ -240,6 +263,7 @@ def _switch_tenant():
 # ------------------------------------------------------------------
 # Settings
 # ------------------------------------------------------------------
+
 
 def settings_menu():
     while True:
@@ -279,7 +303,6 @@ def settings_menu():
             break
 
 
-
 def _fetch_and_apply_org_info(
     tenant_name: str,
     zidentity_url: str,
@@ -302,10 +325,14 @@ def _fetch_and_apply_org_info(
     from services.config_service import fetch_org_info, update_tenant
 
     with console.status("[cyan]Fetching org information...[/cyan]"):
-        org_info, subscriptions, err = fetch_org_info(zidentity_url, client_id, client_secret, oneapi_base_url)
+        org_info, subscriptions, err = fetch_org_info(
+            zidentity_url, client_id, client_secret, oneapi_base_url
+        )
 
     if err or not org_info:
-        console.print(f"[yellow]⚠ Could not fetch org information: {err or 'empty response'}[/yellow]")
+        console.print(
+            f"[yellow]⚠ Could not fetch org information: {err or 'empty response'}[/yellow]"
+        )
         console.print("[dim]Tenant saved without org metadata. Re-run Edit Tenant to retry.[/dim]")
         return False, False
 
@@ -352,7 +379,9 @@ def _fetch_and_apply_org_info(
         table.add_row("ZPA Customer ID", zpa_customer_id or "[dim]—[/dim]")
         table.add_row("ZPA Cloud", zpa_tenant_cloud or "[dim]—[/dim]")
         if subscriptions is not None:
-            sub_label = "[yellow]changed[/yellow]" if subscriptions_changed else "[green]stored[/green]"
+            sub_label = (
+                "[yellow]changed[/yellow]" if subscriptions_changed else "[green]stored[/green]"
+            )
             table.add_row("Subscriptions", sub_label)
         console.print(table)
 
@@ -398,8 +427,8 @@ def _add_tenant():
 
     subdomain_hint = (
         f"e.g.  acme  →  {build_zidentity_url('acme', govcloud=True, gov_tier=gov_tier)}"
-        if is_govcloud else
-        "e.g.  acme  →  https://acme.zslogin.net"
+        if is_govcloud
+        else "e.g.  acme  →  https://acme.zslogin.net"
     )
     subdomain = questionary.text("Vanity subdomain:", instruction=subdomain_hint).ask()
     if not subdomain:
@@ -423,6 +452,7 @@ def _add_tenant():
 
     try:
         from services.config_service import add_tenant
+
         add_tenant(
             name=name,
             zidentity_base_url=zidentity_url,
@@ -444,12 +474,16 @@ def _add_tenant():
 
     if not ok:
         console.print(f"[red]✗ Token failed:[/red] {err}")
-        console.print("[dim]Tenant was saved. You can edit credentials from Settings → Edit Tenant.[/dim]")
+        console.print(
+            "[dim]Tenant was saved. You can edit credentials from Settings → Edit Tenant.[/dim]"
+        )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
     console.print("[green]✓ Token obtained — credentials verified.[/green]")
-    _fetch_and_apply_org_info(name, zidentity_url, client_id, client_secret, oneapi_base_url=oneapi_base_url)
+    _fetch_and_apply_org_info(
+        name, zidentity_url, client_id, client_secret, oneapi_base_url=oneapi_base_url
+    )
     questionary.press_any_key_to_continue("Press any key to continue...").ask()
 
 
@@ -485,7 +519,9 @@ def _edit_tenant_credentials(tenant_name: str):
     console.print(f"  [dim]Current ZIdentity URL: {tenant.zidentity_base_url}[/dim]")
     console.print(f"  [dim]Current Client ID:     {tenant.client_id}[/dim]")
     if tenant.govcloud:
-        console.print(f"  [cyan]GovCloud tenant[/cyan] [dim](tier: {tenant.gov_cloud_tier or '—'})[/dim]")
+        console.print(
+            f"  [cyan]GovCloud tenant[/cyan] [dim](tier: {tenant.gov_cloud_tier or '—'})[/dim]"
+        )
     console.print("[dim]Press Enter to keep the current value for each field.[/dim]\n")
 
     is_govcloud = questionary.confirm("GovCloud tenant?", default=bool(tenant.govcloud)).ask()
@@ -517,9 +553,7 @@ def _edit_tenant_credentials(tenant_name: str):
         return
     client_id = client_id.strip() or tenant.client_id
 
-    client_secret = questionary.password(
-        "Client Secret (leave blank to keep existing):"
-    ).ask()
+    client_secret = questionary.password("Client Secret (leave blank to keep existing):").ask()
     if client_secret is None:
         return
 
@@ -545,7 +579,14 @@ def _edit_tenant_credentials(tenant_name: str):
     console.print(f"[green]✓ Credentials updated for '[bold]{tenant_name}[/bold]'.[/green]")
 
     if ok:
-        _fetch_and_apply_org_info(tenant_name, zidentity_url, client_id, test_secret, old_tenant=tenant, oneapi_base_url=oneapi_base_url)
+        _fetch_and_apply_org_info(
+            tenant_name,
+            zidentity_url,
+            client_id,
+            test_secret,
+            old_tenant=tenant,
+            oneapi_base_url=oneapi_base_url,
+        )
 
     questionary.press_any_key_to_continue("Press any key to continue...").ask()
 
@@ -576,8 +617,12 @@ def _edit_tenant_metadata(tenant_name: str):
         return
 
     console.print(f"\n[bold]Edit Org Metadata — {tenant.name}[/bold]")
-    console.print("[dim]These values are normally auto-fetched. Override here if the API returned incorrect values.[/dim]")
-    console.print("[dim]Press Enter to keep the current value. Clear the field to set it to blank.[/dim]\n")
+    console.print(
+        "[dim]These values are normally auto-fetched. Override here if the API returned incorrect values.[/dim]"
+    )
+    console.print(
+        "[dim]Press Enter to keep the current value. Clear the field to set it to blank.[/dim]\n"
+    )
 
     zpa_customer_id = questionary.text(
         "ZPA Customer ID:",
@@ -658,6 +703,7 @@ def _list_tenants():
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -690,7 +736,9 @@ def _configure_conf_file():
     from lib.conf_writer import DEFAULT_CONF_PATH, build_zidentity_url, test_credentials, write_conf
 
     console.print("\n[bold]Configure Server Credentials File[/bold]")
-    console.print("[dim]Writes zscaler-oneapi.conf with chmod 600 for use with server-deployed scripts.[/dim]\n")
+    console.print(
+        "[dim]Writes zscaler-oneapi.conf with chmod 600 for use with server-deployed scripts.[/dim]\n"
+    )
 
     subdomain = questionary.text(
         "Vanity subdomain:",
@@ -774,8 +822,13 @@ def _rotate_encryption_key():
         "Select new algorithm:",
         choices=[
             questionary.Choice(algo_labels[CryptoAlgorithm.FERNET], value=CryptoAlgorithm.FERNET),
-            questionary.Choice(algo_labels[CryptoAlgorithm.AES256GCM], value=CryptoAlgorithm.AES256GCM),
-            questionary.Choice(algo_labels[CryptoAlgorithm.CHACHA20POLY1305], value=CryptoAlgorithm.CHACHA20POLY1305),
+            questionary.Choice(
+                algo_labels[CryptoAlgorithm.AES256GCM], value=CryptoAlgorithm.AES256GCM
+            ),
+            questionary.Choice(
+                algo_labels[CryptoAlgorithm.CHACHA20POLY1305],
+                value=CryptoAlgorithm.CHACHA20POLY1305,
+            ),
         ],
         default=current_algo,
     ).ask()
@@ -790,6 +843,7 @@ def _rotate_encryption_key():
         return
 
     from services.encryption_service import rotate_key
+
     try:
         with console.status("[cyan]Rotating key...[/cyan]"):
             result = rotate_key(new_algo)
@@ -807,6 +861,7 @@ def _rotate_encryption_key():
 # ------------------------------------------------------------------
 # Clear imported data
 # ------------------------------------------------------------------
+
 
 def _clear_imported_data():
     console.print(
@@ -829,14 +884,13 @@ def _clear_imported_data():
     tenant_id = None
     if scope_choice == "one":
         from cli.menus import select_tenant
+
         tenant = select_tenant()
         if tenant is None:
             return
         tenant_id = tenant.id
 
-    confirmed = questionary.confirm(
-        "This cannot be undone. Proceed?", default=False
-    ).ask()
+    confirmed = questionary.confirm("This cannot be undone. Proceed?", default=False).ask()
     if not confirmed:
         return
 
@@ -844,24 +898,24 @@ def _clear_imported_data():
     from db.models import AuditLog, RestorePoint, SyncLog, ZIAResource, ZPAResource, ZCCResource
 
     with get_session() as session:
-        q_zia      = session.query(ZIAResource)
-        q_zpa      = session.query(ZPAResource)
-        q_zcc      = session.query(ZCCResource)
-        q_snap     = session.query(RestorePoint)
-        q_sync     = session.query(SyncLog)
-        q_audit    = session.query(AuditLog)
+        q_zia = session.query(ZIAResource)
+        q_zpa = session.query(ZPAResource)
+        q_zcc = session.query(ZCCResource)
+        q_snap = session.query(RestorePoint)
+        q_sync = session.query(SyncLog)
+        q_audit = session.query(AuditLog)
         if tenant_id is not None:
-            q_zia   = q_zia.filter_by(tenant_id=tenant_id)
-            q_zpa   = q_zpa.filter_by(tenant_id=tenant_id)
-            q_zcc   = q_zcc.filter_by(tenant_id=tenant_id)
-            q_snap  = q_snap.filter_by(tenant_id=tenant_id)
-            q_sync  = q_sync.filter_by(tenant_id=tenant_id)
+            q_zia = q_zia.filter_by(tenant_id=tenant_id)
+            q_zpa = q_zpa.filter_by(tenant_id=tenant_id)
+            q_zcc = q_zcc.filter_by(tenant_id=tenant_id)
+            q_snap = q_snap.filter_by(tenant_id=tenant_id)
+            q_sync = q_sync.filter_by(tenant_id=tenant_id)
             q_audit = q_audit.filter_by(tenant_id=tenant_id)
-        zia_count   = q_zia.delete()
-        zpa_count   = q_zpa.delete()
-        zcc_count   = q_zcc.delete()
-        snap_count  = q_snap.delete()
-        sync_count  = q_sync.delete()
+        zia_count = q_zia.delete()
+        zpa_count = q_zpa.delete()
+        zcc_count = q_zcc.delete()
+        snap_count = q_snap.delete()
+        sync_count = q_sync.delete()
         audit_count = q_audit.delete()
 
     console.print(
@@ -879,6 +933,7 @@ def _clear_imported_data():
 # ------------------------------------------------------------------
 # Audit Log
 # ------------------------------------------------------------------
+
 
 def audit_menu():
     from cli.banner import capture_banner
@@ -904,6 +959,7 @@ def audit_menu():
     table.add_column("Status")
 
     from datetime import timezone as _tz
+
     for entry in logs:
         status_style = "green" if entry.status == "SUCCESS" else "red"
         resource = f"{entry.resource_type or ''} {entry.resource_name or ''}".strip()

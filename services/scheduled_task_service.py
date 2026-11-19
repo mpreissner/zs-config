@@ -118,8 +118,8 @@ LABEL_SUPPORTED_RESOURCE_TYPES: List[str] = [
 # ---------------------------------------------------------------------------
 
 _INTERVAL_CRON: Dict[str, str] = {
-    "1h":  "0 * * * *",
-    "4h":  "0 */4 * * *",
+    "1h": "0 * * * *",
+    "4h": "0 */4 * * *",
     "12h": "0 */12 * * *",
     "24h": "0 0 * * *",
 }
@@ -163,6 +163,7 @@ def resolve_schedule(schedule: str) -> str:
 # Resource group expansion
 # ---------------------------------------------------------------------------
 
+
 def expand_resource_groups(groups: List[str]) -> List[str]:
     """Expand group keys to a deduplicated list of resource_type strings.
 
@@ -193,6 +194,7 @@ def _get_scheduler():
 # ---------------------------------------------------------------------------
 # CRUD
 # ---------------------------------------------------------------------------
+
 
 def _validate_task_fields(
     task_type: str,
@@ -379,11 +381,7 @@ def get_task(task_id: int) -> Optional[ScheduledTask]:
 def list_tasks() -> List[ScheduledTask]:
     """Return all scheduled tasks ordered by name."""
     with get_session() as session:
-        tasks = (
-            session.query(ScheduledTask)
-            .order_by(ScheduledTask.name)
-            .all()
-        )
+        tasks = session.query(ScheduledTask).order_by(ScheduledTask.name).all()
         return [_copy_task(t) for t in tasks]
 
 
@@ -415,24 +413,32 @@ def update_task(
             return None
 
         # Compute effective merged values for full re-validation
-        eff_task_type   = task_type if task_type is not None else (task.task_type or "sync")
-        eff_name        = name if name is not None else task.name
-        eff_source      = source_tenant_id if source_tenant_id is not None else task.source_tenant_id
-        eff_target      = target_tenant_id if target_tenant_id is not None else task.target_tenant_id
-        eff_targets     = target_tenant_ids if target_tenant_ids is not None else (
-            list(task.target_tenant_ids) if task.target_tenant_ids else None
+        eff_task_type = task_type if task_type is not None else (task.task_type or "sync")
+        eff_name = name if name is not None else task.name
+        eff_source = source_tenant_id if source_tenant_id is not None else task.source_tenant_id
+        eff_target = target_tenant_id if target_tenant_id is not None else task.target_tenant_id
+        eff_targets = (
+            target_tenant_ids
+            if target_tenant_ids is not None
+            else (list(task.target_tenant_ids) if task.target_tenant_ids else None)
         )
-        eff_groups      = resource_groups if resource_groups is not None else (
-            list(task.resource_groups) if task.resource_groups else []
+        eff_groups = (
+            resource_groups
+            if resource_groups is not None
+            else (list(task.resource_groups) if task.resource_groups else [])
         )
         eff_sync_deletes = sync_deletes if sync_deletes is not None else task.sync_deletes
-        eff_sync_mode   = sync_mode if sync_mode is not None else (task.sync_mode or "resource_type")
-        eff_label_name  = label_name if label_name is not None else task.label_name
-        eff_label_rtypes = label_resource_types if label_resource_types is not None else (
-            list(task.label_resource_types) if task.label_resource_types else None
+        eff_sync_mode = sync_mode if sync_mode is not None else (task.sync_mode or "resource_type")
+        eff_label_name = label_name if label_name is not None else task.label_name
+        eff_label_rtypes = (
+            label_resource_types
+            if label_resource_types is not None
+            else (list(task.label_resource_types) if task.label_resource_types else None)
         )
-        eff_products    = import_products if import_products is not None else (
-            list(task.import_products) if task.import_products else None
+        eff_products = (
+            import_products
+            if import_products is not None
+            else (list(task.import_products) if task.import_products else None)
         )
 
         # When switching from import → sync, clear any stale import products
@@ -563,6 +569,7 @@ def disable_task(task_id: int) -> Optional[ScheduledTask]:
 # Scheduler lifecycle
 # ---------------------------------------------------------------------------
 
+
 def start_scheduler() -> None:
     """Start the APScheduler BackgroundScheduler and reconcile jobs.
 
@@ -613,6 +620,7 @@ def remove_task_from_scheduler(task_id: int) -> None:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _job_id(task_id: int) -> str:
     return f"scheduled_task_{task_id}"
 
@@ -654,11 +662,7 @@ def _reconcile_jobs() -> None:
 
     # Build set of task IDs that should have jobs
     with get_session() as session:
-        enabled_tasks = (
-            session.query(ScheduledTask)
-            .filter_by(enabled=True)
-            .all()
-        )
+        enabled_tasks = session.query(ScheduledTask).filter_by(enabled=True).all()
         enabled_copies = [_copy_task(t) for t in enabled_tasks]
 
     enabled_ids = {t.id for t in enabled_copies}
@@ -673,7 +677,7 @@ def _reconcile_jobs() -> None:
     for job in _scheduler.get_jobs():
         if job.id.startswith("scheduled_task_"):
             try:
-                tid = int(job.id[len("scheduled_task_"):])
+                tid = int(job.id[len("scheduled_task_") :])
             except ValueError:
                 continue
             if tid not in enabled_ids:

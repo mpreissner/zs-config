@@ -27,6 +27,7 @@ from db.models import ScheduledTask, TaskRunHistory, ZIAResource
 # Label helper
 # ---------------------------------------------------------------------------
 
+
 def _has_label(raw_config: Dict, label_name: str) -> bool:
     """Return True if raw_config['labels'] contains an entry with name == label_name.
 
@@ -37,10 +38,7 @@ def _has_label(raw_config: Dict, label_name: str) -> bool:
     labels = raw_config.get("labels")
     if not labels:
         return False
-    return any(
-        isinstance(entry, dict) and entry.get("name") == label_name
-        for entry in labels
-    )
+    return any(isinstance(entry, dict) and entry.get("name") == label_name for entry in labels)
 
 
 # ---------------------------------------------------------------------------
@@ -50,17 +48,34 @@ def _has_label(raw_config: Dict, label_name: str) -> bool:
 # Fields that are tenant-specific and must be excluded when comparing whether
 # two resource configs are functionally identical across tenants.
 # Mirrors READONLY_FIELDS in zia_push_service plus any extras found in the wild.
-_COMPARE_STRIP = frozenset({
-    "id", "predefined", "last_modified_by", "last_modified_time", "last_mod_time",
-    "created_by", "creation_time", "created_at", "updated_at", "modified_time",
-    "modified_by", "last_modified_by_user", "is_deleted", "db_category_index",
-    "deleted", "default_rule", "access_control", "managed_by",
-    # cloud_app_instance: instance_id is the tenant-local PK (top level and inside
-    # every instance_identifiers entry) and modified_at is server-assigned.  Both
-    # differ on every tenant, so leaving them in makes each run re-update the
-    # instance forever.  _norm_for_compare filters these keys at every depth.
-    "instance_id", "modified_at",
-})
+_COMPARE_STRIP = frozenset(
+    {
+        "id",
+        "predefined",
+        "last_modified_by",
+        "last_modified_time",
+        "last_mod_time",
+        "created_by",
+        "creation_time",
+        "created_at",
+        "updated_at",
+        "modified_time",
+        "modified_by",
+        "last_modified_by_user",
+        "is_deleted",
+        "db_category_index",
+        "deleted",
+        "default_rule",
+        "access_control",
+        "managed_by",
+        # cloud_app_instance: instance_id is the tenant-local PK (top level and inside
+        # every instance_identifiers entry) and modified_at is server-assigned.  Both
+        # differ on every tenant, so leaving them in makes each run re-update the
+        # instance forever.  _norm_for_compare filters these keys at every depth.
+        "instance_id",
+        "modified_at",
+    }
+)
 
 
 def _norm_for_compare(obj: Any, _top_level: bool = True) -> Any:
@@ -74,12 +89,17 @@ def _norm_for_compare(obj: Any, _top_level: bool = True) -> Any:
       port ranges) are sorted by their JSON representation for stable comparison.
     """
     if isinstance(obj, dict):
-        result = {k: _norm_for_compare(v, _top_level=False) for k, v in obj.items() if k not in _COMPARE_STRIP}
+        result = {
+            k: _norm_for_compare(v, _top_level=False)
+            for k, v in obj.items()
+            if k not in _COMPARE_STRIP
+        }
         if not _top_level and "id" in obj and "name" in obj:
             result.pop("id", None)
         return result
     if isinstance(obj, list):
         import json as _json
+
         items = [_norm_for_compare(i, _top_level=False) for i in obj]
         if items and isinstance(items[0], dict):
             if "name" in items[0]:
@@ -102,6 +122,7 @@ def _content_fingerprint(raw_config: dict) -> str:
     logical behaviour but different names or positions hash to the same value.
     """
     import json
+
     stripped = {k: v for k, v in raw_config.items() if k not in _MATCH_EXCLUDE}
     return json.dumps(_norm_for_compare(stripped), sort_keys=True)
 
@@ -109,12 +130,16 @@ def _content_fingerprint(raw_config: dict) -> str:
 def _configs_equal(a: dict, b: dict) -> bool:
     """Return True if two raw resource configs are functionally identical."""
     import json
-    return json.dumps(_norm_for_compare(a), sort_keys=True) == json.dumps(_norm_for_compare(b), sort_keys=True)
+
+    return json.dumps(_norm_for_compare(a), sort_keys=True) == json.dumps(
+        _norm_for_compare(b), sort_keys=True
+    )
 
 
 # ---------------------------------------------------------------------------
 # License comparison helper
 # ---------------------------------------------------------------------------
+
 
 def _compare_subscriptions(src_subs: Any, tgt_subs: Any) -> Optional[str]:
     """Return a warning string if src and tgt subscription data differ, else None.
@@ -130,7 +155,11 @@ def _compare_subscriptions(src_subs: Any, tgt_subs: Any) -> Optional[str]:
         return None
 
     def _extract(subs: Any):
-        arr = subs if isinstance(subs, list) else (subs.get("features") if isinstance(subs, dict) else None)
+        arr = (
+            subs
+            if isinstance(subs, list)
+            else (subs.get("features") if isinstance(subs, dict) else None)
+        )
         if not isinstance(arr, list):
             return None
         return {(f.get("name") if isinstance(f, dict) else str(f)) for f in arr if f}
@@ -155,6 +184,7 @@ def _compare_subscriptions(src_subs: Any, tgt_subs: Any) -> Optional[str]:
 # Diff record
 # ---------------------------------------------------------------------------
 
+
 def _blocking(errors: List[Dict[str, str]]) -> List[Dict[str, str]]:
     """Entries that should count against a run's status.
 
@@ -171,19 +201,20 @@ def _blocking(errors: List[Dict[str, str]]) -> List[Dict[str, str]]:
 class _DiffRecord:
     resource_type: str
     name: str
-    operation: str       # "create" | "update" | "delete"
-    source_raw: Optional[Dict] = None   # None for deletes
-    target_id: Optional[str] = None     # existing ID on target (update/delete)
-    target_raw: Optional[Dict] = None   # target's raw_config; set on deletes, where
-                                        # source_raw is None but the delete call still
-                                        # needs type-specific args (e.g. rule_type)
+    operation: str  # "create" | "update" | "delete"
+    source_raw: Optional[Dict] = None  # None for deletes
+    target_id: Optional[str] = None  # existing ID on target (update/delete)
+    target_raw: Optional[Dict] = None  # target's raw_config; set on deletes, where
+    # source_raw is None but the delete call still
+    # needs type-specific args (e.g. rule_type)
     pulled_in_by: Optional[str] = None  # name of the selected rule that required this
-                                        # object; None means it was selected directly
+    # object; None means it was selected directly
 
 
 # ---------------------------------------------------------------------------
 # Apply ordering
 # ---------------------------------------------------------------------------
+
 
 def _push_order_index() -> Dict[str, int]:
     """resource_type → its index in PUSH_ORDER (the dependency tier sequence).
@@ -192,6 +223,7 @@ def _push_order_index() -> Dict[str, int]:
     keeps the import graph acyclic.
     """
     from services.zia_push_service import PUSH_ORDER
+
     return {rt: i for i, rt in enumerate(PUSH_ORDER)}
 
 
@@ -237,6 +269,7 @@ def _sort_delete_batch(records: List[_DiffRecord]) -> None:
 # Public entry point — dispatches by task_type
 # ---------------------------------------------------------------------------
 
+
 def run_task(task_id: int) -> Optional[TaskRunHistory]:
     """Dispatch to the correct engine path based on task_type.
 
@@ -261,6 +294,7 @@ def run_task(task_id: int) -> Optional[TaskRunHistory]:
 # ---------------------------------------------------------------------------
 # Import task
 # ---------------------------------------------------------------------------
+
 
 def _run_import_task(task_id: int) -> Optional[TaskRunHistory]:
     """Run scheduled import for one or more products against the source tenant.
@@ -308,12 +342,15 @@ def _run_import_task(task_id: int) -> Optional[TaskRunHistory]:
 
             if product == "ZIA":
                 from services.zia_import_service import ZIAImportService
+
                 sync_log = ZIAImportService(client, tenant_id=t_source).run()
             elif product == "ZPA":
                 from services.zpa_import_service import ZPAImportService
+
                 sync_log = ZPAImportService(client, tenant_id=t_source).run()
             elif product == "ZCC":
                 from services.zcc_import_service import ZCCImportService
+
                 sync_log = ZCCImportService(client, tenant_id=t_source).run()
             else:
                 raise ValueError(f"Unknown product: '{product}'")
@@ -324,27 +361,32 @@ def _run_import_task(task_id: int) -> Optional[TaskRunHistory]:
 
         except Exception as exc:
             product_error = str(exc)
-            errors.append({
-                "resource_type": "_import",
-                "resource_name": product,
-                "operation": "import",
-                "error": product_error,
-            })
+            errors.append(
+                {
+                    "resource_type": "_import",
+                    "resource_name": product,
+                    "operation": "import",
+                    "error": product_error,
+                }
+            )
 
         # 4. Collect audit entry for this product
-        pending_audit.append(dict(
-            tenant_id=t_source,
-            product=product,
-            operation="scheduled_import",
-            action="IMPORT",
-            status="FAILURE" if product_error else "SUCCESS",
-            resource_type="_import",
-            resource_name=product,
-            details={"task_id": t_id, "task_name": t_name},
-        ))
+        pending_audit.append(
+            dict(
+                tenant_id=t_source,
+                product=product,
+                operation="scheduled_import",
+                action="IMPORT",
+                status="FAILURE" if product_error else "SUCCESS",
+                resource_type="_import",
+                resource_name=product,
+                details={"task_id": t_id, "task_name": t_name},
+            )
+        )
 
     # 5. Write all audit entries after all sessions close
     from services import audit_service
+
     for entry in pending_audit:
         audit_service.log(**entry)
 
@@ -372,6 +414,7 @@ def _run_import_task(task_id: int) -> Optional[TaskRunHistory]:
 # Fan-out sync task
 # ---------------------------------------------------------------------------
 
+
 def _run_fanout_sync_task(task_id: int, target_tenant_ids: List[int]) -> Optional[TaskRunHistory]:
     """Fan out a sync run to multiple target tenants.
 
@@ -390,7 +433,9 @@ def _run_fanout_sync_task(task_id: int, target_tenant_ids: List[int]) -> Optiona
         t_sync_deletes = task.sync_deletes
         t_sync_mode = task.sync_mode or "resource_type"
         t_label_name = task.label_name
-        t_label_resource_types = list(task.label_resource_types) if task.label_resource_types else None
+        t_label_resource_types = (
+            list(task.label_resource_types) if task.label_resource_types else None
+        )
 
     # 2. Create parent run record
     run_started = datetime.utcnow()
@@ -431,15 +476,14 @@ def _run_fanout_sync_task(task_id: int, target_tenant_ids: List[int]) -> Optiona
 
         # 3b. Load source/target metadata for this pair
         from db.models import TenantConfig
+
         t_source_zia_id: Optional[str] = None
         t_license_warning: Optional[str] = None
         with get_session() as session:
             src_tenant = session.get(TenantConfig, t_source)
             tgt_tenant = session.get(TenantConfig, target_id)
             t_source_zia_id = (
-                str(src_tenant.zia_tenant_id)
-                if src_tenant and src_tenant.zia_tenant_id
-                else None
+                str(src_tenant.zia_tenant_id) if src_tenant and src_tenant.zia_tenant_id else None
             )
             t_license_warning = _compare_subscriptions(
                 src_tenant.zia_subscriptions if src_tenant else None,
@@ -482,6 +526,7 @@ def _run_fanout_sync_task(task_id: int, target_tenant_ids: List[int]) -> Optiona
 
     # 4. Write all collected audit entries after all child sessions close
     from services import audit_service
+
     for entry in all_pending_audit:
         audit_service.log(**entry)
 
@@ -490,7 +535,7 @@ def _run_fanout_sync_task(task_id: int, target_tenant_ids: List[int]) -> Optiona
     total_synced = sum(s for st, s in child_results if st != "failed")
 
     all_success = all(st == "success" for st, _ in child_results)
-    all_failed  = all(st == "failed"  for st, _ in child_results)
+    all_failed = all(st == "failed" for st, _ in child_results)
 
     if all_success:
         parent_status = "success"
@@ -514,6 +559,7 @@ def _run_fanout_sync_task(task_id: int, target_tenant_ids: List[int]) -> Optiona
 # Single-target sync task (renamed from run_sync_task)
 # ---------------------------------------------------------------------------
 
+
 def _run_single_sync_task(task_id: int) -> Optional[TaskRunHistory]:
     """Execute one full import→diff→push cycle for a single-target scheduled task.
 
@@ -534,18 +580,19 @@ def _run_single_sync_task(task_id: int) -> Optional[TaskRunHistory]:
         t_sync_deletes = task.sync_deletes
         t_sync_mode = task.sync_mode or "resource_type"
         t_label_name = task.label_name
-        t_label_resource_types = list(task.label_resource_types) if task.label_resource_types else None
+        t_label_resource_types = (
+            list(task.label_resource_types) if task.label_resource_types else None
+        )
 
     # 1b. Load source and target tenant metadata
     from db.models import TenantConfig
+
     t_license_warning: Optional[str] = None
     with get_session() as session:
         src_tenant = session.get(TenantConfig, t_source)
         tgt_tenant = session.get(TenantConfig, t_target)
         t_source_zia_id = (
-            str(src_tenant.zia_tenant_id)
-            if src_tenant and src_tenant.zia_tenant_id
-            else None
+            str(src_tenant.zia_tenant_id) if src_tenant and src_tenant.zia_tenant_id else None
         )
         t_license_warning = _compare_subscriptions(
             src_tenant.zia_subscriptions if src_tenant else None,
@@ -583,6 +630,7 @@ def _run_single_sync_task(task_id: int) -> Optional[TaskRunHistory]:
 
     # 11. Write audit entries — all sessions from import/push are already closed
     from services import audit_service
+
     for entry in pending_audit:
         audit_service.log(**entry)
 
@@ -610,6 +658,7 @@ def _run_single_sync_task(task_id: int) -> Optional[TaskRunHistory]:
 # Shared sync pipeline (extracted from former run_sync_task body)
 # ---------------------------------------------------------------------------
 
+
 def _execute_sync_pipeline(
     task_id: int,
     t_name: str,
@@ -631,19 +680,25 @@ def _execute_sync_pipeline(
     # 3. Expand resource groups to concrete resource_type strings
     if t_sync_mode == "label":
         from services.scheduled_task_service import LABEL_SUPPORTED_RESOURCE_TYPES
-        resource_types = t_label_resource_types if t_label_resource_types else LABEL_SUPPORTED_RESOURCE_TYPES
+
+        resource_types = (
+            t_label_resource_types if t_label_resource_types else LABEL_SUPPORTED_RESOURCE_TYPES
+        )
     else:
         from services.scheduled_task_service import expand_resource_groups
+
         resource_types = expand_resource_groups(t_groups)
 
     errors: List[Dict[str, str]] = []
     if t_license_warning:
-        errors.append({
-            "resource_type": "system",
-            "resource_name": "license_check",
-            "operation": "license_comparison",
-            "error": f"WARNING: {t_license_warning}",
-        })
+        errors.append(
+            {
+                "resource_type": "system",
+                "resource_name": "license_check",
+                "operation": "license_comparison",
+                "error": f"WARNING: {t_license_warning}",
+            }
+        )
     synced = 0
     pending_audit: List[Dict] = []
     # Fresh order_tracker per pipeline call — not shared across fan-out targets
@@ -660,14 +715,11 @@ def _execute_sync_pipeline(
 
         # 5. Import source state
         from services.zia_import_service import ZIAImportService
-        ZIAImportService(source_client, tenant_id=t_source).run(
-            resource_types=resource_types
-        )
+
+        ZIAImportService(source_client, tenant_id=t_source).run(resource_types=resource_types)
 
         # 6. Import target state
-        ZIAImportService(target_client, tenant_id=t_target).run(
-            resource_types=resource_types
-        )
+        ZIAImportService(target_client, tenant_id=t_target).run(resource_types=resource_types)
 
         # 6a. Close over the selected rules' dependencies.  Selecting a rule without
         # the types it references lands it on the target with those references
@@ -692,9 +744,7 @@ def _execute_sync_pipeline(
             to_load = sorted(missing - loaded)
             if not to_load:
                 break
-            ZIAImportService(source_client, tenant_id=t_source).run(
-                resource_types=to_load
-            )
+            ZIAImportService(source_client, tenant_id=t_source).run(resource_types=to_load)
             loaded |= set(to_load)
         all_types = list(resource_types)
         if pulled:
@@ -706,12 +756,11 @@ def _execute_sync_pipeline(
             if new_types:
                 # Source rows for these are already current from the walk loop; the
                 # target has never been imported for them.
-                ZIAImportService(target_client, tenant_id=t_target).run(
-                    resource_types=new_types
-                )
+                ZIAImportService(target_client, tenant_id=t_target).run(resource_types=new_types)
             listed = [
                 f"{rt} '{n}' (for '{origin.get((rt, n), '?')}')"
-                for rt in sorted(pulled) for n in sorted(pulled[rt])
+                for rt in sorted(pulled)
+                for n in sorted(pulled[rt])
             ]
             # errors_json is rendered in the run-history UI; a closure over a large
             # rule set can run to hundreds of entries, so name the first 20 and count
@@ -719,20 +768,24 @@ def _execute_sync_pipeline(
             summary = ", ".join(listed[:20])
             if len(listed) > 20:
                 summary += f", and {len(listed) - 20} more"
-            errors.append({
-                "resource_type": "system",
-                "resource_name": "dependency_closure",
-                "operation": "closure",
-                "error": f"INFO: included {sum(len(v) for v in pulled.values())} "
-                         f"dependencies required by the selected rules: {summary}",
-            })
+            errors.append(
+                {
+                    "resource_type": "system",
+                    "resource_name": "dependency_closure",
+                    "operation": "closure",
+                    "error": f"INFO: included {sum(len(v) for v in pulled.values())} "
+                    f"dependencies required by the selected rules: {summary}",
+                }
+            )
         for warning in closure_warnings:
-            errors.append({
-                "resource_type": "system",
-                "resource_name": "dependency_closure",
-                "operation": "closure",
-                "error": f"WARNING: {warning}",
-            })
+            errors.append(
+                {
+                    "resource_type": "system",
+                    "resource_name": "dependency_closure",
+                    "operation": "closure",
+                    "error": f"WARNING: {warning}",
+                }
+            )
 
         # 6c. Refresh the target's rows for the resolve-only types these rules point
         # at.  Steps 5, 6 and 6b import the selected types and the types the closure
@@ -752,6 +805,7 @@ def _execute_sync_pipeline(
         # the names, which is what the remap resolves through.
         if resolve_only:
             from services.zia_import_service import RESOURCE_DEFINITIONS
+
             importable = {d.resource_type for d in RESOURCE_DEFINITIONS}
             # Widen through the companion map for the same reason _ref_name_index
             # does: the remap resolves a location name against location_lite rows
@@ -764,28 +818,29 @@ def _execute_sync_pipeline(
             to_refresh = sorted(wanted_refresh & importable)
             skipped = sorted(resolve_only - importable)
             if to_refresh:
-                ZIAImportService(target_client, tenant_id=t_target).run(
-                    resource_types=to_refresh
-                )
+                ZIAImportService(target_client, tenant_id=t_target).run(resource_types=to_refresh)
             if skipped:
-                errors.append({
-                    "resource_type": "system",
-                    "resource_name": "reference_refresh",
-                    "operation": "closure",
-                    "error": "WARNING: the selected rules reference "
-                             + ", ".join(skipped)
-                             + ", which cannot be imported; those references are "
-                               "resolved against whatever the target snapshot holds "
-                               "and may be stale",
-                })
+                errors.append(
+                    {
+                        "resource_type": "system",
+                        "resource_name": "reference_refresh",
+                        "operation": "closure",
+                        "error": "WARNING: the selected rules reference "
+                        + ", ".join(skipped)
+                        + ", which cannot be imported; those references are "
+                        "resolved against whatever the target snapshot holds "
+                        "and may be stale",
+                    }
+                )
 
         # 7. Compute diff between source and target DB rows
         diff = _compute_diff(
-            t_source, t_target, all_types,
+            t_source,
+            t_target,
+            all_types,
             sync_deletes=t_sync_deletes,
             label_name=label_for_diff,
-            type_scope={rt: names for rt, names in pulled.items()
-                        if rt not in resource_types},
+            type_scope={rt: names for rt, names in pulled.items() if rt not in resource_types},
             sync_delete_types=set(resource_types),
             origin=origin,
         )
@@ -819,50 +874,61 @@ def _execute_sync_pipeline(
             nonlocal synced
             for rec in batch:
                 try:
-                    _apply_one(target_client, t_target, t_source, rec,
-                               source_zia_id=t_source_zia_id,
-                               order_tracker=order_tracker,
-                               created_ids=created_ids,
-                               warning_sink=errors)
+                    _apply_one(
+                        target_client,
+                        t_target,
+                        t_source,
+                        rec,
+                        source_zia_id=t_source_zia_id,
+                        order_tracker=order_tracker,
+                        created_ids=created_ids,
+                        warning_sink=errors,
+                    )
                     synced += 1
-                    pending_audit.append(dict(
-                        tenant_id=t_target,
-                        product="ZIA",
-                        operation="scheduled_sync",
-                        action=rec.operation.upper(),
-                        status="SUCCESS",
-                        resource_type=rec.resource_type,
-                        resource_name=rec.name,
-                        details={
-                            "task_id": task_id,
-                            "task_name": t_name,
-                            "source_tenant_id": t_source,
-                            **({"pulled_in_by": rec.pulled_in_by} if rec.pulled_in_by else {}),
-                        },
-                    ))
+                    pending_audit.append(
+                        dict(
+                            tenant_id=t_target,
+                            product="ZIA",
+                            operation="scheduled_sync",
+                            action=rec.operation.upper(),
+                            status="SUCCESS",
+                            resource_type=rec.resource_type,
+                            resource_name=rec.name,
+                            details={
+                                "task_id": task_id,
+                                "task_name": t_name,
+                                "source_tenant_id": t_source,
+                                **({"pulled_in_by": rec.pulled_in_by} if rec.pulled_in_by else {}),
+                            },
+                        )
+                    )
                 except Exception as exc:
-                    errors.append({
-                        "resource_type": rec.resource_type,
-                        "resource_name": rec.name,
-                        "operation": rec.operation,
-                        "error": str(exc),
-                    })
-                    pending_audit.append(dict(
-                        tenant_id=t_target,
-                        product="ZIA",
-                        operation="scheduled_sync",
-                        action=rec.operation.upper(),
-                        status="FAILURE",
-                        resource_type=rec.resource_type,
-                        resource_name=rec.name,
-                        details={
-                            "task_id": task_id,
-                            "task_name": t_name,
-                            "source_tenant_id": t_source,
-                            **({"pulled_in_by": rec.pulled_in_by} if rec.pulled_in_by else {}),
-                        },
-                        error_message=str(exc),
-                    ))
+                    errors.append(
+                        {
+                            "resource_type": rec.resource_type,
+                            "resource_name": rec.name,
+                            "operation": rec.operation,
+                            "error": str(exc),
+                        }
+                    )
+                    pending_audit.append(
+                        dict(
+                            tenant_id=t_target,
+                            product="ZIA",
+                            operation="scheduled_sync",
+                            action=rec.operation.upper(),
+                            status="FAILURE",
+                            resource_type=rec.resource_type,
+                            resource_name=rec.name,
+                            details={
+                                "task_id": task_id,
+                                "task_name": t_name,
+                                "source_tenant_id": t_source,
+                                **({"pulled_in_by": rec.pulled_in_by} if rec.pulled_in_by else {}),
+                            },
+                            error_message=str(exc),
+                        )
+                    )
 
         _apply_batch(content)
         _apply_batch(deletes)
@@ -873,34 +939,38 @@ def _execute_sync_pipeline(
             try:
                 target_client.activate()
             except Exception as exc:
-                errors.append({
-                    "resource_type": "_activation",
-                    "resource_name": "_activation",
-                    "operation": "activate",
-                    "error": str(exc),
-                })
+                errors.append(
+                    {
+                        "resource_type": "_activation",
+                        "resource_name": "_activation",
+                        "operation": "activate",
+                        "error": str(exc),
+                    }
+                )
 
         # 10. Re-import target for the affected resource types so the DB reflects
         # the actual post-push state (real API-assigned order values, etc.).
         try:
-            ZIAImportService(target_client, tenant_id=t_target).run(
-                resource_types=all_types
-            )
+            ZIAImportService(target_client, tenant_id=t_target).run(resource_types=all_types)
         except Exception as exc:
-            errors.append({
-                "resource_type": "_post_push_import",
-                "resource_name": "_post_push_import",
-                "operation": "import",
-                "error": str(exc),
-            })
+            errors.append(
+                {
+                    "resource_type": "_post_push_import",
+                    "resource_name": "_post_push_import",
+                    "operation": "import",
+                    "error": str(exc),
+                }
+            )
 
     except Exception as exc:
-        errors.append({
-            "resource_type": "_engine",
-            "resource_name": "_engine",
-            "operation": "run",
-            "error": str(exc),
-        })
+        errors.append(
+            {
+                "resource_type": "_engine",
+                "resource_name": "_engine",
+                "operation": "run",
+                "error": str(exc),
+            }
+        )
 
     return synced, errors, pending_audit
 
@@ -908,6 +978,7 @@ def _execute_sync_pipeline(
 # ---------------------------------------------------------------------------
 # Client construction
 # ---------------------------------------------------------------------------
+
 
 def _build_client(tenant_id: int, product: str):
     """Load tenant from DB and return the appropriate product client.
@@ -938,14 +1009,17 @@ def _build_client(tenant_id: int, product: str):
 
     if product == "ZIA":
         from lib.zia_client import ZIAClient
+
         return ZIAClient(auth, oneapi)
     elif product == "ZPA":
         if not zpa_customer_id:
             raise ValueError("ZPA requires zpa_customer_id")
         from lib.zpa_client import ZPAClient
+
         return ZPAClient(auth, zpa_customer_id, oneapi)
     elif product == "ZCC":
         from lib.zcc_client import ZCCClient
+
         return ZCCClient(auth, oneapi, zia_cloud=zia_cloud, zia_tenant_id=zia_tenant_id)
     else:
         raise ValueError(f"Unknown product: '{product}'")
@@ -980,6 +1054,7 @@ def _build_zia_client(tenant_id: int):
 # ---------------------------------------------------------------------------
 # Diff computation
 # ---------------------------------------------------------------------------
+
 
 def _compute_diff(
     source_tenant_id: int,
@@ -1076,7 +1151,8 @@ def _compute_diff(
             # their dependencies by reference.
             if label_name is not None and not scoped:
                 src_by_name = {
-                    name: r for name, r in src_by_name.items()
+                    name: r
+                    for name, r in src_by_name.items()
                     if _has_label(r.raw_config or {}, label_name)
                 }
                 tgt_labelled_names = {
@@ -1110,12 +1186,16 @@ def _compute_diff(
                     claimed.add(same_name.zia_id)
                     tgt_order = (same_name.raw_config or {}).get("order")
                     if src_order is not None and src_order != tgt_order:
-                        reorder_diff.append(_DiffRecord(
-                            resource_type=rtype, name=name, operation="reorder",
-                            source_raw=copy.deepcopy(src.raw_config or {}),
-                            pulled_in_by=(origin or {}).get((rtype, name)) if scoped else None,
-                            target_id=same_name.zia_id,
-                        ))
+                        reorder_diff.append(
+                            _DiffRecord(
+                                resource_type=rtype,
+                                name=name,
+                                operation="reorder",
+                                source_raw=copy.deepcopy(src.raw_config or {}),
+                                pulled_in_by=(origin or {}).get((rtype, name)) if scoped else None,
+                                target_id=same_name.zia_id,
+                            )
+                        )
                     continue
 
                 # 2. Content match with different name → rename
@@ -1125,12 +1205,16 @@ def _compute_diff(
                 )
                 if diff_name:
                     claimed.add(diff_name.zia_id)
-                    content_diff.append(_DiffRecord(
-                        resource_type=rtype, name=name, operation="rename",
-                        source_raw=copy.deepcopy(src.raw_config or {}),
-                        pulled_in_by=(origin or {}).get((rtype, name)) if scoped else None,
-                        target_id=diff_name.zia_id,
-                    ))
+                    content_diff.append(
+                        _DiffRecord(
+                            resource_type=rtype,
+                            name=name,
+                            operation="rename",
+                            source_raw=copy.deepcopy(src.raw_config or {}),
+                            pulled_in_by=(origin or {}).get((rtype, name)) if scoped else None,
+                            target_id=diff_name.zia_id,
+                        )
+                    )
                     continue
 
                 # 3. Name match but content differs → update
@@ -1140,20 +1224,28 @@ def _compute_diff(
                 )
                 if name_match:
                     claimed.add(name_match.zia_id)
-                    content_diff.append(_DiffRecord(
-                        resource_type=rtype, name=name, operation="update",
-                        source_raw=copy.deepcopy(src.raw_config or {}),
-                        pulled_in_by=(origin or {}).get((rtype, name)) if scoped else None,
-                        target_id=name_match.zia_id,
-                    ))
+                    content_diff.append(
+                        _DiffRecord(
+                            resource_type=rtype,
+                            name=name,
+                            operation="update",
+                            source_raw=copy.deepcopy(src.raw_config or {}),
+                            pulled_in_by=(origin or {}).get((rtype, name)) if scoped else None,
+                            target_id=name_match.zia_id,
+                        )
+                    )
                     continue
 
                 # 4. No match → create
-                content_diff.append(_DiffRecord(
-                    resource_type=rtype, name=name, operation="create",
-                    source_raw=copy.deepcopy(src.raw_config or {}),
-                    pulled_in_by=(origin or {}).get((rtype, name)) if scoped else None,
-                ))
+                content_diff.append(
+                    _DiffRecord(
+                        resource_type=rtype,
+                        name=name,
+                        operation="create",
+                        source_raw=copy.deepcopy(src.raw_config or {}),
+                        pulled_in_by=(origin or {}).get((rtype, name)) if scoped else None,
+                    )
+                )
 
             # DELETE — unclaimed labelled target rows not matched by any source rule.
             # Never for a pulled-in type: see sync_delete_types in the docstring.
@@ -1161,11 +1253,15 @@ def _compute_diff(
                 for del_name in tgt_labelled_names:
                     for r in tgt_by_name_all.get(del_name, []):
                         if r.zia_id not in claimed:
-                            content_diff.append(_DiffRecord(
-                                resource_type=rtype, name=del_name, operation="delete",
-                                target_id=r.zia_id,
-                                target_raw=copy.deepcopy(r.raw_config or {}),
-                            ))
+                            content_diff.append(
+                                _DiffRecord(
+                                    resource_type=rtype,
+                                    name=del_name,
+                                    operation="delete",
+                                    target_id=r.zia_id,
+                                    target_raw=copy.deepcopy(r.raw_config or {}),
+                                )
+                            )
 
     return content_diff + reorder_diff
 
@@ -1175,28 +1271,47 @@ def _compute_diff(
 # ---------------------------------------------------------------------------
 
 # Arrays of embedded objects that the API accepts only as [{id}].
-_REF_FIELDS: frozenset = frozenset({
-    "locations", "location_groups",
-    "groups", "departments", "users",
-    "devices", "device_groups",
-    "source_ip_groups", "dest_ip_groups",
-    "src_ip_groups", "src_ipv6_groups", "dest_ipv6_groups",
-    "workload_groups", "proxy_gateways",
-    "time_windows", "labels",
-    "nw_services", "nw_service_groups",
-    # A network_svc_group's member services.  The SDK models this field on exactly one
-    # resource, so the name is unambiguous.  Note the write path takes it as
-    # service_ids; the wire key is services either way.
-    "services",
-    "nw_applications", "nw_application_groups",
-    "ec_groups", "zpa_app_segments",
-    "zpa_application_segments", "zpa_application_segment_groups",
-    "threat_categories",
-    "applications", "application_groups",
-    "cloud_app_instances",
-    "override_users", "override_groups",
-    "dlp_engines", "bandwidth_classes", "tenancy_profile_ids",
-})
+_REF_FIELDS: frozenset = frozenset(
+    {
+        "locations",
+        "location_groups",
+        "groups",
+        "departments",
+        "users",
+        "devices",
+        "device_groups",
+        "source_ip_groups",
+        "dest_ip_groups",
+        "src_ip_groups",
+        "src_ipv6_groups",
+        "dest_ipv6_groups",
+        "workload_groups",
+        "proxy_gateways",
+        "time_windows",
+        "labels",
+        "nw_services",
+        "nw_service_groups",
+        # A network_svc_group's member services.  The SDK models this field on exactly one
+        # resource, so the name is unambiguous.  Note the write path takes it as
+        # service_ids; the wire key is services either way.
+        "services",
+        "nw_applications",
+        "nw_application_groups",
+        "ec_groups",
+        "zpa_app_segments",
+        "zpa_application_segments",
+        "zpa_application_segment_groups",
+        "threat_categories",
+        "applications",
+        "application_groups",
+        "cloud_app_instances",
+        "override_users",
+        "override_groups",
+        "dlp_engines",
+        "bandwidth_classes",
+        "tenancy_profile_ids",
+    }
+)
 
 # Ref fields the API accepts in either form: a flat list of Zscaler-defined string
 # constants, or a list of embedded objects for tenant-local entries.  They cannot go
@@ -1204,7 +1319,7 @@ _REF_FIELDS: frozenset = frozenset({
 # empties the list and drops the field — which the ZIA UI reads as "Any", widening
 # the rule.  Each element is classified individually instead.
 _MIXED_REF_FIELDS: Dict[str, str] = {
-    "url_categories":  "url_category",
+    "url_categories": "url_category",
     "url_categories2": "url_category",
 }
 
@@ -1215,32 +1330,32 @@ _MIXED_REF_FIELDS: Dict[str, str] = {
 # the target.  The reference is then accepted rather than rejected, and the rule
 # silently scopes to the wrong thing.  Every field here is remapped by name.
 _REF_TYPE_MAP: Dict[str, str] = {
-    "locations":             "location",
-    "location_groups":       "location_group",
-    "groups":                "group",
-    "departments":           "department",
-    "users":                 "user",
-    "device_groups":         "device_group",
-    "source_ip_groups":      "ip_source_group",
-    "src_ip_groups":         "ip_source_group",
-    "dest_ip_groups":        "ip_destination_group",
-    "src_ipv6_groups":       "ip_source_group",
-    "dest_ipv6_groups":      "ip_destination_group",
-    "workload_groups":       "workload_group",
-    "proxy_gateways":        "proxy_gateway",
-    "time_windows":          "time_interval",
-    "labels":                "rule_label",
-    "nw_services":           "network_service",
-    "services":              "network_service",
-    "nw_service_groups":     "network_svc_group",
-    "nw_applications":       "network_app",
+    "locations": "location",
+    "location_groups": "location_group",
+    "groups": "group",
+    "departments": "department",
+    "users": "user",
+    "device_groups": "device_group",
+    "source_ip_groups": "ip_source_group",
+    "src_ip_groups": "ip_source_group",
+    "dest_ip_groups": "ip_destination_group",
+    "src_ipv6_groups": "ip_source_group",
+    "dest_ipv6_groups": "ip_destination_group",
+    "workload_groups": "workload_group",
+    "proxy_gateways": "proxy_gateway",
+    "time_windows": "time_interval",
+    "labels": "rule_label",
+    "nw_services": "network_service",
+    "services": "network_service",
+    "nw_service_groups": "network_svc_group",
+    "nw_applications": "network_app",
     "nw_application_groups": "network_app_group",
-    "cloud_app_instances":   "cloud_app_instance",
-    "override_users":        "user",
-    "override_groups":       "group",
-    "dlp_engines":           "dlp_engine",
-    "bandwidth_classes":     "bandwidth_class",
-    "tenancy_profile_ids":   "tenancy_restriction_profile",
+    "cloud_app_instances": "cloud_app_instance",
+    "override_users": "user",
+    "override_groups": "group",
+    "dlp_engines": "dlp_engine",
+    "bandwidth_classes": "bandwidth_class",
+    "tenancy_profile_ids": "tenancy_restriction_profile",
 }
 
 # Ref fields whose referent type the importer does not collect, so there is no
@@ -1248,23 +1363,34 @@ _REF_TYPE_MAP: Dict[str, str] = {
 # meaningful on the target, and shipping them anyway is the mis-scoping bug above,
 # so they are dropped and reported.  This matches ZIAPushService._ref_resolved,
 # which strips the same references for the same reason.
-_UNRESOLVABLE_REF_FIELDS: frozenset = frozenset({
-    "devices",
-    "ec_groups",
-    "zpa_app_segments",
-    "zpa_application_segments",
-    "zpa_application_segment_groups",
-    "threat_categories",
-    "application_groups",
-})
+_UNRESOLVABLE_REF_FIELDS: frozenset = frozenset(
+    {
+        "devices",
+        "ec_groups",
+        "zpa_app_segments",
+        "zpa_application_segments",
+        "zpa_application_segment_groups",
+        "threat_categories",
+        "application_groups",
+    }
+)
 
 # Scope fields: losing every ref widens the rule to "Any" rather than narrowing it.
 # Mirrors ZIAPushService._SCOPE_CHECKS — a rule that lost its whole audience is
 # created DISABLED instead of being allowed to fire against the entire tenant.
-_SCOPE_REF_FIELDS: frozenset = frozenset({
-    "locations", "location_groups", "groups", "departments", "users",
-    "devices", "device_groups", "zpa_app_segments", "cloud_app_instances",
-})
+_SCOPE_REF_FIELDS: frozenset = frozenset(
+    {
+        "locations",
+        "location_groups",
+        "groups",
+        "departments",
+        "users",
+        "devices",
+        "device_groups",
+        "zpa_app_segments",
+        "cloud_app_instances",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -1283,14 +1409,24 @@ _SCOPE_REF_FIELDS: frozenset = frozenset({
 # location is deliberately absent even though it has a write path.  That path
 # exists for the Full Clone flow, which carries static IPs, VPN credentials, GRE
 # tunnels and sublocations alongside it.  A closure has none of that context.
-_REPLICABLE_TYPES: frozenset = frozenset({
-    "rule_label", "time_interval",
-    "ip_source_group", "ip_destination_group",
-    "network_service", "network_svc_group", "network_app_group",
-    "workload_group", "bandwidth_class",
-    "cloud_app_instance", "tenancy_restriction_profile",
-    "url_category", "dlp_engine", "dlp_dictionary",
-})
+_REPLICABLE_TYPES: frozenset = frozenset(
+    {
+        "rule_label",
+        "time_interval",
+        "ip_source_group",
+        "ip_destination_group",
+        "network_service",
+        "network_svc_group",
+        "network_app_group",
+        "workload_group",
+        "bandwidth_class",
+        "cloud_app_instance",
+        "tenancy_restriction_profile",
+        "url_category",
+        "dlp_engine",
+        "dlp_dictionary",
+    }
+)
 
 # Some reference types are imported under more than one resource_type, and a name
 # lookup has to consider all of them: predefined locations (Road Warrior, Mobile
@@ -1517,11 +1653,18 @@ def _drop_nulls(obj):
 
 
 # String-enum arrays that must be omitted rather than sent empty.
-_EMPTY_STRIP_FIELDS: frozenset = frozenset({
-    "platforms", "device_trust_levels", "user_agent_types",
-    "cloud_applications", "url_categories", "time_windows",
-    "proxy_gateways", "user_risk_score_levels",
-})
+_EMPTY_STRIP_FIELDS: frozenset = frozenset(
+    {
+        "platforms",
+        "device_trust_levels",
+        "user_agent_types",
+        "cloud_applications",
+        "url_categories",
+        "time_windows",
+        "proxy_gateways",
+        "user_risk_score_levels",
+    }
+)
 
 
 def _cloud_app_rule_type(raw_config: Optional[Dict]) -> Optional[str]:
@@ -1626,8 +1769,11 @@ def _slim_payload(rtype: str, payload: Dict) -> Dict:
             for ident in idents:
                 if not isinstance(ident, dict):
                     continue
-                entry = {k: v for k, v in ident.items()
-                         if k not in ("instance_id", "modified_at", "modified_by")}
+                entry = {
+                    k: v
+                    for k, v in ident.items()
+                    if k not in ("instance_id", "modified_at", "modified_by")
+                }
                 if entry:
                     cleaned.append(entry)
         if cleaned:
@@ -1703,9 +1849,11 @@ def _ref_name_index(
     with get_session() as session:
         rows = (
             session.query(ZIAResource)
-            .filter(ZIAResource.tenant_id.in_([source_tenant_id, target_tenant_id]),
-                    ZIAResource.resource_type.in_(sorted(lookup)),
-                    ZIAResource.is_deleted == False)  # noqa: E712
+            .filter(
+                ZIAResource.tenant_id.in_([source_tenant_id, target_tenant_id]),
+                ZIAResource.resource_type.in_(sorted(lookup)),
+                ZIAResource.is_deleted == False,
+            )  # noqa: E712
             .all()
         )
         for r in rows:
@@ -1851,8 +1999,13 @@ def _remap_refs(
                 remapped_mixed.append(ref)
                 continue
             src_id = str(ref.get("id", "") or "")
-            name = (ref.get("name") or ref.get("configured_name")
-                    or inline.get(src_id) or by_id.get(src_id) or "")
+            name = (
+                ref.get("name")
+                or ref.get("configured_name")
+                or inline.get(src_id)
+                or by_id.get(src_id)
+                or ""
+            )
             key = name.strip().lower()
             tgt_id = (in_run.get(key) or by_name.get(key)) if key else None
             if tgt_id:
@@ -1871,11 +2024,15 @@ def _remap_refs(
         refs = payload.get(field)
         if not isinstance(refs, list) or not refs:
             continue
-        keep = [r for r in refs if isinstance(r, dict)
-                and isinstance(r.get("id"), (int, float)) and r["id"] < 0]
+        keep = [
+            r
+            for r in refs
+            if isinstance(r, dict) and isinstance(r.get("id"), (int, float)) and r["id"] < 0
+        ]
         lost = [
             (r.get("name") or str(r.get("id", "?"))) if isinstance(r, dict) else str(r)
-            for r in refs if r not in keep
+            for r in refs
+            if r not in keep
         ]
         if keep:
             payload[field] = keep
@@ -1890,6 +2047,7 @@ def _remap_refs(
 # ---------------------------------------------------------------------------
 # Apply a single diff record to the target
 # ---------------------------------------------------------------------------
+
 
 def _apply_one(
     target_client,
@@ -1949,10 +2107,7 @@ def _apply_one(
         raise ValueError(f"No write method for {rtype}")
 
     # Build a cleaned payload: strip read-only fields
-    payload = {
-        k: v for k, v in (rec.source_raw or {}).items()
-        if k not in READONLY_FIELDS
-    }
+    payload = {k: v for k, v in (rec.source_raw or {}).items() if k not in READONLY_FIELDS}
     # Strip 'id' field from creates (target assigns its own)
     if rec.operation == "create":
         payload.pop("id", None)
@@ -1964,7 +2119,11 @@ def _apply_one(
             # Seed the tracker from the DB snapshot on first create for this type.
             if order_tracker is not None and rtype not in order_tracker:
                 order_tracker[rtype] = _next_order(target_tenant_id, rtype)
-            next_order = order_tracker[rtype] if order_tracker is not None else _next_order(target_tenant_id, rtype)
+            next_order = (
+                order_tracker[rtype]
+                if order_tracker is not None
+                else _next_order(target_tenant_id, rtype)
+            )
             if isinstance(src_order, int) and src_order <= next_order:
                 # Source position is within the target's current range — use it directly.
                 payload["order"] = src_order
@@ -1980,8 +2139,12 @@ def _apply_one(
 
     # Rewrite every reference array from source-tenant IDs to the target's, by name.
     payload, dropped_refs = _remap_refs(
-        payload, rtype, rec.source_raw,
-        source_tenant_id, target_tenant_id, created_ids,
+        payload,
+        rtype,
+        rec.source_raw,
+        source_tenant_id,
+        target_tenant_id,
+        created_ids,
     )
 
     # Report references that resolved nowhere.  A scope field that lost *every*
@@ -1990,10 +2153,7 @@ def _apply_one(
     # tenant; on an update the target's own state is left as the operator set it.
     # Partial loss narrows and passes silently, matching ZIAPushService._SCOPE_CHECKS.
     if dropped_refs:
-        widened = [
-            f for f in dropped_refs
-            if f in _SCOPE_REF_FIELDS and not payload.get(f)
-        ]
+        widened = [f for f in dropped_refs if f in _SCOPE_REF_FIELDS and not payload.get(f)]
         disabled = bool(widened) and rec.operation == "create"
         if disabled:
             payload["state"] = "DISABLED"
@@ -2009,15 +2169,17 @@ def _apply_one(
                     detail = "; the reference was dropped entirely"
                 else:
                     detail = "; the remaining references were kept"
-                warning_sink.append({
-                    "resource_type": rtype,
-                    "resource_name": rec.name,
-                    "operation": rec.operation,
-                    "error": (
-                        f"WARNING: {field} could not be resolved on the target "
-                        f"({', '.join(names)}){detail}"
-                    ),
-                })
+                warning_sink.append(
+                    {
+                        "resource_type": rtype,
+                        "resource_name": rec.name,
+                        "operation": rec.operation,
+                        "error": (
+                            f"WARNING: {field} could not be resolved on the target "
+                            f"({', '.join(names)}){detail}"
+                        ),
+                    }
+                )
 
     # Clamp reorder operations to the target's valid range
     if rec.operation == "reorder" and "order" in payload:
