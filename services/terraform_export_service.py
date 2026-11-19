@@ -82,16 +82,46 @@ SKIP_FIELDS = {
     "microtenant_name", "policy_migrated", "config_space",
 }
 
-# Secret-bearing fields (VPN pre-shared keys, PRA credential passwords and
-# keys, ...) are never written to the export; a TODO comment stands in.
-_SECRET_RE = re.compile(
-    r"(password|passphrase|secret|pre_shared_key|psk|private_key|api_key|token)",
-    re.IGNORECASE,
-)
+# Secret attributes the providers accept.  The APIs never return the real
+# value (ZIA masks a PSK as "*****", ZPA omits PRA credentials), so each one
+# becomes a sensitive input variable the user supplies at apply time.
+SECRET_FIELDS = {"pre_shared_key", "password", "private_key", "passphrase"}
 
 
-def _is_secret(key: str) -> bool:
-    return bool(_SECRET_RE.search(key))
+def _required_secrets(resource_type: str, cfg: Dict[str, Any]) -> List[str]:
+    """Secrets a resource needs even when the API left them out of the record."""
+    if resource_type == "vpn_credential":
+        return ["pre_shared_key"]
+    if resource_type == "pra_credential":
+        ctype = str(cfg.get("credential_type", "")).upper()
+        if ctype == "SSH_KEY":
+            return ["private_key"]
+        return ["password"]
+    return []
+
+
+def _snake(key: str) -> str:
+    """Convert an API camelCase key to the provider's snake_case attribute name."""
+    s = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", str(key))
+    return re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", s).lower()
+
+
+def _normalize(v: Any) -> Any:
+    """Recursively snake_case dict keys (raw_config holds the API's camelCase)."""
+    if isinstance(v, dict):
+        out = {_snake(k): _normalize(x) for k, x in v.items()}
+        # ZIA accepts "psk" as an alias; the provider attribute is pre_shared_key.
+        if "psk" in out:
+            out.setdefault("pre_shared_key", out["psk"])
+            del out["psk"]
+        return out
+    if isinstance(v, list):
+        return [_normalize(x) for x in v]
+    return v
+
+
+def _variable_block(name: str) -> str:
+    return f'variable "{name}" {{\n  type      = string\n  sensitive = true\n}}\n'
 
 
 # ---------------------------------------------------------------------------
@@ -149,19 +179,33 @@ def _ref_comment(key: str, items: List[Any], pad: str) -> str:
     return f"{pad}# {key} = [{joined}]  # TODO: replace with resource references"
 
 
-def _render_block(fields: Dict[str, Any], indent: int = 1) -> List[str]:
-    """Recursively render a dict as HCL attribute lines and nested blocks."""
+def _render_block(
+    fields: Dict[str, Any],
+    indent: int = 1,
+    var_prefix: str = "",
+    secret_vars: Optional[List[str]] = None,
+) -> List[str]:
+    """Recursively render a dict as HCL attribute lines and nested blocks.
+
+    Secret fields render as `key = var.<prefix>_<key>`; the variable names
+    are appended to secret_vars so the caller can declare them.
+    """
     pad = "  " * indent
     scalars: List[Tuple[str, str]] = []
     ref_comments: List[str] = []
     nested: List[Tuple[str, List[Dict]]] = []
 
     for key, val in fields.items():
-        if key in SKIP_FIELDS or val is None:
+        if key in SKIP_FIELDS:
             continue
 
-        if _is_secret(key):
-            ref_comments.append(f"{pad}# {key} = ...  # TODO: secret not exported, set it yourself")
+        if key in SECRET_FIELDS and secret_vars is not None:
+            var_name = _slug(f"{var_prefix}_{key}")
+            secret_vars.append(var_name)
+            scalars.append((key, f"var.{var_name}"))
+            continue
+
+        if val is None:
             continue
 
         if isinstance(val, list):
@@ -209,7 +253,7 @@ def _render_block(fields: Dict[str, Any], indent: int = 1) -> List[str]:
 
     if ref_comments:
         lines.append("")
-        lines.append(f"{pad}# Configure manually (cross-references and secrets):")
+        lines.append(f"{pad}# Cross-references — replace with Terraform resource references:")
         lines.extend(ref_comments)
 
     for key, block_list in nested:
@@ -219,16 +263,25 @@ def _render_block(fields: Dict[str, Any], indent: int = 1) -> List[str]:
                 continue
             lines.append("")
             lines.append(f"{pad}{key} {{")
-            lines.extend(_render_block(inner_fields, indent + 1))
+            lines.extend(
+                _render_block(inner_fields, indent + 1, f"{var_prefix}_{key}", secret_vars)
+            )
             lines.append(f"{pad}}}")
 
     return lines
 
 
-def _resource_block(tf_type: str, label: str, fields: Dict[str, Any]) -> str:
-    body = _render_block(fields)
+def _resource_block(
+    tf_type: str, label: str, fields: Dict[str, Any], resource_type: str = ""
+) -> str:
+    fields = dict(fields)
+    for key in _required_secrets(resource_type, fields):
+        fields.setdefault(key, None)
+    secret_vars: List[str] = []
+    body = _render_block(fields, var_prefix=label, secret_vars=secret_vars)
     inner = "\n".join(body)
-    return f'resource "{tf_type}" "{label}" {{\n{inner}\n}}\n'
+    variables = "".join(_variable_block(v) for v in secret_vars)
+    return f'{variables}resource "{tf_type}" "{label}" {{\n{inner}\n}}\n'
 
 
 def _data_block(tf_type: str, label: str, fields: Dict[str, Any]) -> str:
@@ -249,7 +302,8 @@ def _header(product: str) -> str:
 # Provider docs: https://registry.terraform.io/providers/zscaler/{product}/latest
 #
 # IMPORTANT: This is a best-effort export.  Fields marked with TODO require
-# cross-references to other resources, and secrets are never exported.
+# cross-references to other resources.  Secrets are never exported: each one
+# is a sensitive variable to supply via a .tfvars file or TF_VAR_* env vars.
 # Review before applying.
 # =============================================================================
 
@@ -307,8 +361,8 @@ def generate_zia(tenant_id: int) -> str:
             sections.append(f"# {'─' * 72}\n# {tf_type}\n# {'─' * 72}\n")
 
         label = _dedup_label(_slug(row.name or row.zia_id or "resource"), seen_labels)
-        fields = {k: v for k, v in (row.raw_config or {}).items() if k not in SKIP_FIELDS}
-        sections.append(_resource_block(tf_type, label, fields))
+        fields = _normalize(row.raw_config or {})
+        sections.append(_resource_block(tf_type, label, fields, row.resource_type))
 
     return "\n".join(sections)
 
@@ -341,10 +395,10 @@ def generate_zpa(tenant_id: int) -> str:
             sections.append(f"# {'─' * 72}\n# {tf_type}  ({kind})\n# {'─' * 72}\n")
 
         label = _dedup_label(_slug(row.name or row.zpa_id or "resource"), seen_labels)
-        fields = {k: v for k, v in (row.raw_config or {}).items() if k not in SKIP_FIELDS}
+        fields = _normalize(row.raw_config or {})
         if is_data:
             sections.append(_data_block(tf_type, label, fields))
         else:
-            sections.append(_resource_block(tf_type, label, fields))
+            sections.append(_resource_block(tf_type, label, fields, row.resource_type))
 
     return "\n".join(sections)
