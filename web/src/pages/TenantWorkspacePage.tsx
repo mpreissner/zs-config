@@ -6577,12 +6577,12 @@ function TerraformExportPanel({ tenant, product }: { tenant: Tenant; product: "z
         Generate a <code className="text-xs bg-gray-100 px-1 rounded">.tf</code> file from your
         imported {product.toUpperCase()} configuration using the{" "}
         <a
-          href="https://registry.terraform.io/providers/zscaler/zscaler/latest"
+          href={`https://registry.terraform.io/providers/zscaler/${product}/latest`}
           target="_blank"
           rel="noopener noreferrer"
           className="text-zs-600 hover:underline"
         >
-          Zscaler Terraform provider
+          Zscaler {product.toUpperCase()} Terraform provider
         </a>
         . Cross-references between resources are flagged as comments for manual wiring.
       </p>
