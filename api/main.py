@@ -48,7 +48,6 @@ from api.routers import sso as sso_router
 from api.routers import scim as scim_router
 from api.routers import groups as groups_router
 from api.routers import plugins as plugins_router
-from api.routers import simulator as simulator_router
 from api.routers import terraform as terraform_router
 from api.auth_utils import decode_token
 from api.dependencies import require_auth, require_user, AuthUser
@@ -256,7 +255,6 @@ app.include_router(groups_router.router)
 app.include_router(jobs_router.router)
 app.include_router(scheduled_tasks_router.router)
 app.include_router(templates_router.router)
-app.include_router(simulator_router.router)
 app.include_router(terraform_router.router)
 app.include_router(sso_router.router)
 # Registered only where the deployment asks for it (plugins_router.MANAGER_ENV).
