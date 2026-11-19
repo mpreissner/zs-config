@@ -5,7 +5,7 @@ from dataclasses import asdict
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from api.dependencies import AuthUser, check_tenant_access, require_auth
+from api.dependencies import AuthUser, check_tenant_access, require_user
 from db.database import get_session
 from db.models import TenantConfig
 
@@ -34,7 +34,7 @@ class SimulateRequest(BaseModel):
 
 
 @router.post("/{tenant_id}/simulate")
-def simulate_traffic(tenant_id: int, req: SimulateRequest, user: AuthUser = Depends(require_auth)):
+def simulate_traffic(tenant_id: int, req: SimulateRequest, user: AuthUser = Depends(require_user)):
     _check_access(tenant_id, user)
 
     with get_session() as s:
@@ -53,7 +53,7 @@ def simulate_traffic(tenant_id: int, req: SimulateRequest, user: AuthUser = Depe
 
 
 @router.post("/{tenant_id}/simulate/all")
-def simulate_traffic_all(tenant_id: int, req: SimulateRequest, user: AuthUser = Depends(require_auth)):
+def simulate_traffic_all(tenant_id: int, req: SimulateRequest, user: AuthUser = Depends(require_user)):
     _check_access(tenant_id, user)
 
     with get_session() as s:
@@ -75,7 +75,7 @@ def simulate_traffic_all(tenant_id: int, req: SimulateRequest, user: AuthUser = 
 
 
 @router.get("/{tenant_id}/simulate/applications")
-def list_sim_applications(tenant_id: int, user: AuthUser = Depends(require_auth)):
+def list_sim_applications(tenant_id: int, user: AuthUser = Depends(require_user)):
     """Return unique nw_application IDs referenced by this tenant's firewall rules."""
     _check_access(tenant_id, user)
 
@@ -106,31 +106,31 @@ def _unique_names(tenant_id: int, resource_type: str, name_field: str = "name") 
 
 
 @router.get("/{tenant_id}/simulate/users")
-def list_sim_users(tenant_id: int, user: AuthUser = Depends(require_auth)):
+def list_sim_users(tenant_id: int, user: AuthUser = Depends(require_user)):
     _check_access(tenant_id, user)
     return _unique_names(tenant_id, "user", "name")
 
 
 @router.get("/{tenant_id}/simulate/departments")
-def list_sim_departments(tenant_id: int, user: AuthUser = Depends(require_auth)):
+def list_sim_departments(tenant_id: int, user: AuthUser = Depends(require_user)):
     _check_access(tenant_id, user)
     return _unique_names(tenant_id, "department", "name")
 
 
 @router.get("/{tenant_id}/simulate/groups")
-def list_sim_groups(tenant_id: int, user: AuthUser = Depends(require_auth)):
+def list_sim_groups(tenant_id: int, user: AuthUser = Depends(require_user)):
     _check_access(tenant_id, user)
     return _unique_names(tenant_id, "group", "name")
 
 
 @router.get("/{tenant_id}/simulate/locations")
-def list_sim_locations(tenant_id: int, user: AuthUser = Depends(require_auth)):
+def list_sim_locations(tenant_id: int, user: AuthUser = Depends(require_user)):
     _check_access(tenant_id, user)
     return _unique_names(tenant_id, "location", "name")
 
 
 @router.get("/{tenant_id}/simulate/zcc-profiles")
-def list_sim_zcc_profiles(tenant_id: int, user: AuthUser = Depends(require_auth)):
+def list_sim_zcc_profiles(tenant_id: int, user: AuthUser = Depends(require_user)):
     """Return ZCC web policy names for this tenant."""
     _check_access(tenant_id, user)
     from db.models import ZCCResource
@@ -145,7 +145,7 @@ def list_sim_zcc_profiles(tenant_id: int, user: AuthUser = Depends(require_auth)
 
 
 @router.get("/{tenant_id}/simulate/cloud-apps")
-def list_sim_cloud_apps(tenant_id: int, user: AuthUser = Depends(require_auth)):
+def list_sim_cloud_apps(tenant_id: int, user: AuthUser = Depends(require_user)):
     """Return unique cloud app IDs referenced by this tenant's cloud app control rules."""
     _check_access(tenant_id, user)
     from db.models import ZIAResource
@@ -162,7 +162,7 @@ def list_sim_cloud_apps(tenant_id: int, user: AuthUser = Depends(require_auth)):
 
 
 @router.get("/{tenant_id}/simulate/app-service-groups")
-def list_sim_app_service_groups(tenant_id: int, user: AuthUser = Depends(require_auth)):
+def list_sim_app_service_groups(tenant_id: int, user: AuthUser = Depends(require_user)):
     """Return unique app_service_group names referenced by this tenant's firewall rules."""
     _check_access(tenant_id, user)
 
