@@ -2,7 +2,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Literal, Optional, List
-from api.dependencies import require_admin, require_auth, check_tenant_access, AuthUser
+from api.dependencies import require_admin, require_auth, require_user, check_tenant_access, AuthUser
 from lib.auth import DEFAULT_GOV_TIER
 from lib.conf_writer import build_zidentity_url, govcloud_oneapi_url
 
@@ -531,6 +531,33 @@ def import_zcc(tenant_id: int, user: AuthUser = Depends(require_auth)):
 
     threading.Thread(target=run, daemon=True).start()
     return {"job_id": job_id}
+
+
+@router.delete("/{tenant_id}/import/zcc/disabled-resources", status_code=200)
+def clear_zcc_disabled_resources(tenant_id: int, user: AuthUser = Depends(require_user)):
+    check_tenant_access(tenant_id, user)
+    from db.database import get_session
+    from db.models import TenantConfig
+    from services.zcc_import_service import ZCCImportService
+
+    with get_session() as session:
+        t = session.get(TenantConfig, tenant_id)
+        if not t:
+            raise HTTPException(status_code=404, detail="Tenant not found")
+        tenant_name = t.name
+        previously_disabled = list(t.zcc_disabled_resources or [])
+
+    # Clearing only touches the local DB, so the service needs no client.
+    ZCCImportService(None, tenant_id).clear_disabled_resource_types()
+
+    _write_audit([dict(
+        tenant_id=tenant_id, product="ZCC", operation="clear_disabled_resources",
+        action="UPDATE", status="SUCCESS",
+        resource_type="tenant", resource_name=tenant_name,
+        details={"cleared": previously_disabled},
+        timestamp=datetime.utcnow(),
+    )])
+    return {"cleared": previously_disabled}
 
 
 # ── Apply Snapshot ────────────────────────────────────────────────────────────

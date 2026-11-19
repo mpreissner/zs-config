@@ -411,3 +411,81 @@ export const restoreZpaSnapshot = (
   apiFetch<{ job_id: string }>(`${base(tenant)}/snapshots/${snapshotId}/restore`, {
     method: "POST",
   });
+
+// ── Application segments: CSV bulk create ─────────────────────────────────────
+
+export interface SegmentCsvField {
+  field: string;
+  required: string;
+  default: string;
+  format: string;
+}
+
+export interface SegmentCsvPreviewRow {
+  name: string;
+  domain_names: string;
+  segment_group: string;
+  server_groups: string;
+  tcp_ports: string;
+  udp_ports: string;
+  status: "READY" | "MISSING_DEPENDENCY";
+  issues: string[];
+}
+
+export interface SegmentCsvPreview {
+  rows: SegmentCsvPreviewRow[];
+  invalid: string[];
+  missing: { segment_group: string[]; server_group: string[] };
+  ready: number;
+}
+
+export interface SegmentBulkResult {
+  created: number;
+  failed: number;
+  skipped: number;
+  invalid: string[];
+  rows: { name: string; status: string; id?: string | null; error?: string | null }[];
+  groups: { created: string[]; failed: string[]; warnings: string[] };
+  sync_error?: string | null;
+}
+
+export async function downloadSegmentCsvTemplate(tenant: string): Promise<void> {
+  const res = await fetch(
+    `/api/v1/zpa/${encodeURIComponent(tenant)}/applications-bulk/template`,
+    { headers: getAuthHeaders(), credentials: "include" }
+  );
+  if (!res.ok) throw new Error("Template download failed");
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "app_segment_template.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export const fetchSegmentCsvFields = (tenant: string): Promise<SegmentCsvField[]> =>
+  apiFetch<SegmentCsvField[]>(`${base(tenant)}/applications-bulk/fields`);
+
+export const previewSegmentCsv = (tenant: string, file: File): Promise<SegmentCsvPreview> => {
+  const form = new FormData();
+  form.append("file", file);
+  return apiFetch<SegmentCsvPreview>(`${base(tenant)}/applications-bulk/preview`, {
+    method: "POST",
+    body: form,
+  });
+};
+
+export const bulkCreateSegments = (
+  tenant: string,
+  file: File,
+  createMissing: boolean
+): Promise<{ job_id: string }> => {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("create_missing", createMissing ? "true" : "false");
+  return apiFetch<{ job_id: string }>(`${base(tenant)}/applications-bulk`, {
+    method: "POST",
+    body: form,
+  });
+};
