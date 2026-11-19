@@ -100,6 +100,9 @@ export async function downloadTerraform(tenantId: number, product: "zia" | "zpa"
   URL.revokeObjectURL(url);
 }
 
+export const clearZCCDisabledResources = (id: number): Promise<{ cleared: string[] }> =>
+  apiFetch<{ cleared: string[] }>(`/api/v1/tenants/${id}/import/zcc/disabled-resources`, { method: "DELETE" });
+
 export interface SnapshotDiffItem {
   action: "create" | "update" | "delete";
   resource_type: string;

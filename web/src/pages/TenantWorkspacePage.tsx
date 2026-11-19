@@ -9,6 +9,7 @@ import {
   importZPA,
   importZCC,
   downloadTerraform,
+  clearZCCDisabledResources,
   previewApplySnapshot,
   applySnapshot,
   Tenant,
@@ -126,6 +127,11 @@ import {
   listScimAttributes,
   listScimGroups,
   listSegmentGroups,
+  downloadSegmentCsvTemplate,
+  fetchSegmentCsvFields,
+  previewSegmentCsv,
+  bulkCreateSegments,
+  SegmentBulkResult,
   ZpaCertificate,
   ZpaApplication,
   ZpaPraPortal,
@@ -3672,6 +3678,8 @@ function ApplicationsSection({ tenantName, isOpen }: { tenantName: string; isOpe
   const qc = useQueryClient();
   const [filter, setFilter] = useState("");
   const [pendingToggleId, setPendingToggleId] = useState<string | null>(null);
+  const [bulkFile, setBulkFile] = useState<File | null>(null);
+  const [templateErr, setTemplateErr] = useState<string | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["zpa-applications", tenantName],
@@ -3698,13 +3706,41 @@ function ApplicationsSection({ tenantName, isOpen }: { tenantName: string; isOpe
 
   return (
     <div className="space-y-3">
-      <input
-        type="text"
-        placeholder="Filter by name..."
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
-      />
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          placeholder="Filter by name..."
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          className="flex-1 border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-zs-500"
+        />
+        <button
+          onClick={() => {
+            setTemplateErr(null);
+            downloadSegmentCsvTemplate(tenantName).catch((e: Error) => setTemplateErr(e.message));
+          }}
+          className="px-3 py-1.5 text-xs rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 whitespace-nowrap"
+        >
+          Download CSV Template
+        </button>
+        <label className="px-3 py-1.5 text-xs rounded-md bg-zs-500 hover:bg-zs-600 text-white cursor-pointer whitespace-nowrap">
+          Bulk Create from CSV
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) setBulkFile(f);
+              e.target.value = "";
+            }}
+          />
+        </label>
+      </div>
+      {templateErr && <ErrorMessage message={templateErr} />}
+      {bulkFile && (
+        <BulkSegmentModal tenantName={tenantName} file={bulkFile} onClose={() => setBulkFile(null)} />
+      )}
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead className="bg-gray-50">
@@ -3729,6 +3765,279 @@ function ApplicationsSection({ tenantName, isOpen }: { tenantName: string; isOpe
             )}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+function BulkSegmentModal({
+  tenantName,
+  file,
+  onClose,
+}: {
+  tenantName: string;
+  file: File;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [createMissing, setCreateMissing] = useState(false);
+  const [showFields, setShowFields] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [mutErr, setMutErr] = useState<string | null>(null);
+
+  const preview = useQuery({
+    queryKey: ["zpa-segment-csv-preview", tenantName, file.name, file.size, file.lastModified],
+    queryFn: () => previewSegmentCsv(tenantName, file),
+    staleTime: Infinity,
+    gcTime: 0,
+    retry: false,
+  });
+
+  const fields = useQuery({
+    queryKey: ["zpa-segment-csv-fields", tenantName],
+    queryFn: () => fetchSegmentCsvFields(tenantName),
+    enabled: showFields,
+    staleTime: Infinity,
+  });
+
+  const createMut = useMutation({
+    mutationFn: () => bulkCreateSegments(tenantName, file, createMissing),
+    onSuccess: (d) => { setJobId(d.job_id); setMutErr(null); },
+    onError: (e: Error) => setMutErr(e.message),
+  });
+
+  const { latestEvent, jobStatus, result, streamError } = useJobStream<SegmentBulkResult>(jobId);
+  const running = createMut.isPending || jobStatus === "running";
+  const done = jobStatus === "done" && !!result;
+
+  useEffect(() => {
+    if (jobStatus === "done" || jobStatus === "error") {
+      qc.invalidateQueries({ queryKey: ["zpa-applications", tenantName] });
+      qc.invalidateQueries({ queryKey: ["zpa-segment-groups", tenantName] });
+    }
+  }, [jobStatus, qc, tenantName]);
+
+  const p = preview.data;
+  const missingCount = p ? p.missing.segment_group.length + p.missing.server_group.length : 0;
+  const willCreate = p ? (createMissing ? p.rows.length : p.ready) : 0;
+  const err =
+    mutErr ??
+    streamError ??
+    (preview.error instanceof Error ? preview.error.message : null);
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+        <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+          <div>
+            <h3 className="text-base font-semibold text-gray-900">Bulk Create Application Segments</h3>
+            <p className="text-xs text-gray-500 mt-0.5">{file.name}</p>
+          </div>
+          <button
+            onClick={onClose}
+            disabled={running}
+            className="text-gray-400 hover:text-gray-600 disabled:opacity-40 text-xl leading-none"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="px-5 py-4 overflow-y-auto space-y-4 text-sm">
+          {err && <ErrorMessage message={err} />}
+          {preview.isLoading && <LoadingSpinner />}
+
+          {p && !jobId && (
+            <>
+              <div className="flex flex-wrap gap-4 text-xs text-gray-600">
+                <span><span className="font-semibold text-gray-900">{p.rows.length}</span> valid rows</span>
+                <span><span className="font-semibold text-green-700">{p.ready}</span> ready</span>
+                <span><span className="font-semibold text-amber-700">{p.rows.length - p.ready}</span> missing dependencies</span>
+                {p.invalid.length > 0 && (
+                  <span><span className="font-semibold text-red-700">{p.invalid.length}</span> invalid (skipped)</span>
+                )}
+              </div>
+
+              {p.invalid.length > 0 && (
+                <div className="rounded-md border border-red-200 bg-red-50 p-3">
+                  <p className="text-xs font-medium text-red-800 mb-1">Rows that could not be parsed</p>
+                  <ul className="text-xs text-red-700 list-disc pl-4 space-y-0.5">
+                    {p.invalid.map((e, i) => <li key={i}>{e}</li>)}
+                  </ul>
+                </div>
+              )}
+
+              {missingCount > 0 && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 p-3 space-y-2">
+                  <p className="text-xs font-medium text-amber-800">Groups not found in the local DB</p>
+                  {p.missing.segment_group.length > 0 && (
+                    <p className="text-xs text-amber-800">
+                      Segment groups: {p.missing.segment_group.join(", ")}
+                    </p>
+                  )}
+                  {p.missing.server_group.length > 0 && (
+                    <p className="text-xs text-amber-800">
+                      Server groups: {p.missing.server_group.join(", ")}
+                    </p>
+                  )}
+                  <label className="flex items-center gap-2 text-xs text-amber-900">
+                    <input
+                      type="checkbox"
+                      checked={createMissing}
+                      onChange={(e) => setCreateMissing(e.target.checked)}
+                    />
+                    Create missing groups first
+                  </label>
+                  {createMissing && p.missing.server_group.length > 0 && (
+                    <p className="text-xs text-amber-700">
+                      New server groups are created with no connector groups. Assign connector groups
+                      in the ZPA portal before the segments will carry traffic.
+                    </p>
+                  )}
+                  {!createMissing && (
+                    <p className="text-xs text-amber-700">
+                      Rows with missing groups will be skipped. If the groups exist in ZPA, run an import first.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div className="overflow-x-auto border border-gray-200 rounded-md">
+                <table className="min-w-full divide-y divide-gray-200 text-xs">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      {["Name", "Domains", "Segment Group", "Server Groups", "TCP", "UDP", "Status"].map((h) => (
+                        <th key={h} className="px-2 py-1.5 text-left font-medium text-gray-500 uppercase">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white">
+                    {p.rows.map((r, i) => (
+                      <tr key={i}>
+                        <td className="px-2 py-1.5 font-medium text-gray-900">{r.name}</td>
+                        <td className="px-2 py-1.5 text-gray-600 max-w-[14rem] truncate" title={r.domain_names}>{r.domain_names}</td>
+                        <td className="px-2 py-1.5 text-gray-600">{r.segment_group}</td>
+                        <td className="px-2 py-1.5 text-gray-600">{r.server_groups}</td>
+                        <td className="px-2 py-1.5 text-gray-600">{r.tcp_ports || "—"}</td>
+                        <td className="px-2 py-1.5 text-gray-600">{r.udp_ports || "—"}</td>
+                        <td className="px-2 py-1.5">
+                          {r.status === "READY" ? (
+                            <span className="text-green-700">Ready</span>
+                          ) : (
+                            <span className="text-amber-700" title={r.issues.join("\n")}>Missing group</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {p.rows.length === 0 && (
+                      <tr><td colSpan={7} className="px-2 py-3 text-center text-gray-400">No valid rows</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div>
+                <button
+                  onClick={() => setShowFields((v) => !v)}
+                  className="text-xs text-zs-600 hover:underline"
+                >
+                  {showFields ? "Hide" : "Show"} CSV field reference
+                </button>
+                {showFields && fields.data && (
+                  <table className="mt-2 min-w-full divide-y divide-gray-200 text-xs border border-gray-200 rounded-md">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        {["Field", "Required", "Default", "Format"].map((h) => (
+                          <th key={h} className="px-2 py-1.5 text-left font-medium text-gray-500 uppercase">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {fields.data.map((f) => (
+                        <tr key={f.field}>
+                          <td className="px-2 py-1 font-mono text-gray-900">{f.field}</td>
+                          <td className="px-2 py-1 text-gray-600">{f.required}</td>
+                          <td className="px-2 py-1 text-gray-600">{f.default}</td>
+                          <td className="px-2 py-1 text-gray-600">{f.format}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </>
+          )}
+
+          {jobId && !done && (
+            <ImportProgressBar active={running} message={describeProgress(latestEvent, "Starting…")} />
+          )}
+
+          {done && result && (
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-4 text-xs text-gray-600">
+                <span><span className="font-semibold text-green-700">{result.created}</span> created</span>
+                <span><span className="font-semibold text-red-700">{result.failed}</span> failed</span>
+                <span><span className="font-semibold text-gray-900">{result.skipped}</span> skipped</span>
+              </div>
+              {result.sync_error && (
+                <p className="text-xs text-amber-700">
+                  Segments were created in ZPA, but the local sync did not finish ({result.sync_error}).
+                  Run a ZPA import to refresh the list.
+                </p>
+              )}
+              {(result.groups.created.length > 0 || result.groups.failed.length > 0) && (
+                <div className="text-xs text-gray-700 space-y-0.5">
+                  {result.groups.created.length > 0 && <p>Groups created: {result.groups.created.join(", ")}</p>}
+                  {result.groups.failed.length > 0 && (
+                    <p className="text-red-700">Groups failed: {result.groups.failed.join(", ")}</p>
+                  )}
+                  {result.groups.warnings.map((w, i) => <p key={i} className="text-amber-700">{w}</p>)}
+                </div>
+              )}
+              {result.rows.some((r) => r.status !== "CREATED") && (
+                <div className="rounded-md border border-gray-200">
+                  <table className="min-w-full divide-y divide-gray-200 text-xs">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-2 py-1.5 text-left font-medium text-gray-500 uppercase">Name</th>
+                        <th className="px-2 py-1.5 text-left font-medium text-gray-500 uppercase">Status</th>
+                        <th className="px-2 py-1.5 text-left font-medium text-gray-500 uppercase">Detail</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {result.rows.filter((r) => r.status !== "CREATED").map((r, i) => (
+                        <tr key={i}>
+                          <td className="px-2 py-1 text-gray-900">{r.name}</td>
+                          <td className={`px-2 py-1 ${r.status === "FAILED" ? "text-red-700" : "text-gray-600"}`}>{r.status}</td>
+                          <td className="px-2 py-1 text-gray-600">{r.error || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="px-5 py-3 border-t border-gray-200 flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            disabled={running}
+            className="px-3 py-1.5 text-xs rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+          >
+            {done || jobStatus === "error" ? "Close" : "Cancel"}
+          </button>
+          {!jobId && (
+            <button
+              onClick={() => createMut.mutate()}
+              disabled={!p || willCreate === 0 || running}
+              className="px-3 py-1.5 text-xs rounded-md bg-zs-500 hover:bg-zs-600 text-white disabled:opacity-40"
+            >
+              {running ? "Starting…" : `Create ${willCreate} segment${willCreate === 1 ? "" : "s"}`}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -5668,6 +5977,8 @@ function ImportProductModal({
     }
   }, [active.data, jobId]);
 
+  const [resetMsg, setResetMsg] = useState<string | null>(null);
+
   const mut = useMutation({
     mutationFn: () =>
       product === "ZIA" ? importZIA(tenant.id) :
@@ -5677,6 +5988,16 @@ function ImportProductModal({
       setJobId(data.job_id);
       if (data.already_running) setResumed(true);
     },
+    onError: (e: Error) => setMutErr(e.message),
+  });
+
+  const resetMut = useMutation({
+    mutationFn: () => clearZCCDisabledResources(tenant.id),
+    onSuccess: (data) => setResetMsg(
+      data.cleared.length > 0
+        ? `Cleared: ${data.cleared.join(", ")}. Run import to retry.`
+        : "No disabled resources to clear."
+    ),
     onError: (e: Error) => setMutErr(e.message),
   });
 
@@ -5741,6 +6062,7 @@ function ImportProductModal({
             </div>
           )}
           {err && <p className="text-xs text-red-600">{err}</p>}
+          {resetMsg && <p className="text-xs text-blue-700 bg-blue-50 px-3 py-2 rounded">{resetMsg}</p>}
           {isDone && result && (
             <div className={`p-3 rounded-md text-sm ${result.status === "SUCCESS" || result.status === "PARTIAL" ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
               <p className="font-medium">{result.status}</p>
@@ -5748,19 +6070,31 @@ function ImportProductModal({
               {result.error_message && <p className="text-xs mt-1">{result.error_message}</p>}
             </div>
           )}
-          <div className="flex justify-end gap-2">
-            {!isDone && (
+          <div className="flex justify-between gap-2">
+            {product === "ZCC" && !isDone && !isRunning && !checking && (
               <button
-                onClick={() => mut.mutate()}
-                disabled={isRunning || checking}
-                className="px-4 py-2 text-sm rounded-md bg-zs-500 hover:bg-zs-600 text-white disabled:opacity-60"
+                onClick={() => { setResetMsg(null); resetMut.mutate(); }}
+                disabled={resetMut.isPending}
+                title="Clear any resource types that were auto-disabled after a previous API error, so they will be retried on the next import"
+                className="px-3 py-2 text-xs rounded-md border border-gray-300 hover:bg-gray-50 text-gray-600 disabled:opacity-60"
               >
-                {checking ? "Checking…" : isRunning ? "Importing…" : `Import ${product}`}
+                {resetMut.isPending ? "Clearing…" : "Reset N/A Resources"}
               </button>
             )}
-            <button onClick={onClose} className="px-4 py-2 text-sm rounded-md border border-gray-300 hover:bg-gray-50">
-              {isDone ? "Done" : "Cancel"}
-            </button>
+            <div className="flex gap-2 ml-auto">
+              {!isDone && (
+                <button
+                  onClick={() => mut.mutate()}
+                  disabled={isRunning || checking}
+                  className="px-4 py-2 text-sm rounded-md bg-zs-500 hover:bg-zs-600 text-white disabled:opacity-60"
+                >
+                  {checking ? "Checking…" : isRunning ? "Importing…" : `Import ${product}`}
+                </button>
+              )}
+              <button onClick={onClose} className="px-4 py-2 text-sm rounded-md border border-gray-300 hover:bg-gray-50">
+                {isDone ? "Done" : "Cancel"}
+              </button>
+            </div>
           </div>
         </div>
       </div>

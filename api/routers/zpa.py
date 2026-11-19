@@ -6,7 +6,7 @@ the ZPAService layer — the same layer used by the CLI and headless scripts.
 
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 
 from api.schemas.zpa import (
@@ -22,7 +22,7 @@ from api.schemas.zpa import (
     ServiceEdgeEnabledPatch,
     UserPortalEnabledPatch,
 )
-from api.dependencies import require_auth, AuthUser
+from api.dependencies import require_auth, require_user, AuthUser
 
 router = APIRouter()
 
@@ -145,6 +145,216 @@ def patch_application_enabled(
     user: AuthUser = Depends(require_auth),
 ):
     return _get_service(tenant, user).set_application_enabled(app_id, body.enabled)
+
+
+# ------------------------------------------------------------------
+# Application segments: CSV bulk create
+# Lives under /applications-bulk so it can't be shadowed by
+# /applications/{app_id}.
+# ------------------------------------------------------------------
+
+_BULK_CSV_MAX_BYTES = 2 * 1024 * 1024
+
+
+def _read_bulk_csv(file: UploadFile):
+    """Read an uploaded segment CSV and return (valid_rows, errors)."""
+    from services.zpa_segment_service import parse_csv_text
+
+    data = file.file.read(_BULK_CSV_MAX_BYTES + 1)
+    if len(data) > _BULK_CSV_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="CSV is larger than 2 MB")
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        # Excel's plain "CSV (Comma delimited)" export on Windows is cp1252.
+        try:
+            text = data.decode("cp1252")
+        except UnicodeDecodeError:
+            raise HTTPException(
+                status_code=400,
+                detail="CSV must be UTF-8 encoded (in Excel, save as 'CSV UTF-8')",
+            )
+    return parse_csv_text(text)
+
+
+@router.get("/{tenant}/applications-bulk/template")
+def download_application_csv_template(tenant: str, user: AuthUser = Depends(require_user)):
+    """Download the application segment CSV template."""
+    from services.zpa_segment_service import template_csv
+
+    _get_db_context(tenant, user)
+    return Response(
+        content=template_csv(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="app_segment_template.csv"'},
+    )
+
+
+@router.get("/{tenant}/applications-bulk/fields")
+def application_csv_fields(tenant: str, user: AuthUser = Depends(require_user)):
+    """CSV field reference for the bulk create template."""
+    from services.zpa_segment_service import FIELD_REFERENCE
+
+    _get_db_context(tenant, user)
+    return [
+        {"field": f, "required": r, "default": d, "format": fmt}
+        for f, r, d, fmt in FIELD_REFERENCE
+    ]
+
+
+@router.post("/{tenant}/applications-bulk/preview")
+def preview_application_bulk_create(
+    tenant: str,
+    file: UploadFile = File(...),
+    user: AuthUser = Depends(require_user),
+):
+    """Validate a segment CSV against the local DB without calling ZPA."""
+    from services.zpa_segment_service import dry_run, resolve_dependencies
+
+    t = _get_db_context(tenant, user)
+    rows, errors = _read_bulk_csv(file)
+    annotated = dry_run(t.id, rows) if rows else []
+    missing = (
+        resolve_dependencies(t.id, rows)[1] if rows else {"segment_group": [], "server_group": []}
+    )
+    return {
+        "rows": [
+            {
+                "name": r.get("name", ""),
+                "domain_names": r.get("domain_names", ""),
+                "segment_group": r.get("segment_group", ""),
+                "server_groups": r.get("server_groups", ""),
+                "tcp_ports": r.get("tcp_ports", ""),
+                "udp_ports": r.get("udp_ports", ""),
+                "status": r["_status"],
+                "issues": r["_issues"],
+            }
+            for r in annotated
+        ],
+        "invalid": errors,
+        "missing": missing,
+        "ready": sum(1 for r in annotated if r["_status"] == "READY"),
+    }
+
+
+@router.post("/{tenant}/applications-bulk", status_code=202)
+def bulk_create_applications(
+    tenant: str,
+    file: UploadFile = File(...),
+    create_missing: bool = Form(False),
+    user: AuthUser = Depends(require_user),
+):
+    """Create application segments from a CSV in the background. Returns a job_id.
+
+    The CSV is re-parsed and re-validated here rather than trusting the
+    preview, so the result reflects the DB at the moment the job starts.
+    """
+    import threading
+    from api.jobs import import_job_key, store
+    from services import audit_service
+    from services.zpa_import_service import ZPAImportService
+    from services.zpa_segment_service import (
+        bulk_create,
+        create_missing_groups,
+        dry_run,
+        resolve_dependencies,
+    )
+
+    svc = _get_service(tenant, user)
+    rows, errors = _read_bulk_csv(file)
+    if not rows:
+        raise HTTPException(status_code=400, detail="No valid rows in CSV")
+
+    # Don't write to the ZPA tables while a full import is doing the same.
+    if store.find_active(import_job_key(svc.tenant_id, "ZPA")):
+        raise HTTPException(
+            status_code=409,
+            detail="A ZPA import is running for this tenant; try again when it finishes",
+        )
+    job_id, created = store.create_unique(f"zpa-bulk-segments:{svc.tenant_id}")
+    if not created:
+        return {"job_id": job_id, "already_running": True}
+
+    def _audit(status: str, details: Dict[str, Any], error: Optional[str] = None) -> None:
+        # Runs after every session in the job has closed.
+        audit_service.log(
+            product="ZPA",
+            operation="bulk_create_segments",
+            action="BULK_CREATE",
+            status=status,
+            tenant_id=svc.tenant_id,
+            resource_type="application",
+            details=details,
+            error_message=error,
+        )
+
+    def run():
+        result = None
+        groups: Dict[str, list] = {"created": [], "failed": [], "warnings": []}
+        try:
+            if create_missing:
+                missing = resolve_dependencies(svc.tenant_id, rows)[1]
+                if missing["segment_group"] or missing["server_group"]:
+                    store.append(job_id, {"type": "progress", "phase": "groups",
+                                          "message": "Creating missing groups..."})
+                    try:
+                        groups = create_missing_groups(svc.client, svc.tenant_id, missing)
+                    except Exception as exc:
+                        # Groups may exist in ZPA but not locally; rows that
+                        # need them fall through to SKIPPED below.
+                        groups["failed"].append(f"group creation/sync: {exc}")
+            annotated = dry_run(svc.tenant_id, rows)
+
+            def on_progress(done: int, total: int) -> None:
+                store.append(job_id, {"type": "progress", "phase": "create",
+                                      "message": f"Creating segments... {done}/{total}",
+                                      "done": done, "total": total})
+
+            result = bulk_create(svc.client, svc.tenant_id, annotated, progress_callback=on_progress)
+
+            # Segments now exist in ZPA. From here on a failure must not
+            # discard the per-row result, or a retry duplicates names.
+            sync_error: Optional[str] = None
+            if result.created:
+                store.append(job_id, {"type": "progress", "phase": "sync",
+                                      "message": "Syncing local DB..."})
+                try:
+                    log = ZPAImportService(svc.client, svc.tenant_id).run(
+                        resource_types=["application"]
+                    )
+                    if log.status != "SUCCESS":
+                        sync_error = log.error_message or f"sync finished {log.status}"
+                except Exception as exc:
+                    sync_error = str(exc)
+
+            summary = {
+                "created": result.created,
+                "failed": result.failed,
+                "skipped": result.skipped,
+                "invalid": errors,
+                "rows": result.rows_detail,
+                "groups": groups,
+                "sync_error": sync_error,
+            }
+            store.complete(job_id, summary)
+            _audit(
+                "SUCCESS" if not result.failed and not groups["failed"] else "PARTIAL",
+                {
+                    "created": result.created,
+                    "failed": result.failed,
+                    "skipped": result.skipped,
+                    "invalid": len(errors),
+                    "groups_created": len(groups["created"]),
+                    "groups_failed": len(groups["failed"]),
+                    "sync_error": sync_error,
+                },
+            )
+        except Exception as exc:
+            store.fail(job_id, str(exc))
+            _audit("FAILURE", {"rows": len(rows)}, str(exc))
+
+    threading.Thread(target=run, daemon=True).start()
+    return {"job_id": job_id}
 
 
 # ------------------------------------------------------------------
