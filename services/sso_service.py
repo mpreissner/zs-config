@@ -28,7 +28,7 @@ from db.models import UserGroup, UserGroupMember, User
 @dataclass
 class SsoConfig:
     enabled: bool
-    provider: str                 # "oidc" | "saml" | ""
+    provider: str  # "oidc" | "saml" | ""
     auto_provision: bool
     default_role: str
     group_claim: str
@@ -70,6 +70,7 @@ def _secret_setting(key: str) -> str:
     if not raw:
         return ""
     from services.config_service import decrypt_secret
+
     try:
         return decrypt_secret(raw)
     except Exception:
@@ -207,7 +208,9 @@ def jwks_empty_message(doc: dict) -> str:
         " It advertises only HS256, which means no signing certificate is "
         "assigned to the application on the IdP."
         if algs == ["HS256"]
-        else f" It advertises {', '.join(algs)}." if algs else ""
+        else f" It advertises {', '.join(algs)}."
+        if algs
+        else ""
     )
     return (
         f"The IdP published an empty key set at {doc.get('jwks_uri')}, so ID "
@@ -229,6 +232,7 @@ def jwks_key_count(doc: dict) -> int:
 def pkce_pair() -> Tuple[str, str]:
     """Return (verifier, S256 challenge)."""
     import hashlib
+
     verifier = secrets.token_urlsafe(64)
     digest = hashlib.sha256(verifier.encode()).digest()
     challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
@@ -237,6 +241,7 @@ def pkce_pair() -> Tuple[str, str]:
 
 def authorization_url(cfg: SsoConfig, state: str, nonce: str, challenge: str) -> str:
     from urllib.parse import urlencode
+
     doc = discover(cfg.issuer_url)
     params = {
         "response_type": "code",
@@ -342,11 +347,7 @@ def claims_to_identity(cfg: SsoConfig, claims: dict) -> "Identity":
     groups = claims.get(cfg.group_claim) or []
     if isinstance(groups, str):
         groups = [g.strip() for g in groups.split(",") if g.strip()]
-    username = (
-        claims.get("preferred_username")
-        or claims.get("email")
-        or claims.get("sub")
-    )
+    username = claims.get("preferred_username") or claims.get("email") or claims.get("sub")
     return Identity(
         subject=str(claims["sub"]),
         username=str(username),
@@ -443,22 +444,30 @@ def saml_to_identity(cfg: SsoConfig, name_id: str, attrs: Dict[str, List[str]]) 
         "emailAddress",
         "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress",
     ) or (name_id if "@" in name_id else None)
-    username = saml_attribute(
-        attrs,
-        "username",
-        "uid",
-        "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name",
-    ) or email or name_id
+    username = (
+        saml_attribute(
+            attrs,
+            "username",
+            "uid",
+            "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name",
+        )
+        or email
+        or name_id
+    )
     return Identity(
         subject=name_id,
         username=username,
         email=email,
         given_name=saml_attribute(
-            attrs, "firstName", "givenName",
+            attrs,
+            "firstName",
+            "givenName",
             "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname",
         ),
         family_name=saml_attribute(
-            attrs, "lastName", "surname",
+            attrs,
+            "lastName",
+            "surname",
             "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname",
         ),
         groups=groups,
@@ -471,6 +480,7 @@ def saml_to_identity(cfg: SsoConfig, name_id: str, attrs: Dict[str, List[str]]) 
 @dataclass
 class Identity:
     """Protocol-neutral view of who just authenticated."""
+
     subject: str
     username: str
     email: Optional[str] = None

@@ -22,12 +22,14 @@ def plugin_menu() -> None:
 
         from lib.github_auth import get_token, is_authenticated, verify_token
         from lib.plugin_manager import (
-            get_installed_plugins, get_plugin_channel, get_plugin_branch_overrides,
+            get_installed_plugins,
+            get_plugin_channel,
+            get_plugin_branch_overrides,
         )
 
-        installed  = get_installed_plugins()
-        channel    = get_plugin_channel()
-        overrides  = get_plugin_branch_overrides()
+        installed = get_installed_plugins()
+        channel = get_plugin_channel()
+        overrides = get_plugin_branch_overrides()
 
         # ── Auth status header ────────────────────────────────────────────
         token = get_token()
@@ -36,14 +38,18 @@ def plugin_menu() -> None:
             if valid:
                 auth_line = f"[green]● Authenticated as [bold]{username}[/bold][/green]"
             else:
-                auth_line = f"[yellow]● Token invalid ({username}) — please re-authenticate[/yellow]"
+                auth_line = (
+                    f"[yellow]● Token invalid ({username}) — please re-authenticate[/yellow]"
+                )
                 valid = False
         else:
             auth_line = "[dim]● Not authenticated[/dim]"
             valid = False
 
         if channel == "dev":
-            channel_line = "[yellow]⚠  Channel: [bold]dev[/bold] — pre-release builds active[/yellow]"
+            channel_line = (
+                "[yellow]⚠  Channel: [bold]dev[/bold] — pre-release builds active[/yellow]"
+            )
         else:
             channel_line = "[dim]Channel: stable[/dim]"
 
@@ -56,16 +62,18 @@ def plugin_menu() -> None:
         else:
             override_line = ""
 
-        console.print(Panel(
-            auth_line + "\n" + channel_line + override_line,
-            title="Plugin Manager",
-            border_style="cyan",
-        ))
+        console.print(
+            Panel(
+                auth_line + "\n" + channel_line + override_line,
+                title="Plugin Manager",
+                border_style="cyan",
+            )
+        )
 
         # ── Installed plugins summary ─────────────────────────────────────
         if installed:
             table = Table(show_header=True, box=None, padding=(0, 2))
-            table.add_column("Plugin",  style="bold cyan")
+            table.add_column("Plugin", style="bold cyan")
             table.add_column("Package", style="dim")
             table.add_column("Version", style="dim")
             table.add_column("Status")
@@ -81,21 +89,22 @@ def plugin_menu() -> None:
         if valid:
             choices.append(questionary.Choice("  Browse available plugins", value="browse"))
         if installed:
-            choices.append(questionary.Choice("  Uninstall a plugin",       value="uninstall"))
+            choices.append(questionary.Choice("  Uninstall a plugin", value="uninstall"))
         choices.append(questionary.Separator())
-        choices.append(questionary.Choice("  Switch plugin channel",        value="channel"))
+        choices.append(questionary.Choice("  Switch plugin channel", value="channel"))
         choices.append(questionary.Separator())
         if valid:
-            choices.append(questionary.Choice("  Log out of GitHub",        value="logout"))
+            choices.append(questionary.Choice("  Log out of GitHub", value="logout"))
         else:
-            choices.append(questionary.Choice("  Log in with GitHub",       value="login"))
+            choices.append(questionary.Choice("  Log in with GitHub", value="login"))
         choices.append(questionary.Separator())
-        choices.append(questionary.Choice("  ← Back",                       value="back"))
+        choices.append(questionary.Choice("  ← Back", value="back"))
 
         q = questionary.select("Plugin Manager", choices=choices)
 
         # Inject Ctrl+] binding for the hidden per-plugin branch override.
         from prompt_toolkit.key_binding import KeyBindings, merge_key_bindings
+
         _branch_kb = KeyBindings()
 
         @_branch_kb.add("c-]")
@@ -103,9 +112,7 @@ def plugin_menu() -> None:
             event.app.exit(result="__branch_toggle__")
 
         app = q.application
-        app.key_bindings = merge_key_bindings(
-            [app.key_bindings or KeyBindings(), _branch_kb]
-        )
+        app.key_bindings = merge_key_bindings([app.key_bindings or KeyBindings(), _branch_kb])
         action = app.run()
 
         if action == "browse":
@@ -130,9 +137,11 @@ def plugin_menu() -> None:
 # Actions
 # ---------------------------------------------------------------------------
 
+
 def _channel_default_url(plugin_entry: dict) -> str:
     """Return the channel's install URL for a manifest entry, ignoring any override."""
     from lib.plugin_manager import get_plugin_channel
+
     if get_plugin_channel() == "dev":
         return plugin_entry.get("install_url_dev") or plugin_entry.get("install_url", "")
     return plugin_entry.get("install_url", "")
@@ -212,6 +221,7 @@ def _switch_channel(current: str) -> None:
     console.print(f"[green]✓ Plugin channel set to [bold]{target}[/bold].[/green]\n")
 
     from cli.update_checker import check_plugin_updates
+
     check_plugin_updates()
     questionary.press_any_key_to_continue("Press any key...").ask()
 
@@ -237,7 +247,7 @@ def _browse_plugins() -> None:
 
     # ── Display available plugins ─────────────────────────────────────────
     table = Table(title="Available Plugins", show_lines=True)
-    table.add_column("Plugin",      style="bold cyan")
+    table.add_column("Plugin", style="bold cyan")
     table.add_column("Description")
     table.add_column("Version")
     table.add_column("Status")
@@ -257,10 +267,7 @@ def _browse_plugins() -> None:
     console.print()
 
     # ── Offer install for any not yet installed ───────────────────────────
-    not_installed = [
-        p for p in available
-        if p.get("package") not in installed_packages
-    ]
+    not_installed = [p for p in available if p.get("package") not in installed_packages]
     if not not_installed:
         console.print("[green]All available plugins are already installed.[/green]")
         questionary.press_any_key_to_continue("Press any key...").ask()
@@ -320,14 +327,16 @@ def _complete_pending_install(pending: dict) -> None:
     from lib.plugin_manager import install_plugin
 
     package = pending.get("package", "plugin")
-    url     = pending.get("url", "")
+    url = pending.get("url", "")
 
     render_banner()
-    console.print(Panel(
-        f"Completing deferred install of [bold]{package}[/bold]...",
-        border_style="cyan",
-        title="Plugin Manager",
-    ))
+    console.print(
+        Panel(
+            f"Completing deferred install of [bold]{package}[/bold]...",
+            border_style="cyan",
+            title="Plugin Manager",
+        )
+    )
     console.print(f"[dim]  {url}[/dim]\n")
 
     with console.status(f"[cyan]Installing {package}...[/cyan]"):
@@ -355,8 +364,10 @@ def _install_plugin_by_url() -> None:
 def _branch_override_menu(installed: list[dict], overrides: dict) -> None:
     """Secret Ctrl+] handler: set or clear a branch override for any installed plugin."""
     from lib.plugin_manager import (
-        fetch_manifest, install_plugin,
-        set_plugin_branch_override, url_for_branch,
+        fetch_manifest,
+        install_plugin,
+        set_plugin_branch_override,
+        url_for_branch,
     )
 
     if not installed:
@@ -365,17 +376,21 @@ def _branch_override_menu(installed: list[dict], overrides: dict) -> None:
         return
 
     from lib.plugin_manager import (
-        fetch_manifest, fetch_plugin_branches,
-        set_plugin_branch_override, url_for_branch,
+        fetch_manifest,
+        fetch_plugin_branches,
+        set_plugin_branch_override,
+        url_for_branch,
     )
 
     console.print()
-    console.print(Panel(
-        "Set a branch override to install a plugin from a specific git branch.\n"
-        "The plugin will be reinstalled from that branch and zs-config will restart.",
-        border_style="magenta",
-        title="Developer — Branch Override",
-    ))
+    console.print(
+        Panel(
+            "Set a branch override to install a plugin from a specific git branch.\n"
+            "The plugin will be reinstalled from that branch and zs-config will restart.",
+            border_style="magenta",
+            title="Developer — Branch Override",
+        )
+    )
 
     # ── Step 1: pick a plugin ─────────────────────────────────────────────
     plugin_choices = []
@@ -410,9 +425,7 @@ def _branch_override_menu(installed: list[dict], overrides: dict) -> None:
         questionary.press_any_key_to_continue("Press any key...").ask()
         return
 
-    plugin_entry = next(
-        (p for p in (available or []) if p.get("package") == pkg), None
-    )
+    plugin_entry = next((p for p in (available or []) if p.get("package") == pkg), None)
     if not plugin_entry:
         console.print(f"[red]✗ {pkg} not found in manifest.[/red]")
         questionary.press_any_key_to_continue("Press any key...").ask()
@@ -446,13 +459,11 @@ def _branch_override_menu(installed: list[dict], overrides: dict) -> None:
             return
     else:
         _USE_DEFAULT = object()  # sentinel for "channel default" choice
-        branch_choices = [
-            questionary.Choice(b, value=b) for b in branches
-        ]
+        branch_choices = [questionary.Choice(b, value=b) for b in branches]
         branch_choices.append(questionary.Separator())
-        branch_choices.append(questionary.Choice(
-            "channel default (no override)", value=_USE_DEFAULT
-        ))
+        branch_choices.append(
+            questionary.Choice("channel default (no override)", value=_USE_DEFAULT)
+        )
         branch_choices.append(questionary.Choice("← Cancel", value=None))
 
         picked = questionary.select(
@@ -481,7 +492,8 @@ def _branch_override_menu(installed: list[dict], overrides: dict) -> None:
         return
 
     from lib.plugin_manager import (
-        set_pending_plugin_install, uninstall_plugin,
+        set_pending_plugin_install,
+        uninstall_plugin,
     )
 
     console.print()
@@ -493,14 +505,16 @@ def _branch_override_menu(installed: list[dict], overrides: dict) -> None:
         questionary.press_any_key_to_continue("Press any key...").ask()
         return
 
-    set_plugin_branch_override(pkg, target_branch)   # None clears the override
+    set_plugin_branch_override(pkg, target_branch)  # None clears the override
     set_pending_plugin_install(pkg, install_url)
     console.print(f"[green]✓ {pkg} uninstalled.[/green]")
-    console.print(Panel(
-        f"[green]{pkg} will be reinstalled from [bold]{action_label}[/bold] on relaunch.[/green]\n"
-        "zs-config will now exit — please re-launch to complete the switch.",
-        border_style="green",
-    ))
+    console.print(
+        Panel(
+            f"[green]{pkg} will be reinstalled from [bold]{action_label}[/bold] on relaunch.[/green]\n"
+            "zs-config will now exit — please re-launch to complete the switch.",
+            border_style="green",
+        )
+    )
     questionary.press_any_key_to_continue("Press any key to exit...").ask()
     sys.exit(0)
 
@@ -538,15 +552,15 @@ def _uninstall_plugin(installed: list[dict]) -> None:
                 f"({summary['rows']:,} rows)"
             )
         if summary["candidates"]:
-            lines.append(
-                f"  • delete {summary['candidates']:,} unpushed migration candidate(s)"
+            lines.append(f"  • delete {summary['candidates']:,} unpushed migration candidate(s)")
+        console.print(
+            Panel(
+                "\n".join(lines)
+                + "\n\n[green]Objects already pushed to a tenant will NOT be touched.[/green]",
+                title="[yellow]Plugin data[/yellow]",
+                border_style="yellow",
             )
-        console.print(Panel(
-            "\n".join(lines) +
-            "\n\n[green]Objects already pushed to a tenant will NOT be touched.[/green]",
-            title="[yellow]Plugin data[/yellow]",
-            border_style="yellow",
-        ))
+        )
         purge_data = questionary.confirm(
             "Also remove this plugin's data?",
             default=True,

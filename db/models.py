@@ -2,8 +2,17 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import (
-    Boolean, Column, DateTime, ForeignKey, Index, Integer, JSON, String, Text,
-    UniqueConstraint, text,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
 
@@ -26,20 +35,28 @@ class TenantConfig(Base):
     zidentity_base_url = Column(String(512), nullable=False)
     oneapi_base_url = Column(String(512), default="https://api.zsapi.net", nullable=False)
     client_id = Column(String(512), nullable=False)
-    client_secret_enc = Column(Text, nullable=False)       # Fernet-encrypted
+    client_secret_enc = Column(Text, nullable=False)  # Fernet-encrypted
     zpa_customer_id = Column(String(255), nullable=True)
-    zpa_tenant_cloud = Column(String(255), nullable=True)  # e.g. "ZPATWO_NET"; from orgInformation.zpaTenantCloud
-    zia_tenant_id = Column(String(255), nullable=True)     # numeric tenant ID; from orgInformation.pdomain
-    zia_cloud = Column(String(255), nullable=True)          # e.g. "zscalertwo.net"; from orgInformation.cloudName
-    zia_subscriptions = Column(JSON, nullable=True)         # full response from GET /subscriptions
+    zpa_tenant_cloud = Column(
+        String(255), nullable=True
+    )  # e.g. "ZPATWO_NET"; from orgInformation.zpaTenantCloud
+    zia_tenant_id = Column(
+        String(255), nullable=True
+    )  # numeric tenant ID; from orgInformation.pdomain
+    zia_cloud = Column(
+        String(255), nullable=True
+    )  # e.g. "zscalertwo.net"; from orgInformation.cloudName
+    zia_subscriptions = Column(JSON, nullable=True)  # full response from GET /subscriptions
     notes = Column(Text, nullable=True)
     last_validation_error = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     govcloud = Column(Boolean, default=False, nullable=False)
-    gov_cloud_tier = Column(String(16), nullable=True)      # 'gov' (FedRAMP High) | 'govus' (FedRAMP Moderate)
-    zpa_disabled_resources = Column(JSON, nullable=True)   # resource types auto-disabled after 401
-    zia_disabled_resources = Column(JSON, nullable=True)   # resource types auto-disabled after 401
-    zcc_disabled_resources = Column(JSON, nullable=True)   # resource types auto-disabled after 401
+    gov_cloud_tier = Column(
+        String(16), nullable=True
+    )  # 'gov' (FedRAMP High) | 'govus' (FedRAMP Moderate)
+    zpa_disabled_resources = Column(JSON, nullable=True)  # resource types auto-disabled after 401
+    zia_disabled_resources = Column(JSON, nullable=True)  # resource types auto-disabled after 401
+    zcc_disabled_resources = Column(JSON, nullable=True)  # resource types auto-disabled after 401
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -55,8 +72,9 @@ class TenantConfig(Base):
         lazy="select",
     )
     sync_logs = relationship("SyncLog", back_populates="tenant", lazy="select")
-    restore_points = relationship("RestorePoint", back_populates="tenant",
-                                  cascade="all, delete-orphan", lazy="select")
+    restore_points = relationship(
+        "RestorePoint", back_populates="tenant", cascade="all, delete-orphan", lazy="select"
+    )
 
     def __repr__(self) -> str:
         return f"<TenantConfig name={self.name!r} active={self.is_active}>"
@@ -74,14 +92,16 @@ class AuditLog(Base):
     id = Column(Integer, primary_key=True)
     tenant_id = Column(Integer, ForeignKey("tenant_configs.id"), nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
-    product = Column(String(32), nullable=True)        # ZPA, ZIA, ZCC, ZDX, etc.
-    operation = Column(String(128), nullable=True)     # rotate_certificate, update_url_category, etc.
-    action = Column(String(32), nullable=True)         # CREATE, UPDATE, DELETE, READ
-    status = Column(String(16), nullable=True)         # SUCCESS, FAILURE
-    resource_type = Column(String(128), nullable=True) # certificate, application, url_category, etc.
+    product = Column(String(32), nullable=True)  # ZPA, ZIA, ZCC, ZDX, etc.
+    operation = Column(String(128), nullable=True)  # rotate_certificate, update_url_category, etc.
+    action = Column(String(32), nullable=True)  # CREATE, UPDATE, DELETE, READ
+    status = Column(String(16), nullable=True)  # SUCCESS, FAILURE
+    resource_type = Column(
+        String(128), nullable=True
+    )  # certificate, application, url_category, etc.
     resource_id = Column(String(255), nullable=True)
     resource_name = Column(String(512), nullable=True)
-    details = Column(JSON, nullable=True)              # arbitrary context (domain, old cert ID, etc.)
+    details = Column(JSON, nullable=True)  # arbitrary context (domain, old cert ID, etc.)
     error_message = Column(Text, nullable=True)
 
     tenant = relationship("TenantConfig", back_populates="audit_logs")
@@ -101,7 +121,7 @@ class Certificate(Base):
 
     id = Column(Integer, primary_key=True)
     tenant_id = Column(Integer, ForeignKey("tenant_configs.id"), nullable=False)
-    zpa_cert_id = Column(String(255), nullable=True)   # ID assigned by ZPA
+    zpa_cert_id = Column(String(255), nullable=True)  # ID assigned by ZPA
     name = Column(String(512), nullable=True)
     domain = Column(String(512), nullable=True)
     uploaded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -130,20 +150,30 @@ class ZPAResource(Base):
     """
 
     __tablename__ = "zpa_resources"
-    __table_args__ = (UniqueConstraint("tenant_id", "resource_type", "zpa_id", name="uq_zpa_resource"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "resource_type", "zpa_id", name="uq_zpa_resource"),
+    )
 
     id = Column(Integer, primary_key=True)
     tenant_id = Column(Integer, ForeignKey("tenant_configs.id"), nullable=False)
-    resource_type = Column(String(64), nullable=False)   # application, segment_group, pra_portal, etc.
-    zpa_id = Column(String(255), nullable=False)         # ID assigned by ZPA; synthetic 'palo:<name>' for candidates
+    resource_type = Column(
+        String(64), nullable=False
+    )  # application, segment_group, pra_portal, etc.
+    zpa_id = Column(
+        String(255), nullable=False
+    )  # ID assigned by ZPA; synthetic 'palo:<name>' for candidates
     name = Column(String(512), nullable=True)
     raw_config = Column(JSON, nullable=False)
-    config_hash = Column(String(64), nullable=True)      # SHA-256 hex of raw_config for change detection
+    config_hash = Column(
+        String(64), nullable=True
+    )  # SHA-256 hex of raw_config for change detection
     first_seen_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     synced_at = Column(DateTime, nullable=True)
     is_deleted = Column(Boolean, default=False, nullable=False)
-    source = Column(String(32), default="tenant", nullable=False)          # 'tenant' | 'palo'
-    candidate_status = Column(String(32), nullable=True)                   # 'pending' | 'accepted' | 'rejected' | NULL for live rows
+    source = Column(String(32), default="tenant", nullable=False)  # 'tenant' | 'palo'
+    candidate_status = Column(
+        String(32), nullable=True
+    )  # 'pending' | 'accepted' | 'rejected' | NULL for live rows
 
     tenant = relationship("TenantConfig", back_populates="zpa_resources")
 
@@ -162,10 +192,10 @@ class SyncLog(Base):
 
     id = Column(Integer, primary_key=True)
     tenant_id = Column(Integer, ForeignKey("tenant_configs.id"), nullable=False)
-    product = Column(String(32), nullable=False)         # ZPA, ZIA, etc.
+    product = Column(String(32), nullable=False)  # ZPA, ZIA, etc.
     started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     completed_at = Column(DateTime, nullable=True)
-    status = Column(String(16), nullable=True)           # RUNNING, SUCCESS, FAILED, PARTIAL
+    status = Column(String(16), nullable=True)  # RUNNING, SUCCESS, FAILED, PARTIAL
     resources_synced = Column(Integer, default=0, nullable=False)
     resources_updated = Column(Integer, default=0, nullable=False)
     resources_deleted = Column(Integer, default=0, nullable=False)
@@ -187,14 +217,14 @@ class RestorePoint(Base):
 
     __tablename__ = "restore_points"
 
-    id             = Column(Integer, primary_key=True)
-    tenant_id      = Column(Integer, ForeignKey("tenant_configs.id"), nullable=False)
-    product        = Column(String(32),  nullable=False)   # "ZPA" or "ZIA"
-    name           = Column(String(255), nullable=False)   # auto timestamp
-    comment        = Column(Text,        nullable=True)
-    created_at     = Column(DateTime,    default=datetime.utcnow)
-    resource_count = Column(Integer,     default=0)
-    snapshot       = Column(JSON,        nullable=False)
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenant_configs.id"), nullable=False)
+    product = Column(String(32), nullable=False)  # "ZPA" or "ZIA"
+    name = Column(String(255), nullable=False)  # auto timestamp
+    comment = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    resource_count = Column(Integer, default=0)
+    snapshot = Column(JSON, nullable=False)
     # snapshot structure: {"resources": {"resource_type": [{"id","name","raw_config"}, ...]}}
 
     tenant = relationship("TenantConfig", back_populates="restore_points")
@@ -236,36 +266,36 @@ class ZIATemplate(Base):
 
     __tablename__ = "zia_templates"
 
-    id                 = Column(Integer, primary_key=True)
-    name               = Column(String(255), unique=True, nullable=False)
-    description        = Column(Text, nullable=True)
-    source_tenant_id   = Column(Integer, ForeignKey("tenant_configs.id", ondelete="SET NULL"),
-                                nullable=True)
-    source_snapshot_id = Column(Integer, ForeignKey("restore_points.id", ondelete="SET NULL"),
-                                nullable=True)
-    created_at         = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at         = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow,
-                                nullable=False)
-    resource_count     = Column(Integer, default=0, nullable=False)
-    stripped_types     = Column(JSON, nullable=False)   # list of resource_type strings
-    snapshot           = Column(JSON, nullable=False)   # {"resource_type": [{...}, ...]}
+    id = Column(Integer, primary_key=True)
+    name = Column(String(255), unique=True, nullable=False)
+    description = Column(Text, nullable=True)
+    source_tenant_id = Column(
+        Integer, ForeignKey("tenant_configs.id", ondelete="SET NULL"), nullable=True
+    )
+    source_snapshot_id = Column(
+        Integer, ForeignKey("restore_points.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    resource_count = Column(Integer, default=0, nullable=False)
+    stripped_types = Column(JSON, nullable=False)  # list of resource_type strings
+    snapshot = Column(JSON, nullable=False)  # {"resource_type": [{...}, ...]}
 
-    owner_user_id      = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
-                                nullable=True)
+    owner_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     # Denormalized so the list renders "created by mpreissner" without a join,
     # and so attribution survives the owning account being deleted.
-    owner_username     = Column(String(255), nullable=True)
+    owner_username = Column(String(255), nullable=True)
     # 'private' (owner + admins) | 'shared' (plus everyone in template_shares)
     # | 'org' (every authenticated user).  Set explicitly rather than inferred
     # from the presence of share rows, so removing the last share does not
     # silently make a template private.
-    visibility         = Column(String(16), nullable=False, default="private")
-    scope              = Column(String(16), nullable=False, default="full")   # 'full' | 'scoped'
-    selection_meta     = Column(JSON, nullable=True)    # {selected, auto_included, warnings}
+    visibility = Column(String(16), nullable=False, default="private")
+    scope = Column(String(16), nullable=False, default="full")  # 'full' | 'scoped'
+    selection_meta = Column(JSON, nullable=True)  # {selected, auto_included, warnings}
 
-    source_tenant   = relationship("TenantConfig", foreign_keys=[source_tenant_id])
-    source_snapshot = relationship("RestorePoint",  foreign_keys=[source_snapshot_id])
-    owner           = relationship("User", foreign_keys=[owner_user_id])
+    source_tenant = relationship("TenantConfig", foreign_keys=[source_tenant_id])
+    source_snapshot = relationship("RestorePoint", foreign_keys=[source_snapshot_id])
+    owner = relationship("User", foreign_keys=[owner_user_id])
 
     def __repr__(self) -> str:
         return f"<ZIATemplate name={self.name!r} resources={self.resource_count}>"
@@ -288,24 +318,34 @@ class TemplateShare(Base):
     __table_args__ = (
         # SQLite counts NULLs as distinct in a plain UNIQUE, so each half of
         # the row gets its own partial index.
-        Index("uq_template_share_user", "template_id", "user_id",
-              unique=True, sqlite_where=text("user_id IS NOT NULL")),
-        Index("uq_template_share_group", "template_id", "group_id",
-              unique=True, sqlite_where=text("group_id IS NOT NULL")),
+        Index(
+            "uq_template_share_user",
+            "template_id",
+            "user_id",
+            unique=True,
+            sqlite_where=text("user_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_template_share_group",
+            "template_id",
+            "group_id",
+            unique=True,
+            sqlite_where=text("group_id IS NOT NULL"),
+        ),
     )
 
-    id          = Column(Integer, primary_key=True)
-    template_id = Column(Integer, ForeignKey("zia_templates.id", ondelete="CASCADE"),
-                         nullable=False)
-    user_id     = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
-    group_id    = Column(Integer, ForeignKey("user_groups.id", ondelete="CASCADE"),
-                         nullable=True)
-    shared_at   = Column(DateTime, default=datetime.utcnow, nullable=False)
-    shared_by   = Column(String(255), nullable=True)
+    id = Column(Integer, primary_key=True)
+    template_id = Column(
+        Integer, ForeignKey("zia_templates.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    group_id = Column(Integer, ForeignKey("user_groups.id", ondelete="CASCADE"), nullable=True)
+    shared_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    shared_by = Column(String(255), nullable=True)
 
     template = relationship("ZIATemplate", backref="shares")
-    user     = relationship("User")
-    group    = relationship("UserGroup")
+    user = relationship("User")
+    group = relationship("UserGroup")
 
     def __repr__(self) -> str:
         subject = f"user_id={self.user_id}" if self.user_id else f"group_id={self.group_id}"
@@ -326,20 +366,26 @@ class ZIAResource(Base):
     """
 
     __tablename__ = "zia_resources"
-    __table_args__ = (UniqueConstraint("tenant_id", "resource_type", "zia_id", name="uq_zia_resource"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "resource_type", "zia_id", name="uq_zia_resource"),
+    )
 
     id = Column(Integer, primary_key=True)
     tenant_id = Column(Integer, ForeignKey("tenant_configs.id"), nullable=False)
     resource_type = Column(String(64), nullable=False)
-    zia_id = Column(String(255), nullable=False)         # ID assigned by ZIA; synthetic 'palo:<name>' for candidates
+    zia_id = Column(
+        String(255), nullable=False
+    )  # ID assigned by ZIA; synthetic 'palo:<name>' for candidates
     name = Column(String(512), nullable=True)
     raw_config = Column(JSON, nullable=False)
     config_hash = Column(String(64), nullable=True)
     first_seen_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     synced_at = Column(DateTime, nullable=True)
     is_deleted = Column(Boolean, default=False, nullable=False)
-    source = Column(String(32), default="tenant", nullable=False)          # 'tenant' | 'palo'
-    candidate_status = Column(String(32), nullable=True)                   # 'pending' | 'accepted' | 'rejected' | NULL for live rows
+    source = Column(String(32), default="tenant", nullable=False)  # 'tenant' | 'palo'
+    candidate_status = Column(
+        String(32), nullable=True
+    )  # 'pending' | 'accepted' | 'rejected' | NULL for live rows
 
     tenant = relationship("TenantConfig", back_populates="zia_resources")
 
@@ -356,7 +402,9 @@ class ZCCResource(Base):
     """
 
     __tablename__ = "zcc_resources"
-    __table_args__ = (UniqueConstraint("tenant_id", "resource_type", "zcc_id", name="uq_zcc_resource"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "resource_type", "zcc_id", name="uq_zcc_resource"),
+    )
 
     id = Column(Integer, primary_key=True)
     tenant_id = Column(Integer, ForeignKey("tenant_configs.id"), nullable=False)
@@ -384,15 +432,15 @@ class ZCCSnapshot(Base):
 
     __tablename__ = "zcc_snapshots"
 
-    id             = Column(Integer, primary_key=True)
-    tenant_id      = Column(Integer, ForeignKey("tenant_configs.id"), nullable=False)
-    label          = Column(String(255), nullable=False)
-    note           = Column(Text, nullable=True)
-    created_at     = Column(DateTime, default=datetime.utcnow, nullable=False)
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(Integer, ForeignKey("tenant_configs.id"), nullable=False)
+    label = Column(String(255), nullable=False)
+    note = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     resource_count = Column(Integer, default=0, nullable=False)
 
     tenant = relationship("TenantConfig", back_populates="zcc_snapshots")
-    items  = relationship(
+    items = relationship(
         "ZCCSnapshotItem",
         back_populates="snapshot",
         cascade="all, delete-orphan",
@@ -411,13 +459,14 @@ class ZCCSnapshotItem(Base):
 
     __tablename__ = "zcc_snapshot_items"
 
-    id            = Column(Integer, primary_key=True)
-    snapshot_id   = Column(Integer, ForeignKey("zcc_snapshots.id", ondelete="CASCADE"),
-                           nullable=False)
+    id = Column(Integer, primary_key=True)
+    snapshot_id = Column(
+        Integer, ForeignKey("zcc_snapshots.id", ondelete="CASCADE"), nullable=False
+    )
     resource_type = Column(String(64), nullable=False)
-    zcc_id        = Column(String(255), nullable=False)
-    name          = Column(String(512), nullable=True)
-    raw_config    = Column(JSON, nullable=False)
+    zcc_id = Column(String(255), nullable=False)
+    name = Column(String(512), nullable=True)
+    raw_config = Column(JSON, nullable=False)
 
     snapshot = relationship("ZCCSnapshot", back_populates="items")
 
@@ -437,7 +486,7 @@ class AppSettings(Base):
 
     __tablename__ = "app_settings"
 
-    key   = Column(String(255), primary_key=True)
+    key = Column(String(255), primary_key=True)
     value = Column(Text, nullable=True)
 
     def __repr__(self) -> str:
@@ -446,28 +495,26 @@ class AppSettings(Base):
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = (
-        UniqueConstraint("sso_provider", "sso_subject", name="uq_user_sso"),
-    )
-    id                    = Column(Integer, primary_key=True)
-    username              = Column(String(255), unique=True, nullable=False)
-    email                 = Column(String(512), nullable=True)
-    role                  = Column(String(32), nullable=False, default="user")
-    password_hash         = Column(Text, nullable=True)
+    __table_args__ = (UniqueConstraint("sso_provider", "sso_subject", name="uq_user_sso"),)
+    id = Column(Integer, primary_key=True)
+    username = Column(String(255), unique=True, nullable=False)
+    email = Column(String(512), nullable=True)
+    role = Column(String(32), nullable=False, default="user")
+    password_hash = Column(Text, nullable=True)
     force_password_change = Column(Boolean, nullable=False, default=False)
-    sso_provider          = Column(String(64), nullable=True)
-    sso_subject           = Column(String(512), nullable=True)
+    sso_provider = Column(String(64), nullable=True)
+    sso_subject = Column(String(512), nullable=True)
     # SCIM-provisioned accounts. scim_managed marks the IdP as the source of
     # truth, which the admin UI honours by disabling local username/role edits.
-    scim_external_id      = Column(String(512), nullable=True)
-    scim_managed          = Column(Boolean, nullable=False, default=False)
-    given_name            = Column(String(255), nullable=True)
-    family_name           = Column(String(255), nullable=True)
-    is_active             = Column(Boolean, nullable=False, default=True)
-    mfa_required          = Column(Boolean, nullable=False, default=False)
-    created_at            = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at            = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-    last_login_at         = Column(DateTime, nullable=True)
+    scim_external_id = Column(String(512), nullable=True)
+    scim_managed = Column(Boolean, nullable=False, default=False)
+    given_name = Column(String(255), nullable=True)
+    family_name = Column(String(255), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    mfa_required = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    last_login_at = Column(DateTime, nullable=True)
 
     def __repr__(self) -> str:
         return f"<User username={self.username!r} role={self.role!r}>"
@@ -483,15 +530,15 @@ class WebAuthnCredential(Base):
 
     __tablename__ = "webauthn_credentials"
 
-    id             = Column(Integer, primary_key=True)
-    user_id        = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    credential_id  = Column(Text, nullable=False, unique=True)  # base64url-encoded bytes
-    public_key     = Column(Text, nullable=False)               # COSE key, base64url-encoded
-    sign_count     = Column(Integer, nullable=False, default=0)
-    aaguid         = Column(String(64), nullable=True)          # authenticator model GUID
-    label          = Column(String(255), nullable=True)         # user-assigned name ("YubiKey 5")
-    created_at     = Column(DateTime, default=datetime.utcnow, nullable=False)
-    last_used_at   = Column(DateTime, nullable=True)
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    credential_id = Column(Text, nullable=False, unique=True)  # base64url-encoded bytes
+    public_key = Column(Text, nullable=False)  # COSE key, base64url-encoded
+    sign_count = Column(Integer, nullable=False, default=0)
+    aaguid = Column(String(64), nullable=True)  # authenticator model GUID
+    label = Column(String(255), nullable=True)  # user-assigned name ("YubiKey 5")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_used_at = Column(DateTime, nullable=True)
 
     user = relationship("User", backref="webauthn_credentials")
 
@@ -507,16 +554,14 @@ class UserTenantEntitlement(Base):
     """
 
     __tablename__ = "user_tenant_entitlements"
-    __table_args__ = (
-        UniqueConstraint("user_id", "tenant_id", name="uq_user_tenant"),
-    )
+    __table_args__ = (UniqueConstraint("user_id", "tenant_id", name="uq_user_tenant"),)
 
-    id         = Column(Integer, primary_key=True)
-    user_id    = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    tenant_id  = Column(Integer, ForeignKey("tenant_configs.id", ondelete="CASCADE"), nullable=False)
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenant_configs.id", ondelete="CASCADE"), nullable=False)
     granted_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-    user   = relationship("User", backref="tenant_entitlements")
+    user = relationship("User", backref="tenant_entitlements")
     tenant = relationship("TenantConfig", backref="user_entitlements")
 
     def __repr__(self) -> str:
@@ -533,14 +578,14 @@ class ScimToken(Base):
 
     __tablename__ = "scim_tokens"
 
-    id           = Column(Integer, primary_key=True)
-    label        = Column(String(255), nullable=True)
-    token_hash   = Column(String(64), nullable=False, unique=True)
+    id = Column(Integer, primary_key=True)
+    label = Column(String(255), nullable=True)
+    token_hash = Column(String(64), nullable=False, unique=True)
     token_prefix = Column(String(16), nullable=False)
-    created_at   = Column(DateTime, default=datetime.utcnow, nullable=False)
-    created_by   = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_by = Column(String(255), nullable=True)
     last_used_at = Column(DateTime, nullable=True)
-    is_active    = Column(Boolean, nullable=False, default=True)
+    is_active = Column(Boolean, nullable=False, default=True)
 
     def __repr__(self) -> str:
         return f"<ScimToken label={self.label!r} prefix={self.token_prefix!r}>"
@@ -564,14 +609,14 @@ class UserGroup(Base):
 
     __tablename__ = "user_groups"
 
-    id           = Column(Integer, primary_key=True)
-    external_id  = Column(String(512), nullable=True)   # the IdP's id; null for local groups
+    id = Column(Integer, primary_key=True)
+    external_id = Column(String(512), nullable=True)  # the IdP's id; null for local groups
     display_name = Column(String(255), nullable=False, unique=True)
-    description  = Column(Text, nullable=True)
-    mapped_role  = Column(String(32), nullable=True)    # 'admin' | 'user' | None
-    source       = Column(String(16), nullable=False, default="local")   # 'scim' | 'local'
-    created_at   = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at   = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    description = Column(Text, nullable=True)
+    mapped_role = Column(String(32), nullable=True)  # 'admin' | 'user' | None
+    source = Column(String(16), nullable=False, default="local")  # 'scim' | 'local'
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     def __repr__(self) -> str:
         return f"<UserGroup display_name={self.display_name!r} source={self.source!r}>"
@@ -586,19 +631,17 @@ class UserGroupMember(Base):
     """
 
     __tablename__ = "user_group_members"
-    __table_args__ = (
-        UniqueConstraint("group_id", "user_id", name="uq_user_group_member"),
-    )
+    __table_args__ = (UniqueConstraint("group_id", "user_id", name="uq_user_group_member"),)
 
-    id       = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True)
     group_id = Column(Integer, ForeignKey("user_groups.id", ondelete="CASCADE"), nullable=False)
-    user_id  = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    source   = Column(String(16), nullable=False, default="local")   # 'scim' | 'local'
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    source = Column(String(16), nullable=False, default="local")  # 'scim' | 'local'
     added_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     added_by = Column(String(255), nullable=True)
 
     group = relationship("UserGroup", backref="members")
-    user  = relationship("User", backref="group_memberships")
+    user = relationship("User", backref="group_memberships")
 
     def __repr__(self) -> str:
         return f"<UserGroupMember group_id={self.group_id} user_id={self.user_id}>"
@@ -614,17 +657,15 @@ class GroupTenantEntitlement(Base):
     """
 
     __tablename__ = "group_tenant_entitlements"
-    __table_args__ = (
-        UniqueConstraint("group_id", "tenant_id", name="uq_group_tenant"),
-    )
+    __table_args__ = (UniqueConstraint("group_id", "tenant_id", name="uq_group_tenant"),)
 
-    id         = Column(Integer, primary_key=True)
-    group_id   = Column(Integer, ForeignKey("user_groups.id", ondelete="CASCADE"), nullable=False)
-    tenant_id  = Column(Integer, ForeignKey("tenant_configs.id", ondelete="CASCADE"), nullable=False)
+    id = Column(Integer, primary_key=True)
+    group_id = Column(Integer, ForeignKey("user_groups.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(Integer, ForeignKey("tenant_configs.id", ondelete="CASCADE"), nullable=False)
     granted_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     granted_by = Column(String(255), nullable=True)
 
-    group  = relationship("UserGroup", backref="tenant_entitlements")
+    group = relationship("UserGroup", backref="tenant_entitlements")
     tenant = relationship("TenantConfig", backref="group_entitlements")
 
     def __repr__(self) -> str:
@@ -654,20 +695,30 @@ class PluginEntitlement(Base):
         # UniqueConstraint("package", "user_id", "group_id") would let the same
         # user grant be inserted twice. Two partial indexes constrain the half
         # of each row that is actually populated.
-        Index("uq_plugin_ent_user", "package", "user_id",
-              unique=True, sqlite_where=text("user_id IS NOT NULL")),
-        Index("uq_plugin_ent_group", "package", "group_id",
-              unique=True, sqlite_where=text("group_id IS NOT NULL")),
+        Index(
+            "uq_plugin_ent_user",
+            "package",
+            "user_id",
+            unique=True,
+            sqlite_where=text("user_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_plugin_ent_group",
+            "package",
+            "group_id",
+            unique=True,
+            sqlite_where=text("group_id IS NOT NULL"),
+        ),
     )
 
-    id         = Column(Integer, primary_key=True)
-    package    = Column(String(255), nullable=False)
-    user_id    = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
-    group_id   = Column(Integer, ForeignKey("user_groups.id", ondelete="CASCADE"), nullable=True)
+    id = Column(Integer, primary_key=True)
+    package = Column(String(255), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    group_id = Column(Integer, ForeignKey("user_groups.id", ondelete="CASCADE"), nullable=True)
     granted_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     granted_by = Column(String(255), nullable=True)
 
-    user  = relationship("User", backref="plugin_entitlements")
+    user = relationship("User", backref="plugin_entitlements")
     group = relationship("UserGroup", backref="plugin_entitlements")
 
     def __repr__(self) -> str:
@@ -689,30 +740,30 @@ class ScheduledTask(Base):
 
     __tablename__ = "scheduled_tasks"
 
-    id               = Column(Integer, primary_key=True)
-    name             = Column(String(255), nullable=False, unique=True)
+    id = Column(Integer, primary_key=True)
+    name = Column(String(255), nullable=False, unique=True)
     source_tenant_id = Column(Integer, ForeignKey("tenant_configs.id"), nullable=False)
     target_tenant_id = Column(Integer, ForeignKey("tenant_configs.id"), nullable=True)
-    resource_groups      = Column(JSON, nullable=False)
-    sync_mode            = Column(String(16),  nullable=False, default="resource_type")
-    label_name           = Column(String(255), nullable=True)
-    label_resource_types = Column(JSON,        nullable=True)
-    cron_expression      = Column(String(128), nullable=False)
-    sync_deletes     = Column(Boolean, default=False, nullable=False)
-    enabled          = Column(Boolean, default=True, nullable=False)
-    owner_email      = Column(String(512), nullable=True)
-    created_at       = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at       = Column(DateTime, default=datetime.utcnow,
-                             onupdate=datetime.utcnow, nullable=False)
+    resource_groups = Column(JSON, nullable=False)
+    sync_mode = Column(String(16), nullable=False, default="resource_type")
+    label_name = Column(String(255), nullable=True)
+    label_resource_types = Column(JSON, nullable=True)
+    cron_expression = Column(String(128), nullable=False)
+    sync_deletes = Column(Boolean, default=False, nullable=False)
+    enabled = Column(Boolean, default=True, nullable=False)
+    owner_email = Column(String(512), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     # v2 columns
-    task_type         = Column(String(16),  nullable=False, default="sync")
+    task_type = Column(String(16), nullable=False, default="sync")
     target_tenant_ids = Column(JSON, nullable=True)
-    import_products   = Column(JSON, nullable=True)
+    import_products = Column(JSON, nullable=True)
 
     source_tenant = relationship("TenantConfig", foreign_keys=[source_tenant_id])
     target_tenant = relationship("TenantConfig", foreign_keys=[target_tenant_id])
-    runs          = relationship("TaskRunHistory", back_populates="task",
-                                 cascade="all, delete-orphan", lazy="select")
+    runs = relationship(
+        "TaskRunHistory", back_populates="task", cascade="all, delete-orphan", lazy="select"
+    )
 
     def __repr__(self) -> str:
         return f"<ScheduledTask name={self.name!r} enabled={self.enabled}>"
@@ -723,31 +774,30 @@ class TaskRunHistory(Base):
 
     __tablename__ = "task_run_history"
 
-    id               = Column(Integer, primary_key=True)
-    task_id          = Column(Integer, ForeignKey("scheduled_tasks.id",
-                              ondelete="CASCADE"), nullable=False)
-    started_at       = Column(DateTime, nullable=False)
-    finished_at      = Column(DateTime, nullable=True)
-    status           = Column(String(16), nullable=False)
+    id = Column(Integer, primary_key=True)
+    task_id = Column(Integer, ForeignKey("scheduled_tasks.id", ondelete="CASCADE"), nullable=False)
+    started_at = Column(DateTime, nullable=False)
+    finished_at = Column(DateTime, nullable=True)
+    status = Column(String(16), nullable=False)
     # status values: "running", "success", "partial", "failed"
     resources_synced = Column(Integer, default=0, nullable=False)
-    errors_json      = Column(JSON, nullable=True)
+    errors_json = Column(JSON, nullable=True)
     # errors_json: list of {"resource_type": str, "resource_name": str,
     #                        "operation": str, "error": str}
     # v2 columns — fan-out and import support
-    parent_run_id    = Column(Integer, ForeignKey("task_run_history.id",
-                              ondelete="SET NULL"), nullable=True)
+    parent_run_id = Column(
+        Integer, ForeignKey("task_run_history.id", ondelete="SET NULL"), nullable=True
+    )
     target_tenant_id = Column(Integer, nullable=True)
 
-    task     = relationship("ScheduledTask", back_populates="runs")
+    task = relationship("ScheduledTask", back_populates="runs")
     # Two sides of one self-referential FK. Without back_populates SQLAlchemy
     # treats them as independent relationships that both write parent_run_id,
     # so a change through one side is not reflected in the other until expiry.
-    parent   = relationship("TaskRunHistory", remote_side=[id],
-                            foreign_keys=[parent_run_id],
-                            back_populates="children")
-    children = relationship("TaskRunHistory", foreign_keys=[parent_run_id],
-                            back_populates="parent")
+    parent = relationship(
+        "TaskRunHistory", remote_side=[id], foreign_keys=[parent_run_id], back_populates="children"
+    )
+    children = relationship("TaskRunHistory", foreign_keys=[parent_run_id], back_populates="parent")
 
     def __repr__(self) -> str:
         return f"<TaskRunHistory task_id={self.task_id} status={self.status!r}>"

@@ -212,8 +212,9 @@ class PluginContext:
     no request, no token — a plugin that wants the database opens its own.
     """
 
-    def __init__(self, *, user_id: int, username: str, role: str, job_id: str,
-                 emit=None, cancelled=None):
+    def __init__(
+        self, *, user_id: int, username: str, role: str, job_id: str, emit=None, cancelled=None
+    ):
         self.user_id = user_id
         self.username = username
         self.role = role
@@ -261,15 +262,17 @@ def _normalize_options(options: Any) -> List[dict]:
             continue
 
         cells = [("" if c is None else str(c)) for c in (o.get("cells") or [])]
-        out.append({
-            "value": str(o["value"]),
-            "label": str(o.get("label") or (cells[0] if cells else o["value"])),
-            "cells": cells,
-            "selected": bool(o.get("selected", False)),
-            "disabled": bool(o.get("disabled", False)),
-            "group": str(o["group"]) if o.get("group") else None,
-            "note": str(o["note"]) if o.get("note") else None,
-        })
+        out.append(
+            {
+                "value": str(o["value"]),
+                "label": str(o.get("label") or (cells[0] if cells else o["value"])),
+                "cells": cells,
+                "selected": bool(o.get("selected", False)),
+                "disabled": bool(o.get("disabled", False)),
+                "group": str(o["group"]) if o.get("group") else None,
+                "note": str(o["note"]) if o.get("note") else None,
+            }
+        )
     return out
 
 
@@ -303,9 +306,7 @@ def _describe_param(raw: Any, action_key: str, *, literal: bool = False) -> dict
 
     ptype = str(raw.get("type") or "text").strip()
     if ptype not in PARAM_TYPES:
-        raise PluginWebError(
-            f"action '{action_key}', param '{name}': unknown type {ptype!r}", 500
-        )
+        raise PluginWebError(f"action '{action_key}', param '{name}': unknown type {ptype!r}", 500)
 
     out = {
         "name": name,
@@ -319,7 +320,8 @@ def _describe_param(raw: Any, action_key: str, *, literal: bool = False) -> dict
     if literal and (raw.get("depends_on") or []):
         raise PluginWebError(
             f"action '{action_key}', param '{name}': a prompt's fields cannot "
-            "depend on anything — there is nothing left to read", 500
+            "depend on anything — there is nothing left to read",
+            500,
         )
 
     if ptype == "select":
@@ -329,7 +331,8 @@ def _describe_param(raw: Any, action_key: str, *, literal: bool = False) -> dict
         if callable(options) and literal:
             raise PluginWebError(
                 f"action '{action_key}', param '{name}': a prompt's options must be "
-                "a list, not a callable", 500
+                "a list, not a callable",
+                500,
             )
 
         if callable(options):
@@ -347,7 +350,8 @@ def _describe_param(raw: Any, action_key: str, *, literal: bool = False) -> dict
             if not isinstance(options, (list, tuple)) or not options:
                 raise PluginWebError(
                     f"action '{action_key}', param '{name}': select needs a non-empty "
-                    "'options' list or a callable", 500
+                    "'options' list or a callable",
+                    500,
                 )
             out["dynamic"] = False
             out["depends_on"] = []
@@ -365,12 +369,14 @@ def _describe_param(raw: Any, action_key: str, *, literal: bool = False) -> dict
             if not isinstance(loader, (list, tuple)):
                 raise PluginWebError(
                     f"action '{action_key}', param '{name}': a prompt's selection "
-                    "needs its rows as a list", 500
+                    "needs its rows as a list",
+                    500,
                 )
         elif not callable(loader):
             raise PluginWebError(
                 f"action '{action_key}', param '{name}': selection needs a callable "
-                "'options' that loads its rows", 500
+                "'options' that loads its rows",
+                500,
             )
         depends = raw.get("depends_on") or []
         if not isinstance(depends, (list, tuple)):
@@ -400,7 +406,8 @@ def _describe_param(raw: Any, action_key: str, *, literal: bool = False) -> dict
             if f["name"].lower() not in headings:
                 raise PluginWebError(
                     f"action '{action_key}', param '{name}': filter '{f['name']}' "
-                    "does not name one of the declared columns", 500
+                    "does not name one of the declared columns",
+                    500,
                 )
 
     # A file has nowhere sensible to put a default, and a password default
@@ -433,7 +440,8 @@ def _describe_action(raw: Any, context_names: Tuple[str, ...] = ()) -> dict:
         if name not in context_names:
             raise PluginWebError(
                 f"action '{key}': context names '{name}', which the plugin does "
-                "not declare under 'web.context'", 500
+                "not declare under 'web.context'",
+                500,
             )
 
     described = [_describe_param(p, key) for p in params]
@@ -447,7 +455,8 @@ def _describe_action(raw: Any, context_names: Tuple[str, ...] = ()) -> dict:
     if clash:
         raise PluginWebError(
             f"action '{key}': {sorted(clash)[0]!r} is both a context value and a "
-            "parameter of this action", 500
+            "parameter of this action",
+            500,
         )
 
     # A dependency naming a parameter that does not exist would never fire, and
@@ -458,12 +467,11 @@ def _describe_action(raw: Any, context_names: Tuple[str, ...] = ()) -> dict:
             if dep not in visible:
                 raise PluginWebError(
                     f"action '{key}', param '{p['name']}': depends_on names "
-                    f"'{dep}', which is not a parameter of this action", 500
+                    f"'{dep}', which is not a parameter of this action",
+                    500,
                 )
             if dep == p["name"]:
-                raise PluginWebError(
-                    f"action '{key}', param '{p['name']}': depends on itself", 500
-                )
+                raise PluginWebError(f"action '{key}', param '{p['name']}': depends on itself", 500)
 
     return {
         "key": key,
@@ -500,7 +508,8 @@ def _describe_context(raw: Any) -> List[dict]:
             if dep not in names or dep == p["name"]:
                 raise PluginWebError(
                     f"context '{p['name']}': depends_on names '{dep}', which is not "
-                    "another context value", 500
+                    "another context value",
+                    500,
                 )
     return described
 
@@ -535,12 +544,14 @@ def _describe_workflow(raw: Any, action_keys: Tuple[str, ...]) -> Optional[dict]
                 raise PluginWebError(
                     f"workflow step '{key}': names action '{a}', which does not exist", 500
                 )
-        out.append({
-            "key": key,
-            "label": str(step.get("label") or key),
-            "description": step.get("description") or None,
-            "actions": [str(a) for a in keys],
-        })
+        out.append(
+            {
+                "key": key,
+                "label": str(step.get("label") or key),
+                "description": step.get("description") or None,
+                "actions": [str(a) for a in keys],
+            }
+        )
 
     step_keys = [s["key"] for s in out]
     if len(step_keys) != len(set(step_keys)):
@@ -652,7 +663,8 @@ def bind_raw_context(plugin: dict, raw_action: dict, action: dict) -> dict:
         return raw_action
     spec = (plugin or {}).get("web") or {}
     raw_context = [
-        c for c in (spec.get("context") or [])
+        c
+        for c in (spec.get("context") or [])
         if isinstance(c, dict) and str(c.get("name") or "") in wanted
     ]
     return {**raw_action, "params": raw_context + list(raw_action.get("params") or [])}
@@ -735,9 +747,7 @@ def _coerce_one(spec: dict, value: Any) -> Any:
             allowed = {o["value"] for o in spec.get("options", [])}
             for text in out:
                 if text not in allowed:
-                    raise PluginWebError(
-                        f"'{spec['label']}' includes a row that was not offered"
-                    )
+                    raise PluginWebError(f"'{spec['label']}' includes a row that was not offered")
         return out
 
     return str(value)
@@ -952,7 +962,8 @@ def _describe_section(raw: Any) -> Optional[dict]:
                 "tone": _tone(i.get("tone")),
                 "detail": str(i["detail"]) if i.get("detail") else None,
             }
-            for i in (raw.get("items") or []) if isinstance(i, dict)
+            for i in (raw.get("items") or [])
+            if isinstance(i, dict)
         ]
         return {**base, "items": items} if items else None
 
@@ -964,7 +975,9 @@ def _describe_section(raw: Any) -> Optional[dict]:
             **base,
             "columns": columns,
             "rows": [_cells(r) for r in (raw.get("rows") or [])],
-            "tone_column": raw.get("tone_column") if isinstance(raw.get("tone_column"), int) else None,
+            "tone_column": raw.get("tone_column")
+            if isinstance(raw.get("tone_column"), int)
+            else None,
         }
 
     if kind == "groups":
@@ -972,15 +985,17 @@ def _describe_section(raw: Any) -> Optional[dict]:
         for g in raw.get("groups") or []:
             if not isinstance(g, dict):
                 continue
-            groups.append({
-                "key": str(g.get("key") or g.get("title") or len(groups)),
-                "title": str(g.get("title") or ""),
-                "subtitle": str(g["subtitle"]) if g.get("subtitle") else None,
-                "badge": str(g["badge"]) if g.get("badge") else None,
-                "tone": _tone(g.get("tone")),
-                "columns": [str(c) for c in (g.get("columns") or [])],
-                "rows": [_cells(r) for r in (g.get("rows") or [])],
-            })
+            groups.append(
+                {
+                    "key": str(g.get("key") or g.get("title") or len(groups)),
+                    "title": str(g.get("title") or ""),
+                    "subtitle": str(g["subtitle"]) if g.get("subtitle") else None,
+                    "badge": str(g["badge"]) if g.get("badge") else None,
+                    "tone": _tone(g.get("tone")),
+                    "columns": [str(c) for c in (g.get("columns") or [])],
+                    "rows": [_cells(r) for r in (g.get("rows") or [])],
+                }
+            )
         return {**base, "groups": groups} if groups else None
 
     if kind == "notes":
@@ -992,14 +1007,18 @@ def _describe_section(raw: Any) -> Optional[dict]:
             # authority — the page prefills that form, and running it is
             # checked exactly as it would be if the user had navigated there.
             action = n.get("action")
-            notes.append({
-                "tone": _tone(n.get("tone")),
-                "text": str(n["text"]),
-                "action": {
-                    "key": str(action.get("key") or ""),
-                    "label": str(action.get("label") or "Resolve"),
-                } if isinstance(action, dict) and action.get("key") else None,
-            })
+            notes.append(
+                {
+                    "tone": _tone(n.get("tone")),
+                    "text": str(n["text"]),
+                    "action": {
+                        "key": str(action.get("key") or ""),
+                        "label": str(action.get("label") or "Resolve"),
+                    }
+                    if isinstance(action, dict) and action.get("key")
+                    else None,
+                }
+            )
         return {**base, "notes": notes} if notes else None
 
     return None
@@ -1097,7 +1116,8 @@ def prompt_action(described: dict, action: dict, prompt: dict) -> dict:
         if p["name"] in taken:
             log.warning(
                 "plugin prompt for '%s': field '%s' shadows page context — ignored",
-                action.get("key"), p["name"],
+                action.get("key"),
+                p["name"],
             )
             continue
         fields.append(p)
@@ -1130,7 +1150,13 @@ def _describe_next(raw: Any, action_keys: Tuple[str, ...]) -> Optional[dict]:
 
 #: Result keys with a rendering of their own, kept out of the key/value detail.
 _RESERVED_RESULT_KEYS = (
-    "message", "table", "sections", "context", "prompt", "next", ARTIFACT_KEY,
+    "message",
+    "table",
+    "sections",
+    "context",
+    "prompt",
+    "next",
+    ARTIFACT_KEY,
 )
 
 
@@ -1185,10 +1211,7 @@ def normalize_result(
     if isinstance(raw_sections, (list, tuple)):
         sections = [s for s in (_describe_section(s) for s in raw_sections) if s]
 
-    details = {
-        k: v for k, v in value.items()
-        if k not in _RESERVED_RESULT_KEYS and _jsonable(v)
-    }
+    details = {k: v for k, v in value.items() if k not in _RESERVED_RESULT_KEYS and _jsonable(v)}
     return {
         "message": str(value.get("message") or "Done."),
         "table": table,

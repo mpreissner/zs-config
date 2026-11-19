@@ -27,38 +27,41 @@ from services import audit_service
 @dataclass
 class ResourceDef:
     """Describes one ZCC resource type to import."""
-    resource_type: str          # key stored in zcc_resources.resource_type
-    list_method: str            # name of ZCCClient method that returns a list
-    id_field: str = "id"        # JSON field containing the ZCC resource ID
-    name_field: str = "name"    # JSON field containing a human-readable name
+
+    resource_type: str  # key stored in zcc_resources.resource_type
+    list_method: str  # name of ZCCClient method that returns a list
+    id_field: str = "id"  # JSON field containing the ZCC resource ID
+    name_field: str = "name"  # JSON field containing a human-readable name
     list_args: dict = field(default_factory=dict)
 
 
 # All resource types we import.  Order doesn't matter.
 RESOURCE_DEFINITIONS: List[ResourceDef] = [
     # SDK-based: as_dict() returns snake_case keys
-    ResourceDef("device",             "list_devices",           id_field="udid",  name_field="machine_hostname"),
-    ResourceDef("trusted_network",    "list_trusted_networks",  name_field="network_name"),
+    ResourceDef("device", "list_devices", id_field="udid", name_field="machine_hostname"),
+    ResourceDef("trusted_network", "list_trusted_networks", name_field="network_name"),
     ResourceDef("forwarding_profile", "list_forwarding_profiles"),
-    ResourceDef("admin_user",         "list_admin_users",       name_field="user_name"),
-    ResourceDef("web_app_service",    "list_web_app_services",  name_field="app_name"),
-    ResourceDef("web_policy",         "list_web_policies",      name_field="name"),
-    ResourceDef("fail_open_policy",  "list_fail_open_policies"),
-    ResourceDef("web_privacy",       "get_web_privacy_singleton"),
-    ResourceDef("company_info",      "list_company_info"),
-    ResourceDef("admin_role",        "list_admin_roles",        name_field="role_name"),
+    ResourceDef("admin_user", "list_admin_users", name_field="user_name"),
+    ResourceDef("web_app_service", "list_web_app_services", name_field="app_name"),
+    ResourceDef("web_policy", "list_web_policies", name_field="name"),
+    ResourceDef("fail_open_policy", "list_fail_open_policies"),
+    ResourceDef("web_privacy", "get_web_privacy_singleton"),
+    ResourceDef("company_info", "list_company_info"),
+    ResourceDef("admin_role", "list_admin_roles", name_field="role_name"),
     # _direct_get: returns raw JSON (camelCase keys)
     ResourceDef("ip_app_predefined", "list_ip_apps_predefined", name_field="appName"),
-    ResourceDef("ip_app_custom",     "list_ip_apps_custom",     name_field="appName"),
-    ResourceDef("process_app",       "list_process_apps",       name_field="appName"),
+    ResourceDef("ip_app_custom", "list_ip_apps_custom", name_field="appName"),
+    ResourceDef("process_app", "list_process_apps", name_field="appName"),
     # Singleton: GET /getDeviceCleanupInfo — direct, no SDK
-    ResourceDef("device_cleanup",    "get_device_cleanup_singleton",   id_field="id", name_field="id"),
+    ResourceDef("device_cleanup", "get_device_cleanup_singleton", id_field="id", name_field="id"),
     # GET /getZpaGroupEntitlements — already in client
-    ResourceDef("entitlement_zpa",   "get_zpa_entitlements_singleton", id_field="id"),
+    ResourceDef("entitlement_zpa", "get_zpa_entitlements_singleton", id_field="id"),
     # GET /getZdxGroupEntitlements — already in client
-    ResourceDef("entitlement_zdx",   "get_zdx_entitlements_singleton", id_field="id"),
+    ResourceDef("entitlement_zdx", "get_zdx_entitlements_singleton", id_field="id"),
     # GET /application-profiles — direct, shape TBD
-    ResourceDef("application_profile", "list_application_profiles",    id_field="id", name_field="name"),
+    ResourceDef(
+        "application_profile", "list_application_profiles", id_field="id", name_field="name"
+    ),
 ]
 
 
@@ -92,8 +95,11 @@ class ZCCImportService:
         Returns:
             The completed SyncLog ORM object.
         """
-        all_defs = [d for d in RESOURCE_DEFINITIONS
-                    if resource_types is None or d.resource_type in resource_types]
+        all_defs = [
+            d
+            for d in RESOURCE_DEFINITIONS
+            if resource_types is None or d.resource_type in resource_types
+        ]
         total = len(all_defs)
 
         disabled_types = set(self._get_disabled_resource_types())
@@ -155,9 +161,17 @@ class ZCCImportService:
         deleted = self._mark_deleted(resource_types, run_start, skip_types=failed_types)
 
         all_skipped = sorted(disabled_types)
-        attempted = total - len([d for d in all_defs if d.resource_type in disabled_types and d.resource_type not in newly_disabled])
-        final_status = "FAILED" if (errors and len(errors) == attempted) else (
-            "PARTIAL" if errors else "SUCCESS"
+        attempted = total - len(
+            [
+                d
+                for d in all_defs
+                if d.resource_type in disabled_types and d.resource_type not in newly_disabled
+            ]
+        )
+        final_status = (
+            "FAILED"
+            if (errors and len(errors) == attempted)
+            else ("PARTIAL" if errors else "SUCCESS")
         )
 
         with get_session() as session:
@@ -258,20 +272,26 @@ class ZCCImportService:
                 )
 
                 if existing is None:
-                    session.add(ZCCResource(
-                        tenant_id=self.tenant_id,
-                        resource_type=defn.resource_type,
-                        zcc_id=zcc_id,
-                        name=name,
-                        raw_config=record,
-                        config_hash=new_hash,
-                        synced_at=run_start,
-                        is_deleted=False,
-                    ))
-                    pending_audit.append(dict(
-                        action="CREATE", resource_type=defn.resource_type,
-                        resource_id=zcc_id, resource_name=name,
-                    ))
+                    session.add(
+                        ZCCResource(
+                            tenant_id=self.tenant_id,
+                            resource_type=defn.resource_type,
+                            zcc_id=zcc_id,
+                            name=name,
+                            raw_config=record,
+                            config_hash=new_hash,
+                            synced_at=run_start,
+                            is_deleted=False,
+                        )
+                    )
+                    pending_audit.append(
+                        dict(
+                            action="CREATE",
+                            resource_type=defn.resource_type,
+                            resource_id=zcc_id,
+                            resource_name=name,
+                        )
+                    )
                     synced += 1
                 else:
                     existing.synced_at = run_start
@@ -280,10 +300,14 @@ class ZCCImportService:
                         existing.name = name
                         existing.raw_config = record
                         existing.config_hash = new_hash
-                        pending_audit.append(dict(
-                            action="UPDATE", resource_type=defn.resource_type,
-                            resource_id=zcc_id, resource_name=name,
-                        ))
+                        pending_audit.append(
+                            dict(
+                                action="UPDATE",
+                                resource_type=defn.resource_type,
+                                resource_id=zcc_id,
+                                resource_name=name,
+                            )
+                        )
                         updated += 1
                     synced += 1
 
@@ -311,7 +335,8 @@ class ZCCImportService:
         """
         deleted = 0
         type_filter = [
-            t for t in (resource_types or [d.resource_type for d in RESOURCE_DEFINITIONS])
+            t
+            for t in (resource_types or [d.resource_type for d in RESOURCE_DEFINITIONS])
             if t not in skip_types
         ]
         pending_audit: list = []
@@ -329,11 +354,13 @@ class ZCCImportService:
             )
             for row in stale:
                 row.is_deleted = True
-                pending_audit.append(dict(
-                    resource_type=row.resource_type,
-                    resource_id=row.zcc_id,
-                    resource_name=row.name,
-                ))
+                pending_audit.append(
+                    dict(
+                        resource_type=row.resource_type,
+                        resource_id=row.zcc_id,
+                        resource_name=row.name,
+                    )
+                )
                 deleted += 1
 
         for evt in pending_audit:

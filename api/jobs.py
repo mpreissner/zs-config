@@ -1,4 +1,5 @@
 """In-memory job store for background tasks that stream progress via SSE."""
+
 import uuid
 import threading
 import time
@@ -64,7 +65,8 @@ class _JobStore:
         """Drop finished jobs past their TTL. Caller must hold the lock."""
         cutoff = time.time() - _FINISHED_TTL_SECONDS
         stale = [
-            jid for jid, job in self._jobs.items()
+            jid
+            for jid, job in self._jobs.items()
             if job["finished_at"] is not None and job["finished_at"] < cutoff
         ]
         for jid in stale:

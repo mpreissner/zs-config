@@ -28,53 +28,62 @@ from services import audit_service
 @dataclass
 class ResourceDef:
     """Describes one ZPA resource type to import."""
-    resource_type: str          # key stored in zpa_resources.resource_type
-    list_method: str            # name of ZPAClient method that returns a list
-    id_field: str = "id"        # JSON field containing the ZPA resource ID
-    name_field: str = "name"    # JSON field containing a human-readable name
+
+    resource_type: str  # key stored in zpa_resources.resource_type
+    list_method: str  # name of ZPAClient method that returns a list
+    id_field: str = "id"  # JSON field containing the ZPA resource ID
+    name_field: str = "name"  # JSON field containing a human-readable name
     list_args: dict = field(default_factory=dict)  # extra kwargs for list_method
 
 
 # All resource types we import.  Order doesn't matter.
 RESOURCE_DEFINITIONS: List[ResourceDef] = [
-    ResourceDef("application",          "list_applications"),
-    ResourceDef("segment_group",        "list_segment_groups"),
-    ResourceDef("server_group",         "list_server_groups"),
-    ResourceDef("app_connector_group",  "list_connector_groups"),
-    ResourceDef("app_connector",        "list_connectors"),
-    ResourceDef("pra_portal",           "list_pra_portals"),
-    ResourceDef("user_portal",          "list_user_portals"),
-    ResourceDef("pra_credential",       "list_credentials"),
-    ResourceDef("idp",                  "list_idp"),
-    ResourceDef("saml_attribute",       "list_saml_attributes"),
-    ResourceDef("scim_group",           "_scim_groups_all"),      # handled specially in _fetch
-    ResourceDef("scim_attribute",       "_scim_attributes_all"),  # handled specially in _fetch
-    ResourceDef("microtenant",          "list_microtenants"),
-    ResourceDef("enrollment_cert",      "list_enrollment_certificates"),
-    ResourceDef("policy_access",        "list_policy_rules", list_args={"policy_type": "access"}),
-    ResourceDef("policy_timeout",       "list_policy_rules", list_args={"policy_type": "timeout"}),
-    ResourceDef("policy_forwarding",    "list_policy_rules", list_args={"policy_type": "client_forwarding"}),
-    ResourceDef("policy_inspection",    "list_policy_rules", list_args={"policy_type": "inspection"}),
-    ResourceDef("policy_isolation",     "list_policy_rules", list_args={"policy_type": "isolation"}),
-    ResourceDef("certificate",          "list_certificates"),
-    ResourceDef("pra_console",          "list_pra_consoles"),
-    ResourceDef("service_edge_group",   "list_service_edge_groups"),
-    ResourceDef("service_edge",         "list_service_edges"),
-    ResourceDef("server",               "list_servers"),
-    ResourceDef("posture_profile",       "list_posture_profiles", id_field="posture_udid"),
-    ResourceDef("machine_group",        "list_machine_groups"),
-    ResourceDef("trusted_network",      "list_trusted_networks"),
-    ResourceDef("lss_config",           "list_lss_configs"),
+    ResourceDef("application", "list_applications"),
+    ResourceDef("segment_group", "list_segment_groups"),
+    ResourceDef("server_group", "list_server_groups"),
+    ResourceDef("app_connector_group", "list_connector_groups"),
+    ResourceDef("app_connector", "list_connectors"),
+    ResourceDef("pra_portal", "list_pra_portals"),
+    ResourceDef("user_portal", "list_user_portals"),
+    ResourceDef("pra_credential", "list_credentials"),
+    ResourceDef("idp", "list_idp"),
+    ResourceDef("saml_attribute", "list_saml_attributes"),
+    ResourceDef("scim_group", "_scim_groups_all"),  # handled specially in _fetch
+    ResourceDef("scim_attribute", "_scim_attributes_all"),  # handled specially in _fetch
+    ResourceDef("microtenant", "list_microtenants"),
+    ResourceDef("enrollment_cert", "list_enrollment_certificates"),
+    ResourceDef("policy_access", "list_policy_rules", list_args={"policy_type": "access"}),
+    ResourceDef("policy_timeout", "list_policy_rules", list_args={"policy_type": "timeout"}),
+    ResourceDef(
+        "policy_forwarding", "list_policy_rules", list_args={"policy_type": "client_forwarding"}
+    ),
+    ResourceDef("policy_inspection", "list_policy_rules", list_args={"policy_type": "inspection"}),
+    ResourceDef("policy_isolation", "list_policy_rules", list_args={"policy_type": "isolation"}),
+    ResourceDef("certificate", "list_certificates"),
+    ResourceDef("pra_console", "list_pra_consoles"),
+    ResourceDef("service_edge_group", "list_service_edge_groups"),
+    ResourceDef("service_edge", "list_service_edges"),
+    ResourceDef("server", "list_servers"),
+    ResourceDef("posture_profile", "list_posture_profiles", id_field="posture_udid"),
+    ResourceDef("machine_group", "list_machine_groups"),
+    ResourceDef("trusted_network", "list_trusted_networks"),
+    ResourceDef("lss_config", "list_lss_configs"),
 ]
 
 
-_META_KEYS = frozenset({
-    "creation_time", "modified_time", "modified_by",
-    # Connector/edge connection telemetry — computed per-call, not configuration
-    "last_broker_connect_time", "last_broker_connect_time_duration",
-    "last_broker_disconnect_time", "last_broker_disconnect_time_duration",
-    "application_start_time",
-})
+_META_KEYS = frozenset(
+    {
+        "creation_time",
+        "modified_time",
+        "modified_by",
+        # Connector/edge connection telemetry — computed per-call, not configuration
+        "last_broker_connect_time",
+        "last_broker_connect_time_duration",
+        "last_broker_disconnect_time",
+        "last_broker_disconnect_time_duration",
+        "application_start_time",
+    }
+)
 
 
 def _strip_meta(obj):
@@ -116,8 +125,11 @@ class ZPAImportService:
         Returns:
             The completed SyncLog ORM object.
         """
-        all_defs = [d for d in RESOURCE_DEFINITIONS
-                    if resource_types is None or d.resource_type in resource_types]
+        all_defs = [
+            d
+            for d in RESOURCE_DEFINITIONS
+            if resource_types is None or d.resource_type in resource_types
+        ]
         total = len(all_defs)
 
         # Resource types previously auto-disabled due to 401 — skip without calling API
@@ -184,9 +196,17 @@ class ZPAImportService:
         deleted = self._mark_deleted(resource_types, run_start, skip_types=failed_types)
 
         all_skipped = sorted(disabled_types)
-        attempted = total - len([d for d in all_defs if d.resource_type in disabled_types and d.resource_type not in newly_disabled])
-        final_status = "FAILED" if (errors and len(errors) == attempted) else (
-            "PARTIAL" if errors else "SUCCESS"
+        attempted = total - len(
+            [
+                d
+                for d in all_defs
+                if d.resource_type in disabled_types and d.resource_type not in newly_disabled
+            ]
+        )
+        final_status = (
+            "FAILED"
+            if (errors and len(errors) == attempted)
+            else ("PARTIAL" if errors else "SUCCESS")
         )
 
         with get_session() as session:
@@ -276,8 +296,7 @@ class ZPAImportService:
         run, and the delete pass would then flag them all as deleted.
         """
         return [
-            str(idp["id"]) for idp in idps
-            if idp.get("id") and idp.get("scim_enabled") is not False
+            str(idp["id"]) for idp in idps if idp.get("id") and idp.get("scim_enabled") is not False
         ]
 
     def _fetch_scim_groups_all(self) -> list:
@@ -335,20 +354,26 @@ class ZPAImportService:
                 )
 
                 if existing is None:
-                    session.add(ZPAResource(
-                        tenant_id=self.tenant_id,
-                        resource_type=defn.resource_type,
-                        zpa_id=zpa_id,
-                        name=name,
-                        raw_config=record,
-                        config_hash=new_hash,
-                        synced_at=run_start,
-                        is_deleted=False,
-                    ))
-                    pending_audit.append(dict(
-                        action="CREATE", resource_type=defn.resource_type,
-                        resource_id=zpa_id, resource_name=name,
-                    ))
+                    session.add(
+                        ZPAResource(
+                            tenant_id=self.tenant_id,
+                            resource_type=defn.resource_type,
+                            zpa_id=zpa_id,
+                            name=name,
+                            raw_config=record,
+                            config_hash=new_hash,
+                            synced_at=run_start,
+                            is_deleted=False,
+                        )
+                    )
+                    pending_audit.append(
+                        dict(
+                            action="CREATE",
+                            resource_type=defn.resource_type,
+                            resource_id=zpa_id,
+                            resource_name=name,
+                        )
+                    )
                     synced += 1
                 else:
                     # Always update synced_at; only update data when changed
@@ -358,10 +383,14 @@ class ZPAImportService:
                         existing.name = name
                         existing.raw_config = record
                         existing.config_hash = new_hash
-                        pending_audit.append(dict(
-                            action="UPDATE", resource_type=defn.resource_type,
-                            resource_id=zpa_id, resource_name=name,
-                        ))
+                        pending_audit.append(
+                            dict(
+                                action="UPDATE",
+                                resource_type=defn.resource_type,
+                                resource_id=zpa_id,
+                                resource_name=name,
+                            )
+                        )
                         updated += 1
                     synced += 1
 
@@ -399,7 +428,8 @@ class ZPAImportService:
         """
         deleted = 0
         type_filter = [
-            t for t in (resource_types or [d.resource_type for d in RESOURCE_DEFINITIONS])
+            t
+            for t in (resource_types or [d.resource_type for d in RESOURCE_DEFINITIONS])
             if t not in skip_types
         ]
         pending_audit: list = []
@@ -418,11 +448,13 @@ class ZPAImportService:
             )
             for row in stale:
                 row.is_deleted = True
-                pending_audit.append(dict(
-                    resource_type=row.resource_type,
-                    resource_id=row.zpa_id,
-                    resource_name=row.name,
-                ))
+                pending_audit.append(
+                    dict(
+                        resource_type=row.resource_type,
+                        resource_id=row.zpa_id,
+                        resource_name=row.name,
+                    )
+                )
                 deleted += 1
 
         # Session is closed — safe to write audit events now

@@ -7,7 +7,11 @@ from typing import Optional
 
 from cryptography import x509
 from cryptography.hazmat.primitives.serialization import (
-    Encoding, NoEncryption, PrivateFormat, PublicFormat, load_pem_private_key,
+    Encoding,
+    NoEncryption,
+    PrivateFormat,
+    PublicFormat,
+    load_pem_private_key,
 )
 from cryptography.hazmat.primitives.serialization.pkcs12 import load_pkcs12
 
@@ -15,9 +19,9 @@ from db.database import get_setting, get_session, set_setting
 from db.models import WebAuthnCredential
 from services import audit_service
 
-SSL_DIR  = Path(os.environ.get("ZSCALER_DB_PATH", "/data/db/zscaler.db")).parent / "ssl"
+SSL_DIR = Path(os.environ.get("ZSCALER_DB_PATH", "/data/db/zscaler.db")).parent / "ssl"
 CERT_PATH = SSL_DIR / "cert.pem"
-KEY_PATH  = SSL_DIR / "key.pem"
+KEY_PATH = SSL_DIR / "key.pem"
 
 # ssl_mode values that mean "a certificate is installed"; anything else is HTTP.
 _ACTIVE_MODES = ("upload", "letsencrypt")
@@ -61,13 +65,14 @@ class SSLStatus:
 
 
 _PEM_BLOCK_RE = re.compile(
-    rb'-----BEGIN ([A-Z ]+)-----\r?\n.*?-----END \1-----',
+    rb"-----BEGIN ([A-Z ]+)-----\r?\n.*?-----END \1-----",
     re.DOTALL,
 )
-_KEY_LABELS = {b'PRIVATE KEY', b'RSA PRIVATE KEY', b'EC PRIVATE KEY'}
+_KEY_LABELS = {b"PRIVATE KEY", b"RSA PRIVATE KEY", b"EC PRIVATE KEY"}
 
 
 # ── Internal helpers ───────────────────────────────────────────────────────────
+
 
 def _parse_pem_blocks(pem_bytes: bytes) -> tuple:
     """Return (certs_list, private_keys_list) from a PEM bytestring."""
@@ -76,7 +81,7 @@ def _parse_pem_blocks(pem_bytes: bytes) -> tuple:
     for m in _PEM_BLOCK_RE.finditer(pem_bytes):
         label = m.group(1)
         block = m.group(0)
-        if label == b'CERTIFICATE':
+        if label == b"CERTIFICATE":
             try:
                 certs.append(x509.load_pem_x509_certificate(block))
             except Exception:
@@ -130,14 +135,18 @@ def _verify_key_match(key: object, cert: x509.Certificate) -> None:
         key_pub = key.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
         cert_pub = cert.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
     except Exception:
-        raise SSLValidationError("unsupported_key_type", "Unsupported key type; cannot verify key-cert match.")
+        raise SSLValidationError(
+            "unsupported_key_type", "Unsupported key type; cannot verify key-cert match."
+        )
     if key_pub != cert_pub:
-        raise SSLValidationError("key_cert_mismatch", "The private key does not match the certificate.")
+        raise SSLValidationError(
+            "key_cert_mismatch", "The private key does not match the certificate."
+        )
 
 
 def _validate_domain(domain: str, cert: x509.Certificate) -> None:
-    domain = re.sub(r'^https?://', '', domain, flags=re.IGNORECASE)
-    domain = domain.split(':')[0].strip('/').strip().lower()
+    domain = re.sub(r"^https?://", "", domain, flags=re.IGNORECASE)
+    domain = domain.split(":")[0].strip("/").strip().lower()
 
     candidates: list = []
     try:
@@ -149,9 +158,9 @@ def _validate_domain(domain: str, cert: x509.Certificate) -> None:
     candidates.extend(s.lower() for s in _get_sans(cert))
 
     def _match(d: str, pattern: str) -> bool:
-        if pattern.startswith('*.'):
+        if pattern.startswith("*."):
             suffix = pattern[2:]
-            parts = d.split('.', 1)
+            parts = d.split(".", 1)
             return len(parts) == 2 and parts[1] == suffix
         return d == pattern
 
@@ -177,16 +186,21 @@ def _serialize_chain(chain: list) -> str:
 
 
 def _serialize_key(key: object) -> str:
-    return key.private_bytes(Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()).decode()
+    return key.private_bytes(
+        Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()
+    ).decode()
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
+
 
 def process_pfx(pfx_bytes: bytes, password: str, domain: str) -> ParsedCertBundle:
     try:
         p12 = load_pkcs12(pfx_bytes, password.encode() if password else None)
     except ValueError:
-        raise SSLValidationError("pfx_decrypt_failed", "Failed to decrypt the PFX file. Check the password.")
+        raise SSLValidationError(
+            "pfx_decrypt_failed", "Failed to decrypt the PFX file. Check the password."
+        )
     if p12.key is None:
         raise SSLValidationError("no_private_key", "No private key found in the PFX file.")
     if p12.cert is None:
@@ -222,7 +236,7 @@ def process_pem_text(pem_text: str, domain: str) -> ParsedCertBundle:
 
 def save_bundle(bundle: ParsedCertBundle, domain: str, mode: str = "upload") -> None:
     # Read before write so we can decide whether credentials need invalidating.
-    old_mode   = get_setting("ssl_mode") or "none"
+    old_mode = get_setting("ssl_mode") or "none"
     old_domain = get_setting("ssl_domain") or ""
     # A Let's Encrypt renewal keeps the same origin, so it must not wipe
     # anyone's passkeys — only a genuine change of host or of how the cert got
@@ -258,14 +272,28 @@ def get_status() -> SSLStatus:
         mode = get_setting("ssl_mode") or "none"
         domain = get_setting("ssl_domain") or ""
         if mode not in _ACTIVE_MODES or not CERT_PATH.exists():
-            return SSLStatus(active=False, mode=mode, domain=domain,
-                             subject=None, sans=None, not_before=None,
-                             not_after=None, days_until_expiry=None)
+            return SSLStatus(
+                active=False,
+                mode=mode,
+                domain=domain,
+                subject=None,
+                sans=None,
+                not_before=None,
+                not_after=None,
+                days_until_expiry=None,
+            )
         certs, _ = _parse_pem_blocks(CERT_PATH.read_bytes())
         if not certs:
-            return SSLStatus(active=False, mode=mode, domain=domain,
-                             subject=None, sans=None, not_before=None,
-                             not_after=None, days_until_expiry=None)
+            return SSLStatus(
+                active=False,
+                mode=mode,
+                domain=domain,
+                subject=None,
+                sans=None,
+                not_before=None,
+                not_after=None,
+                days_until_expiry=None,
+            )
         leaf = certs[0]
         try:
             cns = leaf.subject.get_attributes_for_oid(x509.NameOID.COMMON_NAME)
@@ -274,18 +302,29 @@ def get_status() -> SSLStatus:
             subject = leaf.subject.rfc4514_string()
         sans = _get_sans(leaf)
         not_before = leaf.not_valid_before_utc.isoformat()
-        not_after  = leaf.not_valid_after_utc.isoformat()
+        not_after = leaf.not_valid_after_utc.isoformat()
         days = (leaf.not_valid_after_utc - datetime.now(timezone.utc)).days
         return SSLStatus(
-            active=True, mode=mode, domain=domain,
-            subject=subject, sans=sans,
-            not_before=not_before, not_after=not_after,
+            active=True,
+            mode=mode,
+            domain=domain,
+            subject=subject,
+            sans=sans,
+            not_before=not_before,
+            not_after=not_after,
             days_until_expiry=days,
         )
     except Exception:
-        return SSLStatus(active=False, mode="none", domain="",
-                         subject=None, sans=None, not_before=None,
-                         not_after=None, days_until_expiry=None)
+        return SSLStatus(
+            active=False,
+            mode="none",
+            domain="",
+            subject=None,
+            sans=None,
+            not_before=None,
+            not_after=None,
+            days_until_expiry=None,
+        )
 
 
 def remove_ssl() -> None:

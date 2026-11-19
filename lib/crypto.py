@@ -70,8 +70,8 @@ def decrypt(ciphertext: str, algorithm: str, key_material: bytes) -> str:
         if algorithm == CryptoAlgorithm.AES256GCM:
             raw = base64.b64decode(ciphertext)
             nonce = raw[:_NONCE_SIZE]
-            tag = raw[_NONCE_SIZE: _NONCE_SIZE + _GCM_TAG_SIZE]
-            ct = raw[_NONCE_SIZE + _GCM_TAG_SIZE:]
+            tag = raw[_NONCE_SIZE : _NONCE_SIZE + _GCM_TAG_SIZE]
+            ct = raw[_NONCE_SIZE + _GCM_TAG_SIZE :]
             # AESGCM.decrypt expects ciphertext+tag concatenated
             return AESGCM(key_material).decrypt(nonce, ct + tag, None).decode()
         if algorithm == CryptoAlgorithm.CHACHA20POLY1305:

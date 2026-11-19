@@ -245,9 +245,7 @@ class ZIdentityService:
         )
         return result
 
-    def delete_api_client_secret(
-        self, client_id: str, client_name: str, secret_id: str
-    ) -> bool:
+    def delete_api_client_secret(self, client_id: str, client_name: str, secret_id: str) -> bool:
         result = self.client.delete_api_client_secret(client_id, secret_id)
         audit_service.log(
             product="ZIdentity",

@@ -20,6 +20,7 @@ console = Console()
 # Time range picker
 # ------------------------------------------------------------------
 
+
 def _pick_time_range() -> int:
     """Returns hours: 2, 4, 8, or 24."""
     result = questionary.select(
@@ -38,11 +39,10 @@ def _pick_time_range() -> int:
 # Device picker helper
 # ------------------------------------------------------------------
 
+
 def _pick_device(client, hours: int) -> Optional[dict]:
     """Search for devices and let the user select one. Returns device dict or None."""
-    search = questionary.text(
-        "Search devices (hostname / email, or blank for all):"
-    ).ask()
+    search = questionary.text("Search devices (hostname / email, or blank for all):").ask()
     if search is None:
         return None
 
@@ -72,6 +72,7 @@ def _pick_device(client, hours: int) -> Optional[dict]:
 # ------------------------------------------------------------------
 # Main ZDX menu
 # ------------------------------------------------------------------
+
 
 def zdx_menu():
     client, tenant = get_zdx_client()
@@ -116,8 +117,10 @@ def zdx_menu():
 # Device Lookup & Health
 # ------------------------------------------------------------------
 
+
 def _device_health_menu(client, tenant):
     from services.zdx_service import ZDXService
+
     service = ZDXService(client, tenant_id=tenant.id)
 
     hours = _pick_time_range()
@@ -144,6 +147,7 @@ def _device_health_menu(client, tenant):
     # --- Device info panel ---
     from rich.panel import Panel
     from rich.text import Text
+
     info = Text()
     info.append(f"Device: ", style="bold")
     info.append(f"{device_name}\n")
@@ -177,12 +181,14 @@ def _device_health_menu(client, tenant):
             # Show raw health as JSON if no metrics list
             import json
             from rich.syntax import Syntax
+
             syntax = Syntax(json.dumps(health, indent=2, default=str), "json", theme="monokai")
             all_lines += render_rich_to_lines(syntax)
     else:
         all_lines += render_rich_to_lines(
-            Panel("[dim]No health metrics available for this time window.[/dim]",
-                  border_style="dim")
+            Panel(
+                "[dim]No health metrics available for this time window.[/dim]", border_style="dim"
+            )
         )
 
     # --- Events table ---
@@ -210,6 +216,7 @@ def _device_health_menu(client, tenant):
 # ------------------------------------------------------------------
 # App Performance on Device
 # ------------------------------------------------------------------
+
 
 def _app_performance_menu(client, tenant):
     hours = _pick_time_range()
@@ -251,6 +258,7 @@ def _app_performance_menu(client, tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
     # Let user pick an app for detail view
@@ -274,6 +282,7 @@ def _app_performance_menu(client, tenant):
 
     import json
     from rich.syntax import Syntax
+
     syntax = Syntax(json.dumps(detail, indent=2, default=str), "json", theme="monokai")
     scroll_view(render_rich_to_lines(syntax), header_ansi=capture_banner())
 
@@ -282,8 +291,10 @@ def _app_performance_menu(client, tenant):
 # User Lookup
 # ------------------------------------------------------------------
 
+
 def _user_lookup_menu(client, tenant):
     from services.zdx_service import ZDXService
+
     service = ZDXService(client, tenant_id=tenant.id)
 
     query = questionary.text("Search users (email / name):").ask()
@@ -318,12 +329,14 @@ def _user_lookup_menu(client, tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
 # ------------------------------------------------------------------
 # Application Scores
 # ------------------------------------------------------------------
+
 
 def _app_scores_menu(client, tenant):
     hours = _pick_time_range()
@@ -341,7 +354,9 @@ def _app_scores_menu(client, tenant):
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    table = Table(title=f"Application ZDX Scores — last {hours}h ({len(apps)} apps)", show_lines=False)
+    table = Table(
+        title=f"Application ZDX Scores — last {hours}h ({len(apps)} apps)", show_lines=False
+    )
     table.add_column("App Name")
     table.add_column("App ID", style="dim")
     table.add_column("ZDX Score")
@@ -369,12 +384,14 @@ def _app_scores_menu(client, tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
 # ------------------------------------------------------------------
 # Deep Trace
 # ------------------------------------------------------------------
+
 
 def _deep_trace_menu(client, tenant):
     hours = _pick_time_range()
@@ -440,11 +457,14 @@ def _list_deep_traces(client, tenant, hours: int):
         status = t.get("status") or "—"
         created = str(t.get("createdAt") or t.get("startTime") or "—")
         app = t.get("appName") or t.get("app") or "—"
-        status_style = "green" if status == "COMPLETE" else ("yellow" if status == "RUNNING" else "dim")
+        status_style = (
+            "green" if status == "COMPLETE" else ("yellow" if status == "RUNNING" else "dim")
+        )
         table.add_row(trace_id, session, f"[{status_style}]{status}[/{status_style}]", created, app)
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -493,6 +513,7 @@ def _start_deep_trace(client, tenant, hours: int):
     console.print(f"[green]✓ Deep trace started — ID: {trace_id}[/green]")
 
     from services import audit_service
+
     audit_service.log(
         product="ZDX",
         operation="start_deep_trace",
@@ -508,6 +529,7 @@ def _start_deep_trace(client, tenant, hours: int):
     # Poll status until complete or user exits
     if questionary.confirm("Poll trace status until complete?", default=True).ask():
         import time
+
         console.print("[dim]Polling every 5 seconds. Press Ctrl+C to stop polling.[/dim]")
         try:
             for _ in range(24):  # max 2 minutes
@@ -574,6 +596,7 @@ def _view_deep_trace(client, tenant, hours: int):
     from rich.syntax import Syntax
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     syntax = Syntax(json.dumps(detail, indent=2, default=str), "json", theme="monokai")
     scroll_view(render_rich_to_lines(syntax), header_ansi=capture_banner())
 
@@ -604,6 +627,7 @@ def _stop_deep_trace(client, tenant, hours: int):
         client.stop_deep_trace(device_id, trace_id)
         console.print(f"[green]✓ Trace '{session_name}' stopped.[/green]")
         from services import audit_service
+
         audit_service.log(
             product="ZDX",
             operation="stop_deep_trace",

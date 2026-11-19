@@ -8,7 +8,9 @@ from typing import Optional
 # Releases ship as the container deployment only; PyPI is no longer published.
 RELEASES_URL = "https://api.github.com/repos/mpreissner/zs-config/releases/latest"
 CHANGELOG_URL = "https://github.com/mpreissner/zs-config/blob/main/CHANGELOG.md"
-DEPLOY_ONELINER = "curl -fsSL https://raw.githubusercontent.com/mpreissner/zs-config/main/deploy.sh | bash"
+DEPLOY_ONELINER = (
+    "curl -fsSL https://raw.githubusercontent.com/mpreissner/zs-config/main/deploy.sh | bash"
+)
 
 _REQUEST_TIMEOUT = 5
 
@@ -22,6 +24,7 @@ def fetch_latest_version(timeout: float = _REQUEST_TIMEOUT) -> Optional[str]:
     """Return the latest published release version (no leading "v"), or None."""
     try:
         import requests
+
         resp = requests.get(
             RELEASES_URL,
             headers={"Accept": "application/vnd.github+json"},
@@ -82,6 +85,7 @@ def send_test_email(
 ) -> None:
     """Send a test email to confirm SMTP settings work. Raises on failure."""
     from cli.banner import VERSION
+
     _send_email(
         host=host,
         port=port,
@@ -157,4 +161,5 @@ def check_and_notify() -> None:
         )
     except Exception as exc:
         import logging
+
         logging.getLogger(__name__).warning("Update notification email failed: %s", exc)

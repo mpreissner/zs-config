@@ -26,6 +26,7 @@ Two invariants keep candidates from leaking into live state:
   `get_snapshot_data_current`, which feeds snapshots, the push baseline and the
   diff endpoint.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -41,7 +42,7 @@ from db.models import ZIAResource, ZPAResource
 # Constants
 # ---------------------------------------------------------------------------
 
-SOURCE_TENANT = "tenant"          # a live row imported from the tenant
+SOURCE_TENANT = "tenant"  # a live row imported from the tenant
 
 STATUS_PENDING = "pending"
 STATUS_ACCEPTED = "accepted"
@@ -80,20 +81,22 @@ def _hash(obj: Any) -> str:
 # Result types
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Candidate:
     """A staged resource, detached from the session that read it."""
+
     id: int
     tenant_id: int
     product: str
     resource_type: str
-    key: str                       # synthetic id, '<source>:<name>'
+    key: str  # synthetic id, '<source>:<name>'
     name: str
     raw_config: dict
     source: str
     status: Optional[str]
     first_seen_at: Optional[datetime]
-    live_match_id: Optional[str] = None      # live row of the same type+name, if any
+    live_match_id: Optional[str] = None  # live row of the same type+name, if any
 
     def to_item(self) -> dict:
         """Snapshot wire shape, as consumed by the push services."""
@@ -105,8 +108,8 @@ class IngestResult:
     created: int = 0
     updated: int = 0
     unchanged: int = 0
-    discarded: int = 0             # non-zero only when replace=True
-    skipped: List[str] = field(default_factory=list)   # reasons, e.g. unnamed records
+    discarded: int = 0  # non-zero only when replace=True
+    skipped: List[str] = field(default_factory=list)  # reasons, e.g. unnamed records
 
     @property
     def total(self) -> int:
@@ -116,13 +119,14 @@ class IngestResult:
 @dataclass
 class PromoteResult:
     promoted: int = 0
-    superseded: int = 0            # a live row already held the tenant id
-    missing: List[str] = field(default_factory=list)   # keys with no candidate row
+    superseded: int = 0  # a live row already held the tenant id
+    missing: List[str] = field(default_factory=list)  # keys with no candidate row
 
 
 # ---------------------------------------------------------------------------
 # Ingestion
 # ---------------------------------------------------------------------------
+
 
 def ingest(
     tenant_id: int,
@@ -207,10 +211,14 @@ def ingest(
                     setattr(row, id_col, key)
                     session.add(row)
                     result.created += 1
-                    pending_audit.append(dict(
-                        action="CREATE", resource_type=resource_type,
-                        resource_id=key, resource_name=name,
-                    ))
+                    pending_audit.append(
+                        dict(
+                            action="CREATE",
+                            resource_type=resource_type,
+                            resource_id=key,
+                            resource_name=name,
+                        )
+                    )
                 elif existing.source == SOURCE_TENANT:
                     # Should not happen: a live id never looks like '<source>:<name>'.
                     result.skipped.append(f"{resource_type}/{name}: id collides with a live row")
@@ -225,10 +233,14 @@ def ingest(
                         changed = True
                     if changed:
                         result.updated += 1
-                        pending_audit.append(dict(
-                            action="UPDATE", resource_type=resource_type,
-                            resource_id=key, resource_name=name,
-                        ))
+                        pending_audit.append(
+                            dict(
+                                action="UPDATE",
+                                resource_type=resource_type,
+                                resource_id=key,
+                                resource_name=name,
+                            )
+                        )
                     else:
                         result.unchanged += 1
 
@@ -240,6 +252,7 @@ def ingest(
 # ---------------------------------------------------------------------------
 # Reading
 # ---------------------------------------------------------------------------
+
 
 def list_candidates(
     tenant_id: int,
@@ -354,8 +367,11 @@ def accepted_resources(
     """
     out: Dict[str, List[dict]] = {}
     for cand in list_candidates(
-        tenant_id, product, status=STATUS_ACCEPTED,
-        resource_type=resource_type, source=source,
+        tenant_id,
+        product,
+        status=STATUS_ACCEPTED,
+        resource_type=resource_type,
+        source=source,
     ):
         out.setdefault(cand.resource_type, []).append(cand.to_item())
     return out
@@ -364,6 +380,7 @@ def accepted_resources(
 # ---------------------------------------------------------------------------
 # State transitions
 # ---------------------------------------------------------------------------
+
 
 def set_status(
     tenant_id: int,
@@ -399,10 +416,14 @@ def set_status(
             if row.candidate_status == status:
                 continue
             row.candidate_status = status
-            pending_audit.append(dict(
-                action="UPDATE", resource_type=row.resource_type,
-                resource_id=getattr(row, id_col), resource_name=row.name,
-            ))
+            pending_audit.append(
+                dict(
+                    action="UPDATE",
+                    resource_type=row.resource_type,
+                    resource_id=getattr(row, id_col),
+                    resource_name=row.name,
+                )
+            )
 
     _audit_many(product, f"candidate_{status}", tenant_id, pending_audit)
     return len(pending_audit)
@@ -441,10 +462,14 @@ def discard(
             q = q.filter(model.source == source)
 
         for row in q.all():
-            pending_audit.append(dict(
-                action="DELETE", resource_type=row.resource_type,
-                resource_id=getattr(row, id_col), resource_name=row.name,
-            ))
+            pending_audit.append(
+                dict(
+                    action="DELETE",
+                    resource_type=row.resource_type,
+                    resource_id=getattr(row, id_col),
+                    resource_name=row.name,
+                )
+            )
             session.delete(row)
 
     _audit_many(product, "candidate_discard", tenant_id, pending_audit)
@@ -528,6 +553,7 @@ def promote(
 # Internals
 # ---------------------------------------------------------------------------
 
+
 def _audit_many(
     product: str,
     operation: str,
@@ -543,14 +569,17 @@ def _audit_many(
     if not entries:
         return
     from services import audit_service
-    audit_service.log_many([
-        dict(
-            product=product.upper(),
-            operation=operation,
-            status="SUCCESS",
-            tenant_id=tenant_id,
-            details={"source": source} if source else None,
-            **entry,
-        )
-        for entry in entries
-    ])
+
+    audit_service.log_many(
+        [
+            dict(
+                product=product.upper(),
+                operation=operation,
+                status="SUCCESS",
+                tenant_id=tenant_id,
+                details={"source": source} if source else None,
+                **entry,
+            )
+            for entry in entries
+        ]
+    )

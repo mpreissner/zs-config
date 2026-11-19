@@ -11,18 +11,19 @@ from typing import Callable, Optional
 
 import requests
 
-_CLIENT_ID    = "Ov23liBDXNJZC4YC0jnE"
-_TOKEN_FILE   = Path.home() / ".config" / "zs-config" / "github_token"
-_DEVICE_URL   = "https://github.com/login/device/code"
-_TOKEN_URL    = "https://github.com/login/oauth/access_token"
-_SCOPE        = "repo"
-_API_URL      = "https://api.github.com"
+_CLIENT_ID = "Ov23liBDXNJZC4YC0jnE"
+_TOKEN_FILE = Path.home() / ".config" / "zs-config" / "github_token"
+_DEVICE_URL = "https://github.com/login/device/code"
+_TOKEN_URL = "https://github.com/login/oauth/access_token"
+_SCOPE = "repo"
+_API_URL = "https://api.github.com"
 _PLUGINS_REPO = "mpreissner/zs-plugins"  # private repo; access = authorised user
 
 
 # ---------------------------------------------------------------------------
 # Token storage
 # ---------------------------------------------------------------------------
+
 
 def get_token() -> Optional[str]:
     """Return the stored GitHub access token, or None if not authenticated."""
@@ -51,6 +52,7 @@ def logout() -> None:
 # Token verification
 # ---------------------------------------------------------------------------
 
+
 def verify_token(token: str) -> tuple[bool, str]:
     """Check token against the GitHub API.
 
@@ -74,6 +76,7 @@ def verify_token(token: str) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 # Repo access check
 # ---------------------------------------------------------------------------
+
 
 def has_repo_access(token: str) -> tuple[bool, str]:
     """Check whether the token holder can access the plugin repository.
@@ -104,6 +107,7 @@ def has_repo_access(token: str) -> tuple[bool, str]:
 # Device Flow authentication
 # ---------------------------------------------------------------------------
 
+
 def start_device_flow() -> tuple[Optional[dict], Optional[str]]:
     """Request device + user codes from GitHub.
 
@@ -127,17 +131,17 @@ def start_device_flow() -> tuple[Optional[dict], Optional[str]]:
         return None, f"Failed to reach GitHub: {exc}"
 
     device_code = data.get("device_code")
-    user_code   = data.get("user_code")
+    user_code = data.get("user_code")
 
     if not device_code or not user_code:
         return None, f"Unexpected response from GitHub: {data}"
 
     return {
-        "device_code":      device_code,
-        "user_code":        user_code,
+        "device_code": device_code,
+        "user_code": user_code,
         "verification_uri": data.get("verification_uri", "https://github.com/login/device"),
-        "expires_in":       int(data.get("expires_in", 900)),
-        "interval":         int(data.get("interval", 5)),
+        "expires_in": int(data.get("expires_in", 900)),
+        "interval": int(data.get("interval", 5)),
     }, None
 
 
@@ -163,9 +167,9 @@ def poll_device_flow(
             poll = requests.post(
                 _TOKEN_URL,
                 data={
-                    "client_id":   _CLIENT_ID,
+                    "client_id": _CLIENT_ID,
                     "device_code": device_code,
-                    "grant_type":  "urn:ietf:params:oauth:grant-type:device_code",
+                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
                 },
                 headers={"Accept": "application/json"},
                 timeout=10,

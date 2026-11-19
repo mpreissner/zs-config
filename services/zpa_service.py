@@ -193,8 +193,12 @@ class ZPAService:
     def list_certificates(self) -> List[Dict]:
         result = self.client.list_certificates()
         audit_service.log(
-            product="ZPA", operation="list_certificates", action="READ", status="SUCCESS",
-            tenant_id=self.tenant_id, resource_type="certificate",
+            product="ZPA",
+            operation="list_certificates",
+            action="READ",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="certificate",
             details={"count": len(result)},
         )
         return result
@@ -202,8 +206,12 @@ class ZPAService:
     def list_certificates_from_db(self, q: Optional[str] = None) -> List[Dict]:
         result = _db_list(self.tenant_id, "certificate", q)
         audit_service.log(
-            product="ZPA", operation="list_certificates", action="READ", status="SUCCESS",
-            tenant_id=self.tenant_id, resource_type="certificate",
+            product="ZPA",
+            operation="list_certificates",
+            action="READ",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="certificate",
             details={"count": len(result), "source": "db"},
         )
         return result
@@ -232,9 +240,14 @@ class ZPAService:
     def get_application(self, app_id: str) -> Dict:
         result = self.client.get_application(app_id)
         audit_service.log(
-            product="ZPA", operation="get_application", action="READ", status="SUCCESS",
-            tenant_id=self.tenant_id, resource_type="application",
-            resource_id=app_id, resource_name=result.get("name"),
+            product="ZPA",
+            operation="get_application",
+            action="READ",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="application",
+            resource_id=app_id,
+            resource_name=result.get("name"),
         )
         return result
 
@@ -305,8 +318,12 @@ class ZPAService:
     def list_applications(self, app_type: str = "BROWSER_ACCESS") -> List[Dict]:
         result = self.client.list_applications(app_type)
         audit_service.log(
-            product="ZPA", operation="list_applications", action="READ", status="SUCCESS",
-            tenant_id=self.tenant_id, resource_type="application",
+            product="ZPA",
+            operation="list_applications",
+            action="READ",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="application",
             details={"count": len(result), "app_type": app_type},
         )
         return result
@@ -314,8 +331,12 @@ class ZPAService:
     def list_applications_from_db(self, q: Optional[str] = None) -> List[Dict]:
         result = _db_list(self.tenant_id, "application", q)
         audit_service.log(
-            product="ZPA", operation="list_applications", action="READ", status="SUCCESS",
-            tenant_id=self.tenant_id, resource_type="application",
+            product="ZPA",
+            operation="list_applications",
+            action="READ",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="application",
             details={"count": len(result), "source": "db"},
         )
         return result
@@ -327,8 +348,12 @@ class ZPAService:
     def list_segment_groups(self) -> List[Dict]:
         result = _db_list(self.tenant_id, "segment_group")
         audit_service.log(
-            product="ZPA", operation="list_segment_groups", action="READ", status="SUCCESS",
-            tenant_id=self.tenant_id, resource_type="segment_group",
+            product="ZPA",
+            operation="list_segment_groups",
+            action="READ",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="segment_group",
             details={"count": len(result)},
         )
         return result
@@ -343,8 +368,12 @@ class ZPAService:
     def list_server_groups(self) -> List[Dict]:
         result = _db_list(self.tenant_id, "server_group")
         audit_service.log(
-            product="ZPA", operation="list_server_groups", action="READ", status="SUCCESS",
-            tenant_id=self.tenant_id, resource_type="server_group",
+            product="ZPA",
+            operation="list_server_groups",
+            action="READ",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="server_group",
             details={"count": len(result)},
         )
         return result
@@ -365,14 +394,19 @@ class ZPAService:
     def list_connectors_from_db(self, q: Optional[str] = None) -> List[Dict]:
         result = _db_list(self.tenant_id, "app_connector", q)
         audit_service.log(
-            product="ZPA", operation="list_app_connectors", action="READ", status="SUCCESS",
-            tenant_id=self.tenant_id, resource_type="app_connector",
+            product="ZPA",
+            operation="list_app_connectors",
+            action="READ",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="app_connector",
             details={"count": len(result)},
         )
         return result
 
     def set_connector_enabled(self, connector_id: str, enabled: bool) -> Dict:
         from services.zpa_import_service import ZPAImportService
+
         connector_name = connector_id
         try:
             config = self.client.get_connector(connector_id)
@@ -382,23 +416,34 @@ class ZPAService:
             ZPAImportService(self.client, self.tenant_id).run(resource_types=["app_connector"])
             row = self._get_db_row("app_connector", connector_id)
             audit_service.log(
-                product="ZPA", operation="toggle_connector", action="UPDATE",
-                status="SUCCESS", tenant_id=self.tenant_id, resource_type="app_connector",
-                resource_id=connector_id, resource_name=connector_name,
+                product="ZPA",
+                operation="toggle_connector",
+                action="UPDATE",
+                status="SUCCESS",
+                tenant_id=self.tenant_id,
+                resource_type="app_connector",
+                resource_id=connector_id,
+                resource_name=connector_name,
                 details={"enabled": enabled},
             )
             return row
         except Exception as exc:
             audit_service.log(
-                product="ZPA", operation="toggle_connector", action="UPDATE",
-                status="FAILURE", tenant_id=self.tenant_id, resource_type="app_connector",
-                resource_id=connector_id, resource_name=connector_name,
+                product="ZPA",
+                operation="toggle_connector",
+                action="UPDATE",
+                status="FAILURE",
+                tenant_id=self.tenant_id,
+                resource_type="app_connector",
+                resource_id=connector_id,
+                resource_name=connector_name,
                 error_message=str(exc),
             )
             raise
 
     def rename_connector(self, connector_id: str, new_name: str) -> Dict:
         from services.zpa_import_service import ZPAImportService
+
         old_name = connector_id
         try:
             config = self.client.get_connector(connector_id)
@@ -408,17 +453,27 @@ class ZPAService:
             ZPAImportService(self.client, self.tenant_id).run(resource_types=["app_connector"])
             row = self._get_db_row("app_connector", connector_id)
             audit_service.log(
-                product="ZPA", operation="rename_connector", action="UPDATE",
-                status="SUCCESS", tenant_id=self.tenant_id, resource_type="app_connector",
-                resource_id=connector_id, resource_name=new_name,
+                product="ZPA",
+                operation="rename_connector",
+                action="UPDATE",
+                status="SUCCESS",
+                tenant_id=self.tenant_id,
+                resource_type="app_connector",
+                resource_id=connector_id,
+                resource_name=new_name,
                 details={"old_name": old_name, "new_name": new_name},
             )
             return row
         except Exception as exc:
             audit_service.log(
-                product="ZPA", operation="rename_connector", action="UPDATE",
-                status="FAILURE", tenant_id=self.tenant_id, resource_type="app_connector",
-                resource_id=connector_id, resource_name=old_name,
+                product="ZPA",
+                operation="rename_connector",
+                action="UPDATE",
+                status="FAILURE",
+                tenant_id=self.tenant_id,
+                resource_type="app_connector",
+                resource_id=connector_id,
+                resource_name=old_name,
                 error_message=str(exc),
             )
             raise
@@ -428,24 +483,36 @@ class ZPAService:
             self.client.delete_connector(connector_id)
         except Exception as exc:
             audit_service.log(
-                product="ZPA", operation="delete_connector", action="DELETE",
-                status="FAILURE", tenant_id=self.tenant_id, resource_type="app_connector",
-                resource_id=connector_id, resource_name=connector_name,
+                product="ZPA",
+                operation="delete_connector",
+                action="DELETE",
+                status="FAILURE",
+                tenant_id=self.tenant_id,
+                resource_type="app_connector",
+                resource_id=connector_id,
+                resource_name=connector_name,
                 error_message=str(exc),
             )
             raise
         with get_session() as session:
             rec = (
                 session.query(ZPAResource)
-                .filter_by(tenant_id=self.tenant_id, resource_type="app_connector", zpa_id=connector_id)
+                .filter_by(
+                    tenant_id=self.tenant_id, resource_type="app_connector", zpa_id=connector_id
+                )
                 .first()
             )
             if rec:
                 rec.is_deleted = True
         audit_service.log(
-            product="ZPA", operation="delete_connector", action="DELETE",
-            status="SUCCESS", tenant_id=self.tenant_id, resource_type="app_connector",
-            resource_id=connector_id, resource_name=connector_name,
+            product="ZPA",
+            operation="delete_connector",
+            action="DELETE",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="app_connector",
+            resource_id=connector_id,
+            resource_name=connector_name,
         )
         return True
 
@@ -456,58 +523,88 @@ class ZPAService:
     def list_connector_groups_from_db(self, q: Optional[str] = None) -> List[Dict]:
         result = _db_list(self.tenant_id, "app_connector_group", q)
         audit_service.log(
-            product="ZPA", operation="list_connector_groups", action="READ", status="SUCCESS",
-            tenant_id=self.tenant_id, resource_type="app_connector_group",
+            product="ZPA",
+            operation="list_connector_groups",
+            action="READ",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="app_connector_group",
             details={"count": len(result)},
         )
         return result
 
     def create_connector_group(self, name: str, description: Optional[str] = None) -> Dict:
         from services.zpa_import_service import ZPAImportService
+
         kwargs: Dict = {"name": name, "enabled": True}
         if description:
             kwargs["description"] = description
         try:
             result = self.client.create_connector_group(**kwargs)
             group_id = str(result.get("id", ""))
-            ZPAImportService(self.client, self.tenant_id).run(resource_types=["app_connector_group"])
+            ZPAImportService(self.client, self.tenant_id).run(
+                resource_types=["app_connector_group"]
+            )
             row = self._get_db_row("app_connector_group", group_id)
             audit_service.log(
-                product="ZPA", operation="create_connector_group", action="CREATE",
-                status="SUCCESS", tenant_id=self.tenant_id, resource_type="app_connector_group",
-                resource_id=group_id, resource_name=name,
+                product="ZPA",
+                operation="create_connector_group",
+                action="CREATE",
+                status="SUCCESS",
+                tenant_id=self.tenant_id,
+                resource_type="app_connector_group",
+                resource_id=group_id,
+                resource_name=name,
             )
             return row
         except Exception as exc:
             audit_service.log(
-                product="ZPA", operation="create_connector_group", action="CREATE",
-                status="FAILURE", tenant_id=self.tenant_id, resource_type="app_connector_group",
-                resource_name=name, error_message=str(exc),
+                product="ZPA",
+                operation="create_connector_group",
+                action="CREATE",
+                status="FAILURE",
+                tenant_id=self.tenant_id,
+                resource_type="app_connector_group",
+                resource_name=name,
+                error_message=str(exc),
             )
             raise
 
     def set_connector_group_enabled(self, group_id: str, enabled: bool) -> Dict:
         from services.zpa_import_service import ZPAImportService
+
         group_name = group_id
         try:
             config = self.client.get_connector_group(group_id)
             group_name = config.get("name", group_id)
             config["enabled"] = enabled
             self.client.update_connector_group(group_id, config)
-            ZPAImportService(self.client, self.tenant_id).run(resource_types=["app_connector_group"])
+            ZPAImportService(self.client, self.tenant_id).run(
+                resource_types=["app_connector_group"]
+            )
             row = self._get_db_row("app_connector_group", group_id)
             audit_service.log(
-                product="ZPA", operation="toggle_connector_group", action="UPDATE",
-                status="SUCCESS", tenant_id=self.tenant_id, resource_type="app_connector_group",
-                resource_id=group_id, resource_name=group_name,
+                product="ZPA",
+                operation="toggle_connector_group",
+                action="UPDATE",
+                status="SUCCESS",
+                tenant_id=self.tenant_id,
+                resource_type="app_connector_group",
+                resource_id=group_id,
+                resource_name=group_name,
                 details={"enabled": enabled},
             )
             return row
         except Exception as exc:
             audit_service.log(
-                product="ZPA", operation="toggle_connector_group", action="UPDATE",
-                status="FAILURE", tenant_id=self.tenant_id, resource_type="app_connector_group",
-                resource_id=group_id, resource_name=group_name,
+                product="ZPA",
+                operation="toggle_connector_group",
+                action="UPDATE",
+                status="FAILURE",
+                tenant_id=self.tenant_id,
+                resource_type="app_connector_group",
+                resource_id=group_id,
+                resource_name=group_name,
                 error_message=str(exc),
             )
             raise
@@ -517,24 +614,36 @@ class ZPAService:
             self.client.delete_connector_group(group_id)
         except Exception as exc:
             audit_service.log(
-                product="ZPA", operation="delete_connector_group", action="DELETE",
-                status="FAILURE", tenant_id=self.tenant_id, resource_type="app_connector_group",
-                resource_id=group_id, resource_name=group_name,
+                product="ZPA",
+                operation="delete_connector_group",
+                action="DELETE",
+                status="FAILURE",
+                tenant_id=self.tenant_id,
+                resource_type="app_connector_group",
+                resource_id=group_id,
+                resource_name=group_name,
                 error_message=str(exc),
             )
             raise
         with get_session() as session:
             rec = (
                 session.query(ZPAResource)
-                .filter_by(tenant_id=self.tenant_id, resource_type="app_connector_group", zpa_id=group_id)
+                .filter_by(
+                    tenant_id=self.tenant_id, resource_type="app_connector_group", zpa_id=group_id
+                )
                 .first()
             )
             if rec:
                 rec.is_deleted = True
         audit_service.log(
-            product="ZPA", operation="delete_connector_group", action="DELETE",
-            status="SUCCESS", tenant_id=self.tenant_id, resource_type="app_connector_group",
-            resource_id=group_id, resource_name=group_name,
+            product="ZPA",
+            operation="delete_connector_group",
+            action="DELETE",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="app_connector_group",
+            resource_id=group_id,
+            resource_name=group_name,
         )
         return True
 
@@ -551,14 +660,19 @@ class ZPAService:
     def list_service_edges_from_db(self, q: Optional[str] = None) -> List[Dict]:
         result = _db_list(self.tenant_id, "service_edge", q)
         audit_service.log(
-            product="ZPA", operation="list_service_edges", action="READ", status="SUCCESS",
-            tenant_id=self.tenant_id, resource_type="service_edge",
+            product="ZPA",
+            operation="list_service_edges",
+            action="READ",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="service_edge",
             details={"count": len(result)},
         )
         return result
 
     def set_service_edge_enabled(self, edge_id: str, enabled: bool) -> Dict:
         from services.zpa_import_service import ZPAImportService
+
         edge_name = edge_id
         try:
             config = self.client.get_service_edge(edge_id)
@@ -568,17 +682,27 @@ class ZPAService:
             ZPAImportService(self.client, self.tenant_id).run(resource_types=["service_edge"])
             row = self._get_db_row("service_edge", edge_id)
             audit_service.log(
-                product="ZPA", operation="toggle_service_edge", action="UPDATE",
-                status="SUCCESS", tenant_id=self.tenant_id, resource_type="service_edge",
-                resource_id=edge_id, resource_name=edge_name,
+                product="ZPA",
+                operation="toggle_service_edge",
+                action="UPDATE",
+                status="SUCCESS",
+                tenant_id=self.tenant_id,
+                resource_type="service_edge",
+                resource_id=edge_id,
+                resource_name=edge_name,
                 details={"enabled": enabled},
             )
             return row
         except Exception as exc:
             audit_service.log(
-                product="ZPA", operation="toggle_service_edge", action="UPDATE",
-                status="FAILURE", tenant_id=self.tenant_id, resource_type="service_edge",
-                resource_id=edge_id, resource_name=edge_name,
+                product="ZPA",
+                operation="toggle_service_edge",
+                action="UPDATE",
+                status="FAILURE",
+                tenant_id=self.tenant_id,
+                resource_type="service_edge",
+                resource_id=edge_id,
+                resource_name=edge_name,
                 error_message=str(exc),
             )
             raise
@@ -596,8 +720,12 @@ class ZPAService:
     def list_pra_portals_from_db(self, q: Optional[str] = None) -> List[Dict]:
         result = _db_list(self.tenant_id, "pra_portal", q)
         audit_service.log(
-            product="ZPA", operation="list_pra_portals", action="READ", status="SUCCESS",
-            tenant_id=self.tenant_id, resource_type="pra_portal",
+            product="ZPA",
+            operation="list_pra_portals",
+            action="READ",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="pra_portal",
             details={"count": len(result)},
         )
         return result
@@ -613,6 +741,7 @@ class ZPAService:
         user_notification: Optional[str] = None,
     ) -> Dict:
         from services.zpa_import_service import ZPAImportService
+
         kwargs: Dict = {
             "name": name,
             "domain": domain,
@@ -630,22 +759,33 @@ class ZPAService:
             ZPAImportService(self.client, self.tenant_id).run(resource_types=["pra_portal"])
             row = self._get_db_row("pra_portal", portal_id)
             audit_service.log(
-                product="ZPA", operation="create_pra_portal", action="CREATE",
-                status="SUCCESS", tenant_id=self.tenant_id, resource_type="pra_portal",
-                resource_id=portal_id, resource_name=name,
+                product="ZPA",
+                operation="create_pra_portal",
+                action="CREATE",
+                status="SUCCESS",
+                tenant_id=self.tenant_id,
+                resource_type="pra_portal",
+                resource_id=portal_id,
+                resource_name=name,
                 details={"domain": domain, "certificate_id": certificate_id},
             )
             return row
         except Exception as exc:
             audit_service.log(
-                product="ZPA", operation="create_pra_portal", action="CREATE",
-                status="FAILURE", tenant_id=self.tenant_id, resource_type="pra_portal",
-                resource_name=name, error_message=str(exc),
+                product="ZPA",
+                operation="create_pra_portal",
+                action="CREATE",
+                status="FAILURE",
+                tenant_id=self.tenant_id,
+                resource_type="pra_portal",
+                resource_name=name,
+                error_message=str(exc),
             )
             raise
 
     def set_pra_portal_enabled(self, portal_id: str, enabled: bool) -> Dict:
         from services.zpa_import_service import ZPAImportService
+
         portal_name = portal_id
         try:
             config = self.client.get_pra_portal(portal_id)
@@ -655,17 +795,27 @@ class ZPAService:
             ZPAImportService(self.client, self.tenant_id).run(resource_types=["pra_portal"])
             row = self._get_db_row("pra_portal", portal_id)
             audit_service.log(
-                product="ZPA", operation="toggle_pra_portal", action="UPDATE",
-                status="SUCCESS", tenant_id=self.tenant_id, resource_type="pra_portal",
-                resource_id=portal_id, resource_name=portal_name,
+                product="ZPA",
+                operation="toggle_pra_portal",
+                action="UPDATE",
+                status="SUCCESS",
+                tenant_id=self.tenant_id,
+                resource_type="pra_portal",
+                resource_id=portal_id,
+                resource_name=portal_name,
                 details={"enabled": enabled},
             )
             return row
         except Exception as exc:
             audit_service.log(
-                product="ZPA", operation="toggle_pra_portal", action="UPDATE",
-                status="FAILURE", tenant_id=self.tenant_id, resource_type="pra_portal",
-                resource_id=portal_id, resource_name=portal_name,
+                product="ZPA",
+                operation="toggle_pra_portal",
+                action="UPDATE",
+                status="FAILURE",
+                tenant_id=self.tenant_id,
+                resource_type="pra_portal",
+                resource_id=portal_id,
+                resource_name=portal_name,
                 error_message=str(exc),
             )
             raise
@@ -675,9 +825,14 @@ class ZPAService:
             self.client.delete_pra_portal(portal_id)
         except Exception as exc:
             audit_service.log(
-                product="ZPA", operation="delete_pra_portal", action="DELETE",
-                status="FAILURE", tenant_id=self.tenant_id, resource_type="pra_portal",
-                resource_id=portal_id, resource_name=portal_name,
+                product="ZPA",
+                operation="delete_pra_portal",
+                action="DELETE",
+                status="FAILURE",
+                tenant_id=self.tenant_id,
+                resource_type="pra_portal",
+                resource_id=portal_id,
+                resource_name=portal_name,
                 error_message=str(exc),
             )
             raise
@@ -690,9 +845,14 @@ class ZPAService:
             if rec:
                 rec.is_deleted = True
         audit_service.log(
-            product="ZPA", operation="delete_pra_portal", action="DELETE",
-            status="SUCCESS", tenant_id=self.tenant_id, resource_type="pra_portal",
-            resource_id=portal_id, resource_name=portal_name,
+            product="ZPA",
+            operation="delete_pra_portal",
+            action="DELETE",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="pra_portal",
+            resource_id=portal_id,
+            resource_name=portal_name,
         )
         return True
 
@@ -703,14 +863,19 @@ class ZPAService:
     def list_user_portals_from_db(self, q: Optional[str] = None) -> List[Dict]:
         result = _db_list(self.tenant_id, "user_portal", q)
         audit_service.log(
-            product="ZPA", operation="list_user_portals", action="READ", status="SUCCESS",
-            tenant_id=self.tenant_id, resource_type="user_portal",
+            product="ZPA",
+            operation="list_user_portals",
+            action="READ",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="user_portal",
             details={"count": len(result), "source": "db"},
         )
         return result
 
     def set_user_portal_enabled(self, portal_id: str, enabled: bool) -> Dict:
         from services.zpa_import_service import ZPAImportService
+
         portal_name = portal_id
         try:
             config = self.client.get_user_portal(portal_id)
@@ -720,17 +885,27 @@ class ZPAService:
             ZPAImportService(self.client, self.tenant_id).run(resource_types=["user_portal"])
             row = self._get_db_row("user_portal", portal_id)
             audit_service.log(
-                product="ZPA", operation="toggle_user_portal", action="UPDATE",
-                status="SUCCESS", tenant_id=self.tenant_id, resource_type="user_portal",
-                resource_id=portal_id, resource_name=portal_name,
+                product="ZPA",
+                operation="toggle_user_portal",
+                action="UPDATE",
+                status="SUCCESS",
+                tenant_id=self.tenant_id,
+                resource_type="user_portal",
+                resource_id=portal_id,
+                resource_name=portal_name,
                 details={"enabled": enabled},
             )
             return row
         except Exception as exc:
             audit_service.log(
-                product="ZPA", operation="toggle_user_portal", action="UPDATE",
-                status="FAILURE", tenant_id=self.tenant_id, resource_type="user_portal",
-                resource_id=portal_id, resource_name=portal_name,
+                product="ZPA",
+                operation="toggle_user_portal",
+                action="UPDATE",
+                status="FAILURE",
+                tenant_id=self.tenant_id,
+                resource_type="user_portal",
+                resource_id=portal_id,
+                resource_name=portal_name,
                 error_message=str(exc),
             )
             raise
@@ -740,9 +915,14 @@ class ZPAService:
             self.client.delete_user_portal(portal_id)
         except Exception as exc:
             audit_service.log(
-                product="ZPA", operation="delete_user_portal", action="DELETE",
-                status="FAILURE", tenant_id=self.tenant_id, resource_type="user_portal",
-                resource_id=portal_id, resource_name=portal_name,
+                product="ZPA",
+                operation="delete_user_portal",
+                action="DELETE",
+                status="FAILURE",
+                tenant_id=self.tenant_id,
+                resource_type="user_portal",
+                resource_id=portal_id,
+                resource_name=portal_name,
                 error_message=str(exc),
             )
             raise
@@ -755,9 +935,14 @@ class ZPAService:
             if rec:
                 rec.is_deleted = True
         audit_service.log(
-            product="ZPA", operation="delete_user_portal", action="DELETE",
-            status="SUCCESS", tenant_id=self.tenant_id, resource_type="user_portal",
-            resource_id=portal_id, resource_name=portal_name,
+            product="ZPA",
+            operation="delete_user_portal",
+            action="DELETE",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="user_portal",
+            resource_id=portal_id,
+            resource_name=portal_name,
         )
         return True
 
@@ -768,14 +953,19 @@ class ZPAService:
     def list_pra_consoles_from_db(self, q: Optional[str] = None) -> List[Dict]:
         result = _db_list(self.tenant_id, "pra_console", q)
         audit_service.log(
-            product="ZPA", operation="list_pra_consoles", action="READ", status="SUCCESS",
-            tenant_id=self.tenant_id, resource_type="pra_console",
+            product="ZPA",
+            operation="list_pra_consoles",
+            action="READ",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="pra_console",
             details={"count": len(result)},
         )
         return result
 
     def set_pra_console_enabled(self, console_id: str, enabled: bool) -> Dict:
         from services.zpa_import_service import ZPAImportService
+
         console_name = console_id
         try:
             config = self.client.get_pra_console(console_id)
@@ -785,17 +975,27 @@ class ZPAService:
             ZPAImportService(self.client, self.tenant_id).run(resource_types=["pra_console"])
             row = self._get_db_row("pra_console", console_id)
             audit_service.log(
-                product="ZPA", operation="toggle_pra_console", action="UPDATE",
-                status="SUCCESS", tenant_id=self.tenant_id, resource_type="pra_console",
-                resource_id=console_id, resource_name=console_name,
+                product="ZPA",
+                operation="toggle_pra_console",
+                action="UPDATE",
+                status="SUCCESS",
+                tenant_id=self.tenant_id,
+                resource_type="pra_console",
+                resource_id=console_id,
+                resource_name=console_name,
                 details={"enabled": enabled},
             )
             return row
         except Exception as exc:
             audit_service.log(
-                product="ZPA", operation="toggle_pra_console", action="UPDATE",
-                status="FAILURE", tenant_id=self.tenant_id, resource_type="pra_console",
-                resource_id=console_id, resource_name=console_name,
+                product="ZPA",
+                operation="toggle_pra_console",
+                action="UPDATE",
+                status="FAILURE",
+                tenant_id=self.tenant_id,
+                resource_type="pra_console",
+                resource_id=console_id,
+                resource_name=console_name,
                 error_message=str(exc),
             )
             raise
@@ -805,9 +1005,14 @@ class ZPAService:
             self.client.delete_pra_console(console_id)
         except Exception as exc:
             audit_service.log(
-                product="ZPA", operation="delete_pra_console", action="DELETE",
-                status="FAILURE", tenant_id=self.tenant_id, resource_type="pra_console",
-                resource_id=console_id, resource_name=console_name,
+                product="ZPA",
+                operation="delete_pra_console",
+                action="DELETE",
+                status="FAILURE",
+                tenant_id=self.tenant_id,
+                resource_type="pra_console",
+                resource_id=console_id,
+                resource_name=console_name,
                 error_message=str(exc),
             )
             raise
@@ -820,9 +1025,14 @@ class ZPAService:
             if rec:
                 rec.is_deleted = True
         audit_service.log(
-            product="ZPA", operation="delete_pra_console", action="DELETE",
-            status="SUCCESS", tenant_id=self.tenant_id, resource_type="pra_console",
-            resource_id=console_id, resource_name=console_name,
+            product="ZPA",
+            operation="delete_pra_console",
+            action="DELETE",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="pra_console",
+            resource_id=console_id,
+            resource_name=console_name,
         )
         return True
 
@@ -834,7 +1044,9 @@ class ZPAService:
         with get_session() as session:
             rows = (
                 session.query(ZPAResource)
-                .filter_by(tenant_id=self.tenant_id, resource_type="policy_access", is_deleted=False)
+                .filter_by(
+                    tenant_id=self.tenant_id, resource_type="policy_access", is_deleted=False
+                )
                 .all()
             )
             result = [{"zpa_id": r.zpa_id, "name": r.name, **(r.raw_config or {})} for r in rows]
@@ -875,7 +1087,9 @@ class ZPAService:
 
             rows = (
                 session.query(ZPAResource)
-                .filter_by(tenant_id=self.tenant_id, resource_type="policy_access", is_deleted=False)
+                .filter_by(
+                    tenant_id=self.tenant_id, resource_type="policy_access", is_deleted=False
+                )
                 .all()
             )
             rules = [{"zpa_id": r.zpa_id, "name": r.name, **(r.raw_config or {})} for r in rows]
@@ -905,8 +1119,12 @@ class ZPAService:
     def list_saml_attributes_from_db(self, q: Optional[str] = None) -> List[Dict]:
         result = _db_list(self.tenant_id, "saml_attribute", q)
         audit_service.log(
-            product="ZPA", operation="list_saml_attributes", action="READ", status="SUCCESS",
-            tenant_id=self.tenant_id, resource_type="saml_attribute",
+            product="ZPA",
+            operation="list_saml_attributes",
+            action="READ",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="saml_attribute",
             details={"count": len(result)},
         )
         return result
@@ -914,8 +1132,12 @@ class ZPAService:
     def list_scim_attributes_from_db(self, q: Optional[str] = None) -> List[Dict]:
         result = _db_list(self.tenant_id, "scim_attribute", q)
         audit_service.log(
-            product="ZPA", operation="list_scim_attributes", action="READ", status="SUCCESS",
-            tenant_id=self.tenant_id, resource_type="scim_attribute",
+            product="ZPA",
+            operation="list_scim_attributes",
+            action="READ",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="scim_attribute",
             details={"count": len(result)},
         )
         return result
@@ -923,8 +1145,12 @@ class ZPAService:
     def list_scim_groups_from_db(self, q: Optional[str] = None) -> List[Dict]:
         result = _db_list(self.tenant_id, "scim_group", q)
         audit_service.log(
-            product="ZPA", operation="list_scim_groups", action="READ", status="SUCCESS",
-            tenant_id=self.tenant_id, resource_type="scim_group",
+            product="ZPA",
+            operation="list_scim_groups",
+            action="READ",
+            status="SUCCESS",
+            tenant_id=self.tenant_id,
+            resource_type="scim_group",
             details={"count": len(result)},
         )
         return result
@@ -987,12 +1213,16 @@ class ZPAService:
             return
         try:
             with get_session() as session:
-                old = session.query(Certificate).filter_by(
-                    tenant_id=self.tenant_id, zpa_cert_id=old_zpa_id, is_active=True
-                ).first()
-                new = session.query(Certificate).filter_by(
-                    tenant_id=self.tenant_id, zpa_cert_id=new_zpa_id
-                ).first()
+                old = (
+                    session.query(Certificate)
+                    .filter_by(tenant_id=self.tenant_id, zpa_cert_id=old_zpa_id, is_active=True)
+                    .first()
+                )
+                new = (
+                    session.query(Certificate)
+                    .filter_by(tenant_id=self.tenant_id, zpa_cert_id=new_zpa_id)
+                    .first()
+                )
                 if old:
                     old.is_active = False
                     if new:

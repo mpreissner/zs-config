@@ -10,8 +10,11 @@ from pydantic import BaseModel
 from db.database import get_session, get_setting
 from db.models import User, WebAuthnCredential
 from api.auth_utils import (
-    verify_password, hash_password, issue_access_token,
-    issue_refresh_token, decode_token,
+    verify_password,
+    hash_password,
+    issue_access_token,
+    issue_refresh_token,
+    decode_token,
 )
 from api.dependencies import require_auth, AuthUser
 from services.role_service import available_roles, resolve_active
@@ -38,7 +41,10 @@ def _sweep_challenges() -> None:
 
 def _store_challenge(key: str, challenge: bytes) -> None:
     _sweep_challenges()
-    _challenge_store[key] = (challenge, datetime.utcnow() + timedelta(seconds=_CHALLENGE_TTL_SECONDS))
+    _challenge_store[key] = (
+        challenge,
+        datetime.utcnow() + timedelta(seconds=_CHALLENGE_TTL_SECONDS),
+    )
 
 
 def _pop_challenge(key: str) -> Optional[bytes]:
@@ -98,13 +104,19 @@ def login(body: LoginRequest, response: Response):
             raise HTTPException(status_code=401, detail="Invalid credentials")
         roles = available_roles(user.id, user.role, session=session)
         if user.mfa_required:
-            has_key = session.query(WebAuthnCredential).filter_by(user_id=user.id).first() is not None
+            has_key = (
+                session.query(WebAuthnCredential).filter_by(user_id=user.id).first() is not None
+            )
             if has_key:
                 raise HTTPException(status_code=401, detail="mfa_required")
             # No key enrolled — issue a restricted enrollment-only token
             access = issue_access_token(user, mfa_enroll=True, roles=roles)
-            return {"access_token": access, "token_type": "bearer",
-                    "force_password_change": False, "mfa_enrollment_required": True}
+            return {
+                "access_token": access,
+                "token_type": "bearer",
+                "force_password_change": False,
+                "mfa_enrollment_required": True,
+            }
         user.last_login_at = datetime.utcnow()
         session.flush()
         session.refresh(user)
@@ -116,8 +128,13 @@ def login(body: LoginRequest, response: Response):
         fpc = user.force_password_change
 
     _set_refresh_cookie(response, refresh)
-    return {"access_token": access, "token_type": "bearer", "force_password_change": fpc,
-            "active_role": active, "available_roles": roles}
+    return {
+        "access_token": access,
+        "token_type": "bearer",
+        "force_password_change": fpc,
+        "active_role": active,
+        "available_roles": roles,
+    }
 
 
 @router.post("/refresh")
@@ -142,12 +159,18 @@ def refresh_token(refresh_token: Optional[str] = Cookie(default=None)):
         active = resolve_active(roles, payload.get("role"))
         access = issue_access_token(user, roles=roles, active_role=active)
 
-    return {"access_token": access, "token_type": "bearer",
-            "active_role": active, "available_roles": roles}
+    return {
+        "access_token": access,
+        "token_type": "bearer",
+        "active_role": active,
+        "available_roles": roles,
+    }
 
 
 @router.post("/assume-role")
-def assume_role(body: AssumeRoleRequest, response: Response, user: AuthUser = Depends(require_auth)):
+def assume_role(
+    body: AssumeRoleRequest, response: Response, user: AuthUser = Depends(require_auth)
+):
     """Switch the session to another of the account's roles.
 
     Reissues both tokens, so the change survives the next refresh. One role is
@@ -160,12 +183,15 @@ def assume_role(body: AssumeRoleRequest, response: Response, user: AuthUser = De
             raise HTTPException(status_code=401, detail="User not found")
         roles = available_roles(db_user.id, db_user.role, session=session)
         if body.role not in roles:
-            raise HTTPException(status_code=403, detail=f"Role '{body.role}' is not available to this account")
+            raise HTTPException(
+                status_code=403, detail=f"Role '{body.role}' is not available to this account"
+            )
         access = issue_access_token(db_user, roles=roles, active_role=body.role)
         refresh = issue_refresh_token(db_user, active_role=body.role)
         username = db_user.username
 
     from services import audit_service
+
     audit_service.log(
         product=None,
         operation="assume_role",
@@ -178,8 +204,12 @@ def assume_role(body: AssumeRoleRequest, response: Response, user: AuthUser = De
     )
 
     _set_refresh_cookie(response, refresh)
-    return {"access_token": access, "token_type": "bearer",
-            "active_role": body.role, "available_roles": roles}
+    return {
+        "access_token": access,
+        "token_type": "bearer",
+        "active_role": body.role,
+        "available_roles": roles,
+    }
 
 
 @router.post("/logout")
@@ -189,7 +219,9 @@ def logout(response: Response):
 
 
 @router.post("/change-password")
-def change_password(body: ChangePasswordRequest, response: Response, user: AuthUser = Depends(require_auth)):
+def change_password(
+    body: ChangePasswordRequest, response: Response, user: AuthUser = Depends(require_auth)
+):
     with get_session() as session:
         db_user = session.query(User).filter_by(id=user.user_id, is_active=True).first()
         if not db_user or not verify_password(body.current_password, db_user.password_hash):
@@ -206,13 +238,19 @@ def change_password(body: ChangePasswordRequest, response: Response, user: AuthU
         refresh = issue_refresh_token(db_user, active_role=active)
 
     _set_refresh_cookie(response, refresh)
-    return {"access_token": access, "token_type": "bearer", "force_password_change": False,
-            "active_role": active, "available_roles": roles}
+    return {
+        "access_token": access,
+        "token_type": "bearer",
+        "force_password_change": False,
+        "active_role": active,
+        "available_roles": roles,
+    }
 
 
 # ------------------------------------------------------------------
 # WebAuthn — Registration
 # ------------------------------------------------------------------
+
 
 class WebAuthnRegisterBeginRequest(BaseModel):
     label: Optional[str] = None
@@ -238,7 +276,9 @@ def webauthn_register_begin(
             PublicKeyCredentialDescriptor,
         )
     except ImportError:
-        raise HTTPException(status_code=501, detail="WebAuthn not available (py-webauthn not installed)")
+        raise HTTPException(
+            status_code=501, detail="WebAuthn not available (py-webauthn not installed)"
+        )
 
     rp_id = get_setting("webauthn_rp_id") or os.environ.get("WEBAUTHN_RP_ID", "localhost")
 
@@ -264,6 +304,7 @@ def webauthn_register_begin(
     _store_challenge(f"reg:{user.user_id}", options.challenge)
 
     import json
+
     return json.loads(webauthn.options_to_json(options))
 
 
@@ -277,17 +318,24 @@ def webauthn_register_complete(
         import webauthn
         from webauthn.helpers import parse_registration_credential_json
     except ImportError:
-        raise HTTPException(status_code=501, detail="WebAuthn not available (py-webauthn not installed)")
+        raise HTTPException(
+            status_code=501, detail="WebAuthn not available (py-webauthn not installed)"
+        )
 
     rp_id = get_setting("webauthn_rp_id") or os.environ.get("WEBAUTHN_RP_ID", "localhost")
-    origin = get_setting("webauthn_origin") or os.environ.get("WEBAUTHN_ORIGIN", "http://localhost:8000")
+    origin = get_setting("webauthn_origin") or os.environ.get(
+        "WEBAUTHN_ORIGIN", "http://localhost:8000"
+    )
 
     challenge = _pop_challenge(f"reg:{user.user_id}")
     if challenge is None:
-        raise HTTPException(status_code=400, detail="No pending registration challenge or challenge expired")
+        raise HTTPException(
+            status_code=400, detail="No pending registration challenge or challenge expired"
+        )
 
     try:
         import json
+
         credential_json = json.dumps(body.credential)
         registration_credential = parse_registration_credential_json(credential_json)
         verified = webauthn.verify_registration_response(
@@ -318,17 +366,20 @@ def webauthn_register_complete(
             created_at=datetime.utcnow(),
         )
         session.add(cred)
-        pending_audit.append({
-            "product": None,
-            "operation": "register_webauthn",
-            "action": "CREATE",
-            "status": "SUCCESS",
-            "tenant_id": None,
-            "resource_type": "webauthn_credential",
-            "resource_name": label,
-        })
+        pending_audit.append(
+            {
+                "product": None,
+                "operation": "register_webauthn",
+                "action": "CREATE",
+                "status": "SUCCESS",
+                "tenant_id": None,
+                "resource_type": "webauthn_credential",
+                "resource_name": label,
+            }
+        )
 
     from services import audit_service
+
     for ev in pending_audit:
         audit_service.log(**ev)
 
@@ -338,6 +389,7 @@ def webauthn_register_complete(
 # ------------------------------------------------------------------
 # WebAuthn — Authentication
 # ------------------------------------------------------------------
+
 
 class WebAuthnAuthBeginRequest(BaseModel):
     username: str
@@ -358,7 +410,9 @@ def webauthn_authenticate_begin(body: WebAuthnAuthBeginRequest):
             PublicKeyCredentialDescriptor,
         )
     except ImportError:
-        raise HTTPException(status_code=501, detail="WebAuthn not available (py-webauthn not installed)")
+        raise HTTPException(
+            status_code=501, detail="WebAuthn not available (py-webauthn not installed)"
+        )
 
     rp_id = get_setting("webauthn_rp_id") or os.environ.get("WEBAUTHN_RP_ID", "localhost")
 
@@ -370,8 +424,7 @@ def webauthn_authenticate_begin(body: WebAuthnAuthBeginRequest):
         if not creds:
             raise HTTPException(status_code=400, detail="No security keys registered")
         allow_credentials = [
-            PublicKeyCredentialDescriptor(id=_b64url_decode(c.credential_id))
-            for c in creds
+            PublicKeyCredentialDescriptor(id=_b64url_decode(c.credential_id)) for c in creds
         ]
 
     options = webauthn.generate_authentication_options(
@@ -383,6 +436,7 @@ def webauthn_authenticate_begin(body: WebAuthnAuthBeginRequest):
     _store_challenge(f"auth:{body.username}", options.challenge)
 
     import json
+
     return json.loads(webauthn.options_to_json(options))
 
 
@@ -393,16 +447,21 @@ def webauthn_authenticate_complete(body: WebAuthnAuthCompleteRequest, response: 
         import webauthn
         from webauthn.helpers import parse_authentication_credential_json
     except ImportError:
-        raise HTTPException(status_code=501, detail="WebAuthn not available (py-webauthn not installed)")
+        raise HTTPException(
+            status_code=501, detail="WebAuthn not available (py-webauthn not installed)"
+        )
 
     rp_id = get_setting("webauthn_rp_id") or os.environ.get("WEBAUTHN_RP_ID", "localhost")
-    origin = get_setting("webauthn_origin") or os.environ.get("WEBAUTHN_ORIGIN", "http://localhost:8000")
+    origin = get_setting("webauthn_origin") or os.environ.get(
+        "WEBAUTHN_ORIGIN", "http://localhost:8000"
+    )
 
     challenge = _pop_challenge(f"auth:{body.username}")
     if challenge is None:
         raise HTTPException(status_code=401, detail="Authentication failed")
 
     import json
+
     credential_json = json.dumps(body.credential)
 
     with get_session() as session:
@@ -411,9 +470,11 @@ def webauthn_authenticate_complete(body: WebAuthnAuthCompleteRequest, response: 
             raise HTTPException(status_code=401, detail="Authentication failed")
 
         cred_id_from_request = body.credential.get("id", "")
-        stored_cred = session.query(WebAuthnCredential).filter_by(
-            user_id=db_user.id, credential_id=cred_id_from_request
-        ).first()
+        stored_cred = (
+            session.query(WebAuthnCredential)
+            .filter_by(user_id=db_user.id, credential_id=cred_id_from_request)
+            .first()
+        )
         if not stored_cred:
             raise HTTPException(status_code=401, detail="Authentication failed")
 
@@ -443,6 +504,7 @@ def webauthn_authenticate_complete(body: WebAuthnAuthCompleteRequest, response: 
         fpc = db_user.force_password_change
 
     from services import audit_service
+
     audit_service.log(
         product=None,
         operation="webauthn_login",
@@ -454,13 +516,19 @@ def webauthn_authenticate_complete(body: WebAuthnAuthCompleteRequest, response: 
     )
 
     _set_refresh_cookie(response, refresh)
-    return {"access_token": access, "token_type": "bearer", "force_password_change": fpc,
-            "active_role": active, "available_roles": roles}
+    return {
+        "access_token": access,
+        "token_type": "bearer",
+        "force_password_change": fpc,
+        "active_role": active,
+        "available_roles": roles,
+    }
 
 
 # ------------------------------------------------------------------
 # WebAuthn — Credential Management
 # ------------------------------------------------------------------
+
 
 class WebAuthnPatchRequest(BaseModel):
     label: str
@@ -491,9 +559,11 @@ def delete_webauthn_credential(
 ):
     """Delete a registered security key. Prevents deletion of last key for passwordless accounts."""
     with get_session() as session:
-        cred = session.query(WebAuthnCredential).filter_by(
-            credential_id=credential_id, user_id=user.user_id
-        ).first()
+        cred = (
+            session.query(WebAuthnCredential)
+            .filter_by(credential_id=credential_id, user_id=user.user_id)
+            .first()
+        )
         if not cred:
             raise HTTPException(status_code=404, detail="Credential not found")
 
@@ -516,9 +586,11 @@ def patch_webauthn_credential(
 ):
     """Update the label of a registered security key."""
     with get_session() as session:
-        cred = session.query(WebAuthnCredential).filter_by(
-            credential_id=credential_id, user_id=user.user_id
-        ).first()
+        cred = (
+            session.query(WebAuthnCredential)
+            .filter_by(credential_id=credential_id, user_id=user.user_id)
+            .first()
+        )
         if not cred:
             raise HTTPException(status_code=404, detail="Credential not found")
         cred.label = body.label[:255]

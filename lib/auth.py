@@ -40,7 +40,9 @@ class ZscalerAuth:
         # boolean, and pointed at the .us endpoints — so they are govus.
         self.gov_tier = (gov_tier or DEFAULT_GOV_TIER) if govcloud else None
         if self.gov_tier is not None and self.gov_tier not in GOV_TIERS:
-            raise ValueError(f"Unknown GovCloud tier {self.gov_tier!r}; expected one of {GOV_TIERS}")
+            raise ValueError(
+                f"Unknown GovCloud tier {self.gov_tier!r}; expected one of {GOV_TIERS}"
+            )
 
     @property
     def sdk_cloud(self) -> Optional[str]:
@@ -54,7 +56,7 @@ class ZscalerAuth:
     @property
     def vanity_domain(self) -> str:
         """Extract subdomain for SDK vanityDomain config (e.g. 'acme' from 'https://acme.zslogin.net')."""
-        return urlparse(self.zidentity_base_url).hostname.split('.')[0]
+        return urlparse(self.zidentity_base_url).hostname.split(".")[0]
 
     def get_token(self) -> str:
         """Return a valid OAuth2 access token, using a short-lived cache to avoid

@@ -25,6 +25,7 @@ def _rule_order_key(n):
 def _zia_changed():
     """Mark the active tenant's ZIA config as having unactivated changes."""
     from cli.session import get_active_tenant, mark_zia_pending
+
     t = get_active_tenant()
     if t:
         mark_zia_pending(t.id)
@@ -39,6 +40,7 @@ def zia_menu():
     while True:
         render_banner()
         from cli.session import has_zia_pending
+
         if has_zia_pending(tenant.id):
             console.print("[yellow]⚠  Changes pending activation[/yellow]\n")
         choice = questionary.select(
@@ -136,7 +138,14 @@ def zia_menu():
                     "resource_count": snap.resource_count,
                     "resources": snap.snapshot["resources"],
                 }
-                apply_baseline_menu(client, tenant, baseline=baseline, baseline_path=baseline_path, full_clone=full_clone, source_tenant=source_tenant)
+                apply_baseline_menu(
+                    client,
+                    tenant,
+                    baseline=baseline,
+                    baseline_path=baseline_path,
+                    full_clone=full_clone,
+                    source_tenant=source_tenant,
+                )
         elif choice == "templates":
             templates_menu(tenant)
         elif choice == "reset_na":
@@ -149,14 +158,17 @@ def zia_menu():
 # Activation
 # ------------------------------------------------------------------
 
+
 def activation_menu(client, tenant):
     from services.zia_service import ZIAService
+
     service = ZIAService(client, tenant_id=tenant.id)
     last_result = None  # ("ok", state) or ("err", msg)
 
     while True:
         render_banner()
         from cli.session import has_zia_pending
+
         if has_zia_pending(tenant.id):
             console.print("[yellow]⚠  Changes pending activation[/yellow]\n")
 
@@ -195,6 +207,7 @@ def activation_menu(client, tenant):
                 activated_state = result.get("status", "UNKNOWN") if result else "UNKNOWN"
                 last_result = ("ok", f"status: {activated_state}")
                 from cli.session import clear_zia_pending
+
                 clear_zia_pending(tenant.id)
             except Exception as e:
                 last_result = ("err", str(e))
@@ -206,8 +219,10 @@ def activation_menu(client, tenant):
 # URL Lookup
 # ------------------------------------------------------------------
 
+
 def _url_lookup(client, tenant):
     from services.zia_service import ZIAService
+
     service = ZIAService(client, tenant_id=tenant.id)
 
     console.print("\n[bold]URL Category Lookup[/bold]")
@@ -246,12 +261,14 @@ def _url_lookup(client, tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
 # ------------------------------------------------------------------
 # PAC Files
 # ------------------------------------------------------------------
+
 
 def pac_files_menu(client, tenant):
     from services.zia_service import ZIAService
@@ -344,21 +361,28 @@ def pac_file_detail_menu(client, tenant, pac):
 
             # Show deployed version's PAC content
             deployed = next(
-                (v for v in versions if (v.get("pac_version_status") or v.get("pacVersionStatus")) == "DEPLOYED"),
+                (
+                    v
+                    for v in versions
+                    if (v.get("pac_version_status") or v.get("pacVersionStatus")) == "DEPLOYED"
+                ),
                 None,
             )
             if deployed:
                 content = deployed.get("pac_content") or deployed.get("pacContent") or ""
                 if content:
                     from rich.panel import Panel
+
                     lines = content.splitlines()
                     if len(lines) > 40:
                         from cli.scroll_view import render_rich_to_lines, scroll_view
                         from cli.banner import capture_banner
+
                         panel = Panel(content, title="Deployed PAC Content", expand=False)
                         scroll_view(render_rich_to_lines(panel), header_ansi=capture_banner())
                     else:
                         from rich.panel import Panel
+
                         console.print(Panel(content, title="Deployed PAC Content", expand=False))
         else:
             console.print("[yellow]No versions found.[/yellow]")
@@ -457,9 +481,7 @@ def _create_pac_file(client, tenant):
         return
     domain = domain.strip() or None
 
-    pac_commit_message = questionary.text(
-        "Commit message:", default="Initial version"
-    ).ask()
+    pac_commit_message = questionary.text("Commit message:", default="Initial version").ask()
     if not pac_commit_message or not pac_commit_message.strip():
         return
     pac_commit_message = pac_commit_message.strip()
@@ -531,7 +553,11 @@ def _edit_pac_file(client, tenant, pac, versions=None):
 
     # Resolve current deployed version
     deployed = next(
-        (v for v in versions if (v.get("pac_version_status") or v.get("pacVersionStatus")) == "DEPLOYED"),
+        (
+            v
+            for v in versions
+            if (v.get("pac_version_status") or v.get("pacVersionStatus")) == "DEPLOYED"
+        ),
         None,
     )
     if deployed is None and versions:
@@ -550,9 +576,7 @@ def _edit_pac_file(client, tenant, pac, versions=None):
         return
     name = name.strip() or pac.get("name") or pac_name
 
-    description = questionary.text(
-        "Description:", default=pac.get("description") or ""
-    ).ask()
+    description = questionary.text("Description:", default=pac.get("description") or "").ask()
     if description is None:
         return
     description = description.strip() or None
@@ -641,6 +665,7 @@ def _delete_pac_file(client, tenant, pac) -> bool:
 # Import Config
 # ------------------------------------------------------------------
 
+
 def _import_zia_config(client, tenant):
     from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn
     from services.zia_import_service import ZIAImportService, RESOURCE_DEFINITIONS
@@ -671,8 +696,8 @@ def _import_zia_config(client, tenant):
 
         sync = service.run(progress_callback=on_progress)
 
-    status_style = "green" if sync.status == "SUCCESS" else (
-        "yellow" if sync.status == "PARTIAL" else "red"
+    status_style = (
+        "green" if sync.status == "SUCCESS" else ("yellow" if sync.status == "PARTIAL" else "red")
     )
     console.print(f"\n[{status_style}]■ Sync {sync.status}[/{status_style}]")
     console.print(f"  Resources synced:  {sync.resources_synced}")
@@ -689,6 +714,7 @@ def _import_zia_config(client, tenant):
 
 def _reset_zia_na_resources(client, tenant):
     from services.zia_import_service import ZIAImportService
+
     service = ZIAImportService(client, tenant_id=tenant.id)
     disabled = service._get_disabled_resource_types()
     if not disabled:
@@ -708,6 +734,7 @@ def _reset_zia_na_resources(client, tenant):
 # ------------------------------------------------------------------
 # Firewall Policy
 # ------------------------------------------------------------------
+
 
 def firewall_policy_menu(client, tenant):
     while True:
@@ -784,13 +811,16 @@ def _list_firewall_rules(tenant):
 
     if not rows:
         console.print(
-            "[yellow]No firewall rules in local DB. "
-            "Run [bold]Import Config[/bold] first.[/yellow]"
+            "[yellow]No firewall rules in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    rows.sort(key=lambda r: _rule_order_key(r["raw_config"].get("order") or r["raw_config"].get("rank") or 0))
+    rows.sort(
+        key=lambda r: _rule_order_key(
+            r["raw_config"].get("order") or r["raw_config"].get("rank") or 0
+        )
+    )
 
     table = Table(title=f"Firewall Rules ({len(rows)} total)", show_lines=False)
     table.add_column("Order", justify="right")
@@ -806,8 +836,10 @@ def _list_firewall_rules(tenant):
         action = (action_val.get("type") if isinstance(action_val, dict) else action_val) or "—"
         state_val = cfg.get("state") or "—"
         state_str = (
-            f"[green]{state_val}[/green]" if state_val == "ENABLED"
-            else f"[red]{state_val}[/red]" if state_val == "DISABLED"
+            f"[green]{state_val}[/green]"
+            if state_val == "ENABLED"
+            else f"[red]{state_val}[/red]"
+            if state_val == "DISABLED"
             else state_val
         )
         description = str(cfg.get("description") or "")[:60]
@@ -815,6 +847,7 @@ def _list_firewall_rules(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -847,7 +880,11 @@ def _search_firewall_rules(tenant):
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    rows.sort(key=lambda r: _rule_order_key(r["raw_config"].get("order") or r["raw_config"].get("rank") or 0))
+    rows.sort(
+        key=lambda r: _rule_order_key(
+            r["raw_config"].get("order") or r["raw_config"].get("rank") or 0
+        )
+    )
 
     table = Table(title=f"Matching Firewall Rules ({len(rows)})", show_lines=False)
     table.add_column("Order", justify="right")
@@ -862,14 +899,17 @@ def _search_firewall_rules(tenant):
         action = (action_val.get("type") if isinstance(action_val, dict) else action_val) or "—"
         state_val = cfg.get("state") or "—"
         state_str = (
-            f"[green]{state_val}[/green]" if state_val == "ENABLED"
-            else f"[red]{state_val}[/red]" if state_val == "DISABLED"
+            f"[green]{state_val}[/green]"
+            if state_val == "ENABLED"
+            else f"[red]{state_val}[/red]"
+            if state_val == "DISABLED"
             else state_val
         )
         table.add_row(order, r["name"] or "—", action, state_str)
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -935,18 +975,29 @@ def _toggle_firewall_rules(client, tenant):
             client.update_firewall_rule(r["zia_id"], config)
             _update_zia_resource_field(tenant.id, "firewall_rule", r["zia_id"], "state", action)
             audit_service.log(
-                product="ZIA", operation="toggle_firewall_rule", action="UPDATE",
-                status="SUCCESS", tenant_id=tenant.id, resource_type="firewall_rule",
-                resource_id=r["zia_id"], resource_name=r["name"],
+                product="ZIA",
+                operation="toggle_firewall_rule",
+                action="UPDATE",
+                status="SUCCESS",
+                tenant_id=tenant.id,
+                resource_type="firewall_rule",
+                resource_id=r["zia_id"],
+                resource_name=r["name"],
                 details={"state": action},
             )
             ok += 1
         except Exception as e:
             console.print(f"[red]✗ {r['name']}: {e}[/red]")
             audit_service.log(
-                product="ZIA", operation="toggle_firewall_rule", action="UPDATE",
-                status="FAILURE", tenant_id=tenant.id, resource_type="firewall_rule",
-                resource_id=r["zia_id"], resource_name=r["name"], error_message=str(e),
+                product="ZIA",
+                operation="toggle_firewall_rule",
+                action="UPDATE",
+                status="FAILURE",
+                tenant_id=tenant.id,
+                resource_type="firewall_rule",
+                resource_id=r["zia_id"],
+                resource_name=r["name"],
+                error_message=str(e),
             )
 
     if ok:
@@ -1012,9 +1063,9 @@ def _sync_firewall_rules(client, tenant):
     dry_table.add_column("Detail")
 
     ACTION_STYLE = {
-        "UPDATE":      "[yellow]UPDATE[/yellow]",
-        "CREATE":      "[green]CREATE[/green]",
-        "SKIP":        "[dim]SKIP[/dim]",
+        "UPDATE": "[yellow]UPDATE[/yellow]",
+        "CREATE": "[green]CREATE[/green]",
+        "SKIP": "[dim]SKIP[/dim]",
         "MISSING_DEP": "[red]MISSING[/red]",
     }
 
@@ -1035,16 +1086,22 @@ def _sync_firewall_rules(client, tenant):
         dry_table.add_row("[red]DELETE[/red]", item["name"], f"id {item['zia_id']} not in CSV")
 
     if classification.reorder_needed:
-        total_rules = len([e for e in classification.csv_rows if e.get("zia_id") or e["action"] == "CREATE"])
+        total_rules = len(
+            [e for e in classification.csv_rows if e.get("zia_id") or e["action"] == "CREATE"]
+        )
         dry_table.add_row("[blue]REORDER[/blue]", f"({total_rules} rules)", "sequence will change")
 
     console.print(dry_table)
 
     n_missing = len(classification.missing_dep)
     if n_missing:
-        console.print(f"\n[red]⚠ {n_missing} row(s) have unresolved dependencies and will be skipped.[/red]")
-        console.print("[dim]Create the referenced IP groups, services, or locations first, "
-                      "then re-run Import Config before retrying.[/dim]")
+        console.print(
+            f"\n[red]⚠ {n_missing} row(s) have unresolved dependencies and will be skipped.[/red]"
+        )
+        console.print(
+            "[dim]Create the referenced IP groups, services, or locations first, "
+            "then re-run Import Config before retrying.[/dim]"
+        )
 
     for item in classification.csv_rows:
         if item.get("warn"):
@@ -1110,6 +1167,7 @@ def _sync_firewall_rules(client, tenant):
 
     if result.updated or result.created or result.deleted or result.reordered:
         from services.zia_import_service import ZIAImportService
+
         with console.status("Syncing changes to local DB..."):
             ZIAImportService(client, tenant.id).run(resource_types=["firewall_rule"])
         console.print("[green]✓ Local DB updated.[/green]")
@@ -1122,6 +1180,7 @@ def _sync_firewall_rules(client, tenant):
 # Source IPv4 Groups — full CRUD submenu
 # ------------------------------------------------------------------
 
+
 def ip_source_group_menu(client, tenant):
     while True:
         render_banner()
@@ -1180,7 +1239,8 @@ def _list_ip_source_groups(tenant, search=None):
 
     if not rows:
         msg = (
-            f"[yellow]No source groups matching '{search}'.[/yellow]" if search
+            f"[yellow]No source groups matching '{search}'.[/yellow]"
+            if search
             else "[yellow]No source IP groups in local DB. Run Import Config first.[/yellow]"
         )
         console.print(msg)
@@ -1205,6 +1265,7 @@ def _list_ip_source_groups(tenant, search=None):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -1238,10 +1299,8 @@ def _pick_ip_source_group(tenant):
 
     chosen = questionary.select(
         "Select group:",
-        choices=[
-            questionary.Choice(f"{r['name']} (ID: {r['zia_id']})", value=r)
-            for r in rows
-        ] + [questionary.Choice("← Cancel", value="cancel")],
+        choices=[questionary.Choice(f"{r['name']} (ID: {r['zia_id']})", value=r) for r in rows]
+        + [questionary.Choice("← Cancel", value="cancel")],
     ).ask()
     if chosen in (None, "cancel"):
         return None
@@ -1261,14 +1320,19 @@ def _create_ip_source_group_single(client, tenant):
         return
     ip_list = [ip.strip() for ip in ips_raw.split(";") if ip.strip()]
     try:
-        result = client.create_ip_source_group({
-            "name": name.strip(),
-            "description": description.strip(),
-            "ip_addresses": ip_list,
-        })
-        console.print(f"[green]✓ Created source group '{result.get('name', name)}' (ID: {result.get('id', '?')}).[/green]")
+        result = client.create_ip_source_group(
+            {
+                "name": name.strip(),
+                "description": description.strip(),
+                "ip_addresses": ip_list,
+            }
+        )
+        console.print(
+            f"[green]✓ Created source group '{result.get('name', name)}' (ID: {result.get('id', '?')}).[/green]"
+        )
         _zia_changed()
         from services.zia_import_service import ZIAImportService
+
         with console.status("Updating local DB..."):
             ZIAImportService(client, tenant.id).run(resource_types=["ip_source_group"])
     except Exception as e:
@@ -1301,7 +1365,9 @@ def _edit_ip_source_group(client, tenant):
 
     new_name = name.strip() or current_name
     new_desc = description.strip() if description.strip() else current_desc
-    new_ips = [ip.strip() for ip in ips_raw.split(";") if ip.strip()] if ips_raw.strip() else current_ips
+    new_ips = (
+        [ip.strip() for ip in ips_raw.split(";") if ip.strip()] if ips_raw.strip() else current_ips
+    )
 
     confirmed = questionary.confirm(
         f"Update group '{chosen['name']}' (ID: {chosen['zia_id']})?", default=True
@@ -1309,12 +1375,13 @@ def _edit_ip_source_group(client, tenant):
     if not confirmed:
         return
     try:
-        client.update_ip_source_group(chosen["zia_id"], {
-            "name": new_name, "description": new_desc, "ip_addresses": new_ips
-        })
+        client.update_ip_source_group(
+            chosen["zia_id"], {"name": new_name, "description": new_desc, "ip_addresses": new_ips}
+        )
         console.print("[green]✓ Source group updated.[/green]")
         _zia_changed()
         from services.zia_import_service import ZIAImportService
+
         with console.status("Updating local DB..."):
             ZIAImportService(client, tenant.id).run(resource_types=["ip_source_group"])
     except Exception as e:
@@ -1337,6 +1404,7 @@ def _delete_ip_source_group(client, tenant):
         console.print("[green]✓ Source group deleted.[/green]")
         _zia_changed()
         from services.zia_import_service import ZIAImportService
+
         with console.status("Updating local DB..."):
             ZIAImportService(client, tenant.id).run(resource_types=["ip_source_group"])
     except Exception as e:
@@ -1347,6 +1415,7 @@ def _delete_ip_source_group(client, tenant):
 # ------------------------------------------------------------------
 # Destination IPv4 Groups — full CRUD submenu
 # ------------------------------------------------------------------
+
 
 def ip_dest_group_menu(client, tenant):
     while True:
@@ -1406,7 +1475,8 @@ def _list_ip_dest_groups(tenant, search=None):
 
     if not rows:
         msg = (
-            f"[yellow]No destination groups matching '{search}'.[/yellow]" if search
+            f"[yellow]No destination groups matching '{search}'.[/yellow]"
+            if search
             else "[yellow]No destination IP groups in local DB. Run Import Config first.[/yellow]"
         )
         console.print(msg)
@@ -1433,6 +1503,7 @@ def _list_ip_dest_groups(tenant, search=None):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -1460,16 +1531,16 @@ def _pick_ip_dest_group(tenant):
         ]
 
     if not rows:
-        console.print("[yellow]No destination IP groups in local DB. Run Import Config first.[/yellow]")
+        console.print(
+            "[yellow]No destination IP groups in local DB. Run Import Config first.[/yellow]"
+        )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return None
 
     chosen = questionary.select(
         "Select group:",
-        choices=[
-            questionary.Choice(f"{r['name']} (ID: {r['zia_id']})", value=r)
-            for r in rows
-        ] + [questionary.Choice("← Cancel", value="cancel")],
+        choices=[questionary.Choice(f"{r['name']} (ID: {r['zia_id']})", value=r) for r in rows]
+        + [questionary.Choice("← Cancel", value="cancel")],
     ).ask()
     if chosen in (None, "cancel"):
         return None
@@ -1495,15 +1566,20 @@ def _create_ip_dest_group_single(client, tenant):
         return
     addr_list = [a.strip() for a in addrs_raw.split(";") if a.strip()]
     try:
-        result = client.create_ip_destination_group({
-            "name": name.strip(),
-            "type": grp_type,
-            "description": description.strip(),
-            "addresses": addr_list,
-        })
-        console.print(f"[green]✓ Created destination group '{result.get('name', name)}' (ID: {result.get('id', '?')}).[/green]")
+        result = client.create_ip_destination_group(
+            {
+                "name": name.strip(),
+                "type": grp_type,
+                "description": description.strip(),
+                "addresses": addr_list,
+            }
+        )
+        console.print(
+            f"[green]✓ Created destination group '{result.get('name', name)}' (ID: {result.get('id', '?')}).[/green]"
+        )
         _zia_changed()
         from services.zia_import_service import ZIAImportService
+
         with console.status("Updating local DB..."):
             ZIAImportService(client, tenant.id).run(resource_types=["ip_destination_group"])
     except Exception as e:
@@ -1544,7 +1620,11 @@ def _edit_ip_dest_group(client, tenant):
 
     new_name = name.strip() or current_name
     new_desc = description.strip() if description.strip() else current_desc
-    new_addrs = [a.strip() for a in addrs_raw.split(";") if a.strip()] if addrs_raw.strip() else current_addrs
+    new_addrs = (
+        [a.strip() for a in addrs_raw.split(";") if a.strip()]
+        if addrs_raw.strip()
+        else current_addrs
+    )
 
     confirmed = questionary.confirm(
         f"Update group '{chosen['name']}' (ID: {chosen['zia_id']})?", default=True
@@ -1552,12 +1632,14 @@ def _edit_ip_dest_group(client, tenant):
     if not confirmed:
         return
     try:
-        client.update_ip_destination_group(chosen["zia_id"], {
-            "name": new_name, "type": grp_type, "description": new_desc, "addresses": new_addrs
-        })
+        client.update_ip_destination_group(
+            chosen["zia_id"],
+            {"name": new_name, "type": grp_type, "description": new_desc, "addresses": new_addrs},
+        )
         console.print("[green]✓ Destination group updated.[/green]")
         _zia_changed()
         from services.zia_import_service import ZIAImportService
+
         with console.status("Updating local DB..."):
             ZIAImportService(client, tenant.id).run(resource_types=["ip_destination_group"])
     except Exception as e:
@@ -1580,6 +1662,7 @@ def _delete_ip_dest_group(client, tenant):
         console.print("[green]✓ Destination group deleted.[/green]")
         _zia_changed()
         from services.zia_import_service import ZIAImportService
+
         with console.status("Updating local DB..."):
             ZIAImportService(client, tenant.id).run(resource_types=["ip_destination_group"])
     except Exception as e:
@@ -1591,6 +1674,7 @@ def _delete_ip_dest_group(client, tenant):
 # Source IPv4 Groups — full CRUD submenu
 # ------------------------------------------------------------------
 
+
 def ip_source_group_menu(client, tenant):
     while True:
         render_banner()
@@ -1649,7 +1733,8 @@ def _list_ip_source_groups(tenant, search=None):
 
     if not rows:
         msg = (
-            f"[yellow]No source groups matching '{search}'.[/yellow]" if search
+            f"[yellow]No source groups matching '{search}'.[/yellow]"
+            if search
             else "[yellow]No source IP groups in local DB. Run Import Config first.[/yellow]"
         )
         console.print(msg)
@@ -1674,6 +1759,7 @@ def _list_ip_source_groups(tenant, search=None):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -1707,10 +1793,8 @@ def _pick_ip_source_group(tenant):
 
     chosen = questionary.select(
         "Select group:",
-        choices=[
-            questionary.Choice(f"{r['name']} (ID: {r['zia_id']})", value=r)
-            for r in rows
-        ] + [questionary.Choice("← Cancel", value="cancel")],
+        choices=[questionary.Choice(f"{r['name']} (ID: {r['zia_id']})", value=r) for r in rows]
+        + [questionary.Choice("← Cancel", value="cancel")],
     ).ask()
     if chosen in (None, "cancel"):
         return None
@@ -1730,14 +1814,19 @@ def _create_ip_source_group_single(client, tenant):
         return
     ip_list = [ip.strip() for ip in ips_raw.split(";") if ip.strip()]
     try:
-        result = client.create_ip_source_group({
-            "name": name.strip(),
-            "description": description.strip(),
-            "ip_addresses": ip_list,
-        })
-        console.print(f"[green]✓ Created source group '{result.get('name', name)}' (ID: {result.get('id', '?')}).[/green]")
+        result = client.create_ip_source_group(
+            {
+                "name": name.strip(),
+                "description": description.strip(),
+                "ip_addresses": ip_list,
+            }
+        )
+        console.print(
+            f"[green]✓ Created source group '{result.get('name', name)}' (ID: {result.get('id', '?')}).[/green]"
+        )
         console.print("[yellow]Remember to activate changes in ZIA.[/yellow]")
         from services.zia_import_service import ZIAImportService
+
         with console.status("Updating local DB..."):
             ZIAImportService(client, tenant.id).run(resource_types=["ip_source_group"])
     except Exception as e:
@@ -1770,7 +1859,9 @@ def _edit_ip_source_group(client, tenant):
 
     new_name = name.strip() or current_name
     new_desc = description.strip() if description.strip() else current_desc
-    new_ips = [ip.strip() for ip in ips_raw.split(";") if ip.strip()] if ips_raw.strip() else current_ips
+    new_ips = (
+        [ip.strip() for ip in ips_raw.split(";") if ip.strip()] if ips_raw.strip() else current_ips
+    )
 
     confirmed = questionary.confirm(
         f"Update group '{chosen['name']}' (ID: {chosen['zia_id']})?", default=True
@@ -1778,12 +1869,13 @@ def _edit_ip_source_group(client, tenant):
     if not confirmed:
         return
     try:
-        client.update_ip_source_group(chosen["zia_id"], {
-            "name": new_name, "description": new_desc, "ip_addresses": new_ips
-        })
+        client.update_ip_source_group(
+            chosen["zia_id"], {"name": new_name, "description": new_desc, "ip_addresses": new_ips}
+        )
         console.print("[green]✓ Source group updated.[/green]")
         console.print("[yellow]Remember to activate changes in ZIA.[/yellow]")
         from services.zia_import_service import ZIAImportService
+
         with console.status("Updating local DB..."):
             ZIAImportService(client, tenant.id).run(resource_types=["ip_source_group"])
     except Exception as e:
@@ -1806,6 +1898,7 @@ def _delete_ip_source_group(client, tenant):
         console.print("[green]✓ Source group deleted.[/green]")
         console.print("[yellow]Remember to activate changes in ZIA.[/yellow]")
         from services.zia_import_service import ZIAImportService
+
         with console.status("Updating local DB..."):
             ZIAImportService(client, tenant.id).run(resource_types=["ip_source_group"])
     except Exception as e:
@@ -1816,6 +1909,7 @@ def _delete_ip_source_group(client, tenant):
 # ------------------------------------------------------------------
 # Destination IPv4 Groups — full CRUD submenu
 # ------------------------------------------------------------------
+
 
 def ip_dest_group_menu(client, tenant):
     while True:
@@ -1875,7 +1969,8 @@ def _list_ip_dest_groups(tenant, search=None):
 
     if not rows:
         msg = (
-            f"[yellow]No destination groups matching '{search}'.[/yellow]" if search
+            f"[yellow]No destination groups matching '{search}'.[/yellow]"
+            if search
             else "[yellow]No destination IP groups in local DB. Run Import Config first.[/yellow]"
         )
         console.print(msg)
@@ -1902,6 +1997,7 @@ def _list_ip_dest_groups(tenant, search=None):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -1929,16 +2025,16 @@ def _pick_ip_dest_group(tenant):
         ]
 
     if not rows:
-        console.print("[yellow]No destination IP groups in local DB. Run Import Config first.[/yellow]")
+        console.print(
+            "[yellow]No destination IP groups in local DB. Run Import Config first.[/yellow]"
+        )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return None
 
     chosen = questionary.select(
         "Select group:",
-        choices=[
-            questionary.Choice(f"{r['name']} (ID: {r['zia_id']})", value=r)
-            for r in rows
-        ] + [questionary.Choice("← Cancel", value="cancel")],
+        choices=[questionary.Choice(f"{r['name']} (ID: {r['zia_id']})", value=r) for r in rows]
+        + [questionary.Choice("← Cancel", value="cancel")],
     ).ask()
     if chosen in (None, "cancel"):
         return None
@@ -1964,15 +2060,20 @@ def _create_ip_dest_group_single(client, tenant):
         return
     addr_list = [a.strip() for a in addrs_raw.split(";") if a.strip()]
     try:
-        result = client.create_ip_destination_group({
-            "name": name.strip(),
-            "type": grp_type,
-            "description": description.strip(),
-            "addresses": addr_list,
-        })
-        console.print(f"[green]✓ Created destination group '{result.get('name', name)}' (ID: {result.get('id', '?')}).[/green]")
+        result = client.create_ip_destination_group(
+            {
+                "name": name.strip(),
+                "type": grp_type,
+                "description": description.strip(),
+                "addresses": addr_list,
+            }
+        )
+        console.print(
+            f"[green]✓ Created destination group '{result.get('name', name)}' (ID: {result.get('id', '?')}).[/green]"
+        )
         console.print("[yellow]Remember to activate changes in ZIA.[/yellow]")
         from services.zia_import_service import ZIAImportService
+
         with console.status("Updating local DB..."):
             ZIAImportService(client, tenant.id).run(resource_types=["ip_destination_group"])
     except Exception as e:
@@ -2013,7 +2114,11 @@ def _edit_ip_dest_group(client, tenant):
 
     new_name = name.strip() or current_name
     new_desc = description.strip() if description.strip() else current_desc
-    new_addrs = [a.strip() for a in addrs_raw.split(";") if a.strip()] if addrs_raw.strip() else current_addrs
+    new_addrs = (
+        [a.strip() for a in addrs_raw.split(";") if a.strip()]
+        if addrs_raw.strip()
+        else current_addrs
+    )
 
     confirmed = questionary.confirm(
         f"Update group '{chosen['name']}' (ID: {chosen['zia_id']})?", default=True
@@ -2021,12 +2126,14 @@ def _edit_ip_dest_group(client, tenant):
     if not confirmed:
         return
     try:
-        client.update_ip_destination_group(chosen["zia_id"], {
-            "name": new_name, "type": grp_type, "description": new_desc, "addresses": new_addrs
-        })
+        client.update_ip_destination_group(
+            chosen["zia_id"],
+            {"name": new_name, "type": grp_type, "description": new_desc, "addresses": new_addrs},
+        )
         console.print("[green]✓ Destination group updated.[/green]")
         console.print("[yellow]Remember to activate changes in ZIA.[/yellow]")
         from services.zia_import_service import ZIAImportService
+
         with console.status("Updating local DB..."):
             ZIAImportService(client, tenant.id).run(resource_types=["ip_destination_group"])
     except Exception as e:
@@ -2049,6 +2156,7 @@ def _delete_ip_dest_group(client, tenant):
         console.print("[green]✓ Destination group deleted.[/green]")
         console.print("[yellow]Remember to activate changes in ZIA.[/yellow]")
         from services.zia_import_service import ZIAImportService
+
         with console.status("Updating local DB..."):
             ZIAImportService(client, tenant.id).run(resource_types=["ip_destination_group"])
     except Exception as e:
@@ -2062,12 +2170,16 @@ def _create_ip_source_groups(client, tenant):
     import os
     from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn
     from services.zia_firewall_service import (
-        parse_ip_source_group_csv, bulk_create_ip_source_groups,
-        IP_SOURCE_GROUP_FIELDNAMES, IP_SOURCE_GROUP_TEMPLATE,
+        parse_ip_source_group_csv,
+        bulk_create_ip_source_groups,
+        IP_SOURCE_GROUP_FIELDNAMES,
+        IP_SOURCE_GROUP_TEMPLATE,
     )
 
     console.print("\n[bold]Create Source IP Groups from CSV[/bold]\n")
-    console.print("[dim]CSV columns: name, description, ip_addresses (semicolon-separated IPs/CIDRs)[/dim]\n")
+    console.print(
+        "[dim]CSV columns: name, description, ip_addresses (semicolon-separated IPs/CIDRs)[/dim]\n"
+    )
 
     choice = questionary.select(
         "Action:",
@@ -2106,30 +2218,37 @@ def _create_ip_source_groups(client, tenant):
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    confirmed = questionary.confirm(
-        f"Create {len(rows)} IP source group(s)?", default=True
-    ).ask()
+    confirmed = questionary.confirm(f"Create {len(rows)} IP source group(s)?", default=True).ask()
     if not confirmed:
         return
 
     with Progress(
-        SpinnerColumn(), TextColumn("{task.description}"),
-        BarColumn(), TextColumn("{task.completed}/{task.total}"),
-        TimeElapsedColumn(), console=console, transient=True,
+        SpinnerColumn(),
+        TextColumn("{task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total}"),
+        TimeElapsedColumn(),
+        console=console,
+        transient=True,
     ) as progress:
         task = progress.add_task("Creating groups...", total=len(rows))
         result = bulk_create_ip_source_groups(
-            client, tenant.id, rows,
+            client,
+            tenant.id,
+            rows,
             progress_callback=lambda done, total: progress.update(task, completed=done),
         )
 
-    console.print(f"\n[green]✓ Created {result.created}[/green]  [red]✗ Failed {result.failed}[/red]")
+    console.print(
+        f"\n[green]✓ Created {result.created}[/green]  [red]✗ Failed {result.failed}[/red]"
+    )
     for d in result.rows_detail:
         if d["status"] == "FAILED":
             console.print(f"  [red]{d['name']}:[/red] {d['error']}")
 
     if result.created:
         from services.zia_import_service import ZIAImportService
+
         with console.status("Updating local DB..."):
             ZIAImportService(client, tenant.id).run(resource_types=["ip_source_group"])
         console.print("[green]✓ Local DB updated.[/green]")
@@ -2144,12 +2263,16 @@ def _create_ip_dest_groups(client, tenant):
     import os
     from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn
     from services.zia_firewall_service import (
-        parse_ip_dest_group_csv, bulk_create_ip_dest_groups,
-        IP_DEST_GROUP_FIELDNAMES, IP_DEST_GROUP_TEMPLATE,
+        parse_ip_dest_group_csv,
+        bulk_create_ip_dest_groups,
+        IP_DEST_GROUP_FIELDNAMES,
+        IP_DEST_GROUP_TEMPLATE,
     )
 
     console.print("\n[bold]Create Destination IP Groups from CSV[/bold]\n")
-    console.print("[dim]CSV columns: name, type (DSTN_IP/DSTN_FQDN/DSTN_DOMAIN/DSTN_OTHER), description, ip_addresses[/dim]\n")
+    console.print(
+        "[dim]CSV columns: name, type (DSTN_IP/DSTN_FQDN/DSTN_DOMAIN/DSTN_OTHER), description, ip_addresses[/dim]\n"
+    )
 
     choice = questionary.select(
         "Action:",
@@ -2195,23 +2318,32 @@ def _create_ip_dest_groups(client, tenant):
         return
 
     with Progress(
-        SpinnerColumn(), TextColumn("{task.description}"),
-        BarColumn(), TextColumn("{task.completed}/{task.total}"),
-        TimeElapsedColumn(), console=console, transient=True,
+        SpinnerColumn(),
+        TextColumn("{task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total}"),
+        TimeElapsedColumn(),
+        console=console,
+        transient=True,
     ) as progress:
         task = progress.add_task("Creating groups...", total=len(rows))
         result = bulk_create_ip_dest_groups(
-            client, tenant.id, rows,
+            client,
+            tenant.id,
+            rows,
             progress_callback=lambda done, total: progress.update(task, completed=done),
         )
 
-    console.print(f"\n[green]✓ Created {result.created}[/green]  [red]✗ Failed {result.failed}[/red]")
+    console.print(
+        f"\n[green]✓ Created {result.created}[/green]  [red]✗ Failed {result.failed}[/red]"
+    )
     for d in result.rows_detail:
         if d["status"] == "FAILED":
             console.print(f"  [red]{d['name']}:[/red] {d['error']}")
 
     if result.created:
         from services.zia_import_service import ZIAImportService
+
         with console.status("Updating local DB..."):
             ZIAImportService(client, tenant.id).run(resource_types=["ip_destination_group"])
         console.print("[green]✓ Local DB updated.[/green]")
@@ -2244,7 +2376,11 @@ def _list_dns_rules(tenant):
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    rows.sort(key=lambda r: _rule_order_key(r["raw_config"].get("order") or r["raw_config"].get("rank") or 0))
+    rows.sort(
+        key=lambda r: _rule_order_key(
+            r["raw_config"].get("order") or r["raw_config"].get("rank") or 0
+        )
+    )
 
     table = Table(title=f"DNS Filter Rules ({len(rows)} total)", show_lines=False)
     table.add_column("Order", justify="right")
@@ -2260,8 +2396,10 @@ def _list_dns_rules(tenant):
         action = (action_val.get("type") if isinstance(action_val, dict) else action_val) or "—"
         state_val = cfg.get("state") or "—"
         state_str = (
-            f"[green]{state_val}[/green]" if state_val == "ENABLED"
-            else f"[red]{state_val}[/red]" if state_val == "DISABLED"
+            f"[green]{state_val}[/green]"
+            if state_val == "ENABLED"
+            else f"[red]{state_val}[/red]"
+            if state_val == "DISABLED"
             else state_val
         )
         description = str(cfg.get("description") or "")[:60]
@@ -2269,6 +2407,7 @@ def _list_dns_rules(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -2301,7 +2440,11 @@ def _search_dns_rules(tenant):
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    rows.sort(key=lambda r: _rule_order_key(r["raw_config"].get("order") or r["raw_config"].get("rank") or 0))
+    rows.sort(
+        key=lambda r: _rule_order_key(
+            r["raw_config"].get("order") or r["raw_config"].get("rank") or 0
+        )
+    )
 
     table = Table(title=f"Matching DNS Filter Rules ({len(rows)})", show_lines=False)
     table.add_column("Order", justify="right")
@@ -2316,14 +2459,17 @@ def _search_dns_rules(tenant):
         action = (action_val.get("type") if isinstance(action_val, dict) else action_val) or "—"
         state_val = cfg.get("state") or "—"
         state_str = (
-            f"[green]{state_val}[/green]" if state_val == "ENABLED"
-            else f"[red]{state_val}[/red]" if state_val == "DISABLED"
+            f"[green]{state_val}[/green]"
+            if state_val == "ENABLED"
+            else f"[red]{state_val}[/red]"
+            if state_val == "DISABLED"
             else state_val
         )
         table.add_row(order, r["name"] or "—", action, state_str)
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -2389,18 +2535,29 @@ def _toggle_dns_rules(client, tenant):
             client.update_firewall_dns_rule(r["zia_id"], config)
             _update_zia_resource_field(tenant.id, "firewall_dns_rule", r["zia_id"], "state", action)
             audit_service.log(
-                product="ZIA", operation="toggle_dns_rule", action="UPDATE",
-                status="SUCCESS", tenant_id=tenant.id, resource_type="firewall_dns_rule",
-                resource_id=r["zia_id"], resource_name=r["name"],
+                product="ZIA",
+                operation="toggle_dns_rule",
+                action="UPDATE",
+                status="SUCCESS",
+                tenant_id=tenant.id,
+                resource_type="firewall_dns_rule",
+                resource_id=r["zia_id"],
+                resource_name=r["name"],
                 details={"state": action},
             )
             ok += 1
         except Exception as e:
             console.print(f"[red]✗ {r['name']}: {e}[/red]")
             audit_service.log(
-                product="ZIA", operation="toggle_dns_rule", action="UPDATE",
-                status="FAILURE", tenant_id=tenant.id, resource_type="firewall_dns_rule",
-                resource_id=r["zia_id"], resource_name=r["name"], error_message=str(e),
+                product="ZIA",
+                operation="toggle_dns_rule",
+                action="UPDATE",
+                status="FAILURE",
+                tenant_id=tenant.id,
+                resource_type="firewall_dns_rule",
+                resource_id=r["zia_id"],
+                resource_name=r["name"],
+                error_message=str(e),
             )
 
     if ok:
@@ -2435,13 +2592,16 @@ def _list_ips_rules(tenant):
 
     if not rows:
         console.print(
-            "[yellow]No IPS rules in local DB. "
-            "Run [bold]Import Config[/bold] first.[/yellow]"
+            "[yellow]No IPS rules in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    rows.sort(key=lambda r: _rule_order_key(r["raw_config"].get("order") or r["raw_config"].get("rank") or 0))
+    rows.sort(
+        key=lambda r: _rule_order_key(
+            r["raw_config"].get("order") or r["raw_config"].get("rank") or 0
+        )
+    )
 
     table = Table(title=f"IPS Rules ({len(rows)} total)", show_lines=False)
     table.add_column("Order", justify="right")
@@ -2457,8 +2617,10 @@ def _list_ips_rules(tenant):
         action = (action_val.get("type") if isinstance(action_val, dict) else action_val) or "—"
         state_val = cfg.get("state") or "—"
         state_str = (
-            f"[green]{state_val}[/green]" if state_val == "ENABLED"
-            else f"[red]{state_val}[/red]" if state_val == "DISABLED"
+            f"[green]{state_val}[/green]"
+            if state_val == "ENABLED"
+            else f"[red]{state_val}[/red]"
+            if state_val == "DISABLED"
             else state_val
         )
         description = str(cfg.get("description") or "")[:60]
@@ -2466,6 +2628,7 @@ def _list_ips_rules(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -2506,7 +2669,11 @@ def _search_ips_rules(tenant):
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    rows.sort(key=lambda r: _rule_order_key(r["raw_config"].get("order") or r["raw_config"].get("rank") or 0))
+    rows.sort(
+        key=lambda r: _rule_order_key(
+            r["raw_config"].get("order") or r["raw_config"].get("rank") or 0
+        )
+    )
 
     table = Table(title=f"Matching IPS Rules ({len(rows)})", show_lines=False)
     table.add_column("Order", justify="right")
@@ -2521,14 +2688,17 @@ def _search_ips_rules(tenant):
         action = (action_val.get("type") if isinstance(action_val, dict) else action_val) or "—"
         state_val = cfg.get("state") or "—"
         state_str = (
-            f"[green]{state_val}[/green]" if state_val == "ENABLED"
-            else f"[red]{state_val}[/red]" if state_val == "DISABLED"
+            f"[green]{state_val}[/green]"
+            if state_val == "ENABLED"
+            else f"[red]{state_val}[/red]"
+            if state_val == "DISABLED"
             else state_val
         )
         table.add_row(order, r["name"] or "—", action, state_str)
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -2602,18 +2772,29 @@ def _toggle_ips_rules(client, tenant):
             client.update_firewall_ips_rule(r["zia_id"], config)
             _update_zia_resource_field(tenant.id, "firewall_ips_rule", r["zia_id"], "state", action)
             audit_service.log(
-                product="ZIA", operation="toggle_ips_rule", action="UPDATE",
-                status="SUCCESS", tenant_id=tenant.id, resource_type="firewall_ips_rule",
-                resource_id=r["zia_id"], resource_name=r["name"],
+                product="ZIA",
+                operation="toggle_ips_rule",
+                action="UPDATE",
+                status="SUCCESS",
+                tenant_id=tenant.id,
+                resource_type="firewall_ips_rule",
+                resource_id=r["zia_id"],
+                resource_name=r["name"],
                 details={"state": action},
             )
             ok += 1
         except Exception as e:
             console.print(f"[red]✗ {r['name']}: {e}[/red]")
             audit_service.log(
-                product="ZIA", operation="toggle_ips_rule", action="UPDATE",
-                status="FAILURE", tenant_id=tenant.id, resource_type="firewall_ips_rule",
-                resource_id=r["zia_id"], resource_name=r["name"], error_message=str(e),
+                product="ZIA",
+                operation="toggle_ips_rule",
+                action="UPDATE",
+                status="FAILURE",
+                tenant_id=tenant.id,
+                resource_type="firewall_ips_rule",
+                resource_id=r["zia_id"],
+                resource_name=r["name"],
+                error_message=str(e),
             )
 
     if ok:
@@ -2625,6 +2806,7 @@ def _toggle_ips_rules(client, tenant):
 # ------------------------------------------------------------------
 # Locations
 # ------------------------------------------------------------------
+
 
 def locations_menu(client, tenant):
     while True:
@@ -2669,8 +2851,7 @@ def _list_locations(tenant):
 
     if not rows:
         console.print(
-            "[yellow]No locations in local DB. "
-            "Run [bold]Import Config[/bold] first.[/yellow]"
+            "[yellow]No locations in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
@@ -2692,6 +2873,7 @@ def _list_locations(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -2741,6 +2923,7 @@ def _search_locations(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -2762,8 +2945,7 @@ def _list_location_groups(tenant):
 
     if not rows:
         console.print(
-            "[yellow]No location groups in local DB. "
-            "Run [bold]Import Config[/bold] first.[/yellow]"
+            "[yellow]No location groups in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
@@ -2781,12 +2963,14 @@ def _list_location_groups(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
 # ------------------------------------------------------------------
 # SSL Inspection
 # ------------------------------------------------------------------
+
 
 def ssl_inspection_menu(client, tenant):
     while True:
@@ -2837,7 +3021,11 @@ def _list_ssl_rules(tenant):
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    rows.sort(key=lambda r: _rule_order_key(r["raw_config"].get("order") or r["raw_config"].get("rank") or 0))
+    rows.sort(
+        key=lambda r: _rule_order_key(
+            r["raw_config"].get("order") or r["raw_config"].get("rank") or 0
+        )
+    )
 
     table = Table(title=f"SSL Inspection Rules ({len(rows)} total)", show_lines=False)
     table.add_column("Order", justify="right")
@@ -2853,8 +3041,10 @@ def _list_ssl_rules(tenant):
         action = (action_val.get("type") if isinstance(action_val, dict) else action_val) or "—"
         state_val = cfg.get("state") or "—"
         state_str = (
-            f"[green]{state_val}[/green]" if state_val == "ENABLED"
-            else f"[red]{state_val}[/red]" if state_val == "DISABLED"
+            f"[green]{state_val}[/green]"
+            if state_val == "ENABLED"
+            else f"[red]{state_val}[/red]"
+            if state_val == "DISABLED"
             else state_val
         )
         description = str(cfg.get("description") or "")[:60]
@@ -2862,6 +3052,7 @@ def _list_ssl_rules(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -2894,7 +3085,11 @@ def _search_ssl_rules(tenant):
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    rows.sort(key=lambda r: _rule_order_key(r["raw_config"].get("order") or r["raw_config"].get("rank") or 0))
+    rows.sort(
+        key=lambda r: _rule_order_key(
+            r["raw_config"].get("order") or r["raw_config"].get("rank") or 0
+        )
+    )
 
     table = Table(title=f"Matching SSL Rules ({len(rows)})", show_lines=False)
     table.add_column("Order", justify="right")
@@ -2909,14 +3104,17 @@ def _search_ssl_rules(tenant):
         action = (action_val.get("type") if isinstance(action_val, dict) else action_val) or "—"
         state_val = cfg.get("state") or "—"
         state_str = (
-            f"[green]{state_val}[/green]" if state_val == "ENABLED"
-            else f"[red]{state_val}[/red]" if state_val == "DISABLED"
+            f"[green]{state_val}[/green]"
+            if state_val == "ENABLED"
+            else f"[red]{state_val}[/red]"
+            if state_val == "DISABLED"
             else state_val
         )
         table.add_row(order, r["name"] or "—", action, state_str)
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -2943,7 +3141,9 @@ def _toggle_ssl_rules(client, tenant):
         ]
 
     if not rows:
-        console.print("[yellow]No SSL inspection rules in local DB. Run Import Config first.[/yellow]")
+        console.print(
+            "[yellow]No SSL inspection rules in local DB. Run Import Config first.[/yellow]"
+        )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
@@ -2981,20 +3181,33 @@ def _toggle_ssl_rules(client, tenant):
             config = client.get_ssl_inspection_rule(r["zia_id"])
             config["state"] = action
             client.update_ssl_inspection_rule(r["zia_id"], config)
-            _update_zia_resource_field(tenant.id, "ssl_inspection_rule", r["zia_id"], "state", action)
+            _update_zia_resource_field(
+                tenant.id, "ssl_inspection_rule", r["zia_id"], "state", action
+            )
             audit_service.log(
-                product="ZIA", operation="toggle_ssl_rule", action="UPDATE",
-                status="SUCCESS", tenant_id=tenant.id, resource_type="ssl_inspection_rule",
-                resource_id=r["zia_id"], resource_name=r["name"],
+                product="ZIA",
+                operation="toggle_ssl_rule",
+                action="UPDATE",
+                status="SUCCESS",
+                tenant_id=tenant.id,
+                resource_type="ssl_inspection_rule",
+                resource_id=r["zia_id"],
+                resource_name=r["name"],
                 details={"state": action},
             )
             ok += 1
         except Exception as e:
             console.print(f"[red]✗ {r['name']}: {e}[/red]")
             audit_service.log(
-                product="ZIA", operation="toggle_ssl_rule", action="UPDATE",
-                status="FAILURE", tenant_id=tenant.id, resource_type="ssl_inspection_rule",
-                resource_id=r["zia_id"], resource_name=r["name"], error_message=str(e),
+                product="ZIA",
+                operation="toggle_ssl_rule",
+                action="UPDATE",
+                status="FAILURE",
+                tenant_id=tenant.id,
+                resource_type="ssl_inspection_rule",
+                resource_id=r["zia_id"],
+                resource_name=r["name"],
+                error_message=str(e),
             )
 
     if ok:
@@ -3006,16 +3219,19 @@ def _toggle_ssl_rules(client, tenant):
 # DB helpers
 # ------------------------------------------------------------------
 
+
 def _is_zia_resource_na(tenant_id: int, resource_type: str) -> bool:
     from db.database import get_session
     from db.models import TenantConfig
+
     with get_session() as session:
         cfg = session.get(TenantConfig, tenant_id)
         return resource_type in list(cfg.zia_disabled_resources or []) if cfg else False
 
 
-def _update_zia_resource_field(tenant_id: int, resource_type: str, zia_id: str,
-                                field: str, value) -> None:
+def _update_zia_resource_field(
+    tenant_id: int, resource_type: str, zia_id: str, field: str, value
+) -> None:
     from db.database import get_session
     from db.models import ZIAResource
     from sqlalchemy.orm.attributes import flag_modified
@@ -3036,6 +3252,7 @@ def _update_zia_resource_field(tenant_id: int, resource_type: str, zia_id: str,
 # ------------------------------------------------------------------
 # Security Policy Settings (Allowlist / Denylist)
 # ------------------------------------------------------------------
+
 
 def security_policy_menu(client, tenant):
     while True:
@@ -3097,11 +3314,13 @@ def _view_url_list(client, list_type: str):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
 def _add_urls_to_list(client, tenant, list_type: str):
     from services import audit_service
+
     label = "allowlist" if list_type == "allowlist" else "denylist"
     console.print(f"\n[bold]Add URLs to {label.title()}[/bold]")
     console.print("[dim]Enter one URL per line, blank line to submit.[/dim]\n")
@@ -3132,9 +3351,13 @@ def _add_urls_to_list(client, tenant, list_type: str):
             return
 
     audit_service.log(
-        product="ZIA", operation=f"add_to_{label}", action="UPDATE",
-        status="SUCCESS", tenant_id=tenant.id,
-        resource_type=label, details={"urls_added": urls},
+        product="ZIA",
+        operation=f"add_to_{label}",
+        action="UPDATE",
+        status="SUCCESS",
+        tenant_id=tenant.id,
+        resource_type=label,
+        details={"urls_added": urls},
     )
     console.print(f"[green]✓ {len(urls)} URL(s) added.[/green]")
     _zia_changed()
@@ -3143,6 +3366,7 @@ def _add_urls_to_list(client, tenant, list_type: str):
 
 def _remove_urls_from_list(client, tenant, list_type: str):
     from services import audit_service
+
     label = "allowlist" if list_type == "allowlist" else "denylist"
 
     with console.status(f"Fetching {label}..."):
@@ -3187,9 +3411,13 @@ def _remove_urls_from_list(client, tenant, list_type: str):
             return
 
     audit_service.log(
-        product="ZIA", operation=f"remove_from_{label}", action="UPDATE",
-        status="SUCCESS", tenant_id=tenant.id,
-        resource_type=label, details={"urls_removed": selected},
+        product="ZIA",
+        operation=f"remove_from_{label}",
+        action="UPDATE",
+        status="SUCCESS",
+        tenant_id=tenant.id,
+        resource_type=label,
+        details={"urls_removed": selected},
     )
     console.print(f"[green]✓ {len(selected)} URL(s) removed.[/green]")
     _zia_changed()
@@ -3199,6 +3427,7 @@ def _remove_urls_from_list(client, tenant, list_type: str):
 # ------------------------------------------------------------------
 # URL Categories
 # ------------------------------------------------------------------
+
 
 def url_categories_menu(client, tenant):
     while True:
@@ -3246,7 +3475,11 @@ def _list_url_categories(tenant, search: str = None):
         ]
 
     # Only show custom categories (not Zscaler built-ins)
-    rows = [r for r in rows if r["raw_config"].get("customCategory") or r["raw_config"].get("type") == "URL_CATEGORY"]
+    rows = [
+        r
+        for r in rows
+        if r["raw_config"].get("customCategory") or r["raw_config"].get("type") == "URL_CATEGORY"
+    ]
 
     if search:
         search_lower = search.lower()
@@ -3254,7 +3487,8 @@ def _list_url_categories(tenant, search: str = None):
 
     if not rows:
         msg = (
-            f"[yellow]No URL categories matching '{search}'.[/yellow]" if search
+            f"[yellow]No URL categories matching '{search}'.[/yellow]"
+            if search
             else "[yellow]No custom URL categories in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         console.print(msg)
@@ -3273,6 +3507,7 @@ def _list_url_categories(tenant, search: str = None):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -3298,7 +3533,8 @@ def _modify_category_urls(client, tenant, add: bool):
         cats = [
             {"name": r.name, "zia_id": r.zia_id}
             for r in resources
-            if r.raw_config and (r.raw_config.get("customCategory") or r.raw_config.get("type") == "URL_CATEGORY")
+            if r.raw_config
+            and (r.raw_config.get("customCategory") or r.raw_config.get("type") == "URL_CATEGORY")
         ]
 
     if not cats:
@@ -3344,12 +3580,19 @@ def _modify_category_urls(client, tenant, add: bool):
             return
 
     audit_service.log(
-        product="ZIA", operation=f"{'add' if add else 'remove'}_category_urls", action="UPDATE",
-        status="SUCCESS", tenant_id=tenant.id, resource_type="url_category",
-        resource_id=cat["zia_id"], resource_name=cat["name"],
+        product="ZIA",
+        operation=f"{'add' if add else 'remove'}_category_urls",
+        action="UPDATE",
+        status="SUCCESS",
+        tenant_id=tenant.id,
+        resource_type="url_category",
+        resource_id=cat["zia_id"],
+        resource_name=cat["name"],
         details={"urls": urls},
     )
-    console.print(f"[green]✓ {len(urls)} URL(s) {'added to' if add else 'removed from'} '{cat['name']}'.[/green]")
+    console.print(
+        f"[green]✓ {len(urls)} URL(s) {'added to' if add else 'removed from'} '{cat['name']}'.[/green]"
+    )
     _zia_changed()
     questionary.press_any_key_to_continue("Press any key to continue...").ask()
 
@@ -3357,6 +3600,7 @@ def _modify_category_urls(client, tenant, add: bool):
 # ------------------------------------------------------------------
 # URL Filtering
 # ------------------------------------------------------------------
+
 
 def url_filtering_menu(client, tenant):
     while True:
@@ -3405,14 +3649,19 @@ def _list_url_filtering_rules(tenant, search: str = None):
 
     if not rows:
         msg = (
-            f"[yellow]No URL filtering rules matching '{search}'.[/yellow]" if search
+            f"[yellow]No URL filtering rules matching '{search}'.[/yellow]"
+            if search
             else "[yellow]No URL filtering rules in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         console.print(msg)
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    rows.sort(key=lambda r: _rule_order_key(r["raw_config"].get("order") or r["raw_config"].get("rank") or 0))
+    rows.sort(
+        key=lambda r: _rule_order_key(
+            r["raw_config"].get("order") or r["raw_config"].get("rank") or 0
+        )
+    )
 
     table = Table(title=f"URL Filtering Rules ({len(rows)} total)", show_lines=False)
     table.add_column("Order", justify="right")
@@ -3427,8 +3676,10 @@ def _list_url_filtering_rules(tenant, search: str = None):
         action = str(cfg.get("action") or "—")
         state_val = cfg.get("state") or "—"
         state_str = (
-            f"[green]{state_val}[/green]" if state_val == "ENABLED"
-            else f"[red]{state_val}[/red]" if state_val == "DISABLED"
+            f"[green]{state_val}[/green]"
+            if state_val == "ENABLED"
+            else f"[red]{state_val}[/red]"
+            if state_val == "DISABLED"
             else state_val
         )
         description = str(cfg.get("description") or "")[:60]
@@ -3436,6 +3687,7 @@ def _list_url_filtering_rules(tenant, search: str = None):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -3468,7 +3720,9 @@ def _toggle_url_filtering_rules(client, tenant):
         ]
 
     if not rows:
-        console.print("[yellow]No URL filtering rules in local DB. Run Import Config first.[/yellow]")
+        console.print(
+            "[yellow]No URL filtering rules in local DB. Run Import Config first.[/yellow]"
+        )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
@@ -3506,20 +3760,33 @@ def _toggle_url_filtering_rules(client, tenant):
             config = client.get_url_filtering_rule(r["zia_id"])
             config["state"] = action
             client.update_url_filtering_rule(r["zia_id"], config)
-            _update_zia_resource_field(tenant.id, "url_filtering_rule", r["zia_id"], "state", action)
+            _update_zia_resource_field(
+                tenant.id, "url_filtering_rule", r["zia_id"], "state", action
+            )
             audit_service.log(
-                product="ZIA", operation="toggle_url_filtering_rule", action="UPDATE",
-                status="SUCCESS", tenant_id=tenant.id, resource_type="url_filtering_rule",
-                resource_id=r["zia_id"], resource_name=r["name"],
+                product="ZIA",
+                operation="toggle_url_filtering_rule",
+                action="UPDATE",
+                status="SUCCESS",
+                tenant_id=tenant.id,
+                resource_type="url_filtering_rule",
+                resource_id=r["zia_id"],
+                resource_name=r["name"],
                 details={"state": action},
             )
             ok += 1
         except Exception as e:
             console.print(f"[red]✗ {r['name']}: {e}[/red]")
             audit_service.log(
-                product="ZIA", operation="toggle_url_filtering_rule", action="UPDATE",
-                status="FAILURE", tenant_id=tenant.id, resource_type="url_filtering_rule",
-                resource_id=r["zia_id"], resource_name=r["name"], error_message=str(e),
+                product="ZIA",
+                operation="toggle_url_filtering_rule",
+                action="UPDATE",
+                status="FAILURE",
+                tenant_id=tenant.id,
+                resource_type="url_filtering_rule",
+                resource_id=r["zia_id"],
+                resource_name=r["name"],
+                error_message=str(e),
             )
 
     if ok:
@@ -3531,6 +3798,7 @@ def _toggle_url_filtering_rules(client, tenant):
 # ------------------------------------------------------------------
 # Traffic Forwarding (read-only)
 # ------------------------------------------------------------------
+
 
 def traffic_forwarding_menu(tenant):
     while True:
@@ -3576,7 +3844,8 @@ def _list_forwarding_rules(tenant, search: str = None):
 
     if not rows:
         msg = (
-            f"[yellow]No forwarding rules matching '{search}'.[/yellow]" if search
+            f"[yellow]No forwarding rules matching '{search}'.[/yellow]"
+            if search
             else "[yellow]No forwarding rules in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         console.print(msg)
@@ -3594,8 +3863,10 @@ def _list_forwarding_rules(tenant, search: str = None):
         fwd_type = str(cfg.get("type") or cfg.get("forwardingMethod") or "—")
         state_val = cfg.get("state") or "—"
         state_str = (
-            f"[green]{state_val}[/green]" if state_val == "ENABLED"
-            else f"[red]{state_val}[/red]" if state_val == "DISABLED"
+            f"[green]{state_val}[/green]"
+            if state_val == "ENABLED"
+            else f"[red]{state_val}[/red]"
+            if state_val == "DISABLED"
             else state_val
         )
         description = str(cfg.get("description") or "")[:60]
@@ -3603,6 +3874,7 @@ def _list_forwarding_rules(tenant, search: str = None):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -3616,6 +3888,7 @@ def _search_forwarding_rules(tenant):
 # ------------------------------------------------------------------
 # ZIA Users
 # ------------------------------------------------------------------
+
 
 def zia_users_menu(tenant):
     while True:
@@ -3658,14 +3931,16 @@ def _list_zia_users(tenant, search: str = None):
     if search:
         search_lower = search.lower()
         rows = [
-            r for r in rows
+            r
+            for r in rows
             if search_lower in (r["name"] or "").lower()
             or search_lower in (r["raw_config"].get("email") or "").lower()
         ]
 
     if not rows:
         msg = (
-            f"[yellow]No users matching '{search}'.[/yellow]" if search
+            f"[yellow]No users matching '{search}'.[/yellow]"
+            if search
             else "[yellow]No users in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         console.print(msg)
@@ -3682,13 +3957,12 @@ def _list_zia_users(tenant, search: str = None):
         cfg = r["raw_config"]
         email = cfg.get("email") or "—"
         dept = (cfg.get("department") or {}).get("name") or "—"
-        groups = ", ".join(
-            g.get("name", "") for g in (cfg.get("groups") or [])
-        )[:50] or "—"
+        groups = ", ".join(g.get("name", "") for g in (cfg.get("groups") or []))[:50] or "—"
         table.add_row(r["name"] or "—", email, dept, groups)
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -3703,9 +3977,11 @@ def _search_zia_users(tenant):
 # DLP — shared helpers
 # ------------------------------------------------------------------
 
+
 def _sync_dlp_resource(client, tenant, resource_type: str):
     """Re-sync a single DLP resource type from the API into the DB."""
     from services.zia_import_service import ZIAImportService
+
     service = ZIAImportService(client, tenant_id=tenant.id)
     service.run(resource_types=[resource_type])
 
@@ -3716,6 +3992,7 @@ def _view_raw_json(title: str, data: dict):
     from rich.syntax import Syntax
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     syntax = Syntax(json.dumps(data, indent=2, default=str), "json", theme="monokai")
     scroll_view(render_rich_to_lines(syntax), header_ansi=capture_banner())
 
@@ -3723,6 +4000,7 @@ def _view_raw_json(title: str, data: dict):
 # ------------------------------------------------------------------
 # DLP Engines
 # ------------------------------------------------------------------
+
 
 def dlp_engines_menu(client, tenant):
     while True:
@@ -3770,7 +4048,12 @@ def _list_dlp_engines(tenant, search: str = None):
             .all()
         )
         rows = [
-            {"name": r.name, "zia_id": r.zia_id, "raw_config": r.raw_config or {}, "synced_at": r.synced_at}
+            {
+                "name": r.name,
+                "zia_id": r.zia_id,
+                "raw_config": r.raw_config or {},
+                "synced_at": r.synced_at,
+            }
             for r in resources
         ]
     rows.sort(key=lambda r: int(r["zia_id"]) if r["zia_id"].isdigit() else float("inf"))
@@ -3781,7 +4064,8 @@ def _list_dlp_engines(tenant, search: str = None):
 
     if not rows:
         msg = (
-            f"[yellow]No DLP engines matching '{search}'.[/yellow]" if search
+            f"[yellow]No DLP engines matching '{search}'.[/yellow]"
+            if search
             else "[yellow]No DLP engines in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         console.print(msg)
@@ -3802,6 +4086,7 @@ def _list_dlp_engines(tenant, search: str = None):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -3836,10 +4121,7 @@ def _pick_dlp_engine(tenant):
 
     chosen = questionary.select(
         "Select DLP engine:",
-        choices=[
-            questionary.Choice(f"{r['name']} (ID: {r['zia_id']})", value=r)
-            for r in rows
-        ],
+        choices=[questionary.Choice(f"{r['name']} (ID: {r['zia_id']})", value=r) for r in rows],
     ).ask()
     return chosen
 
@@ -3853,6 +4135,7 @@ def _view_dlp_engine(tenant):
 
 def _create_dlp_engine(client, tenant):
     import json
+
     console.print("\n[bold]Create DLP Engine from JSON File[/bold]")
     path = questionary.path("Path to JSON file:").ask()
     if not path:
@@ -3878,6 +4161,7 @@ def _create_dlp_engine(client, tenant):
 
 def _edit_dlp_engine(client, tenant):
     import json
+
     chosen = _pick_dlp_engine(tenant)
     if not chosen:
         return
@@ -3939,6 +4223,7 @@ def _delete_dlp_engine(client, tenant):
 # DLP Dictionaries
 # ------------------------------------------------------------------
 
+
 def dlp_dictionaries_menu(client, tenant):
     while True:
         render_banner()
@@ -3991,7 +4276,12 @@ def _list_dlp_dictionaries(tenant, search: str = None):
             .all()
         )
         rows = [
-            {"name": r.name, "zia_id": r.zia_id, "raw_config": r.raw_config or {}, "synced_at": r.synced_at}
+            {
+                "name": r.name,
+                "zia_id": r.zia_id,
+                "raw_config": r.raw_config or {},
+                "synced_at": r.synced_at,
+            }
             for r in resources
         ]
     rows.sort(key=lambda r: int(r["zia_id"]) if r["zia_id"].isdigit() else float("inf"))
@@ -4002,7 +4292,8 @@ def _list_dlp_dictionaries(tenant, search: str = None):
 
     if not rows:
         msg = (
-            f"[yellow]No DLP dictionaries matching '{search}'.[/yellow]" if search
+            f"[yellow]No DLP dictionaries matching '{search}'.[/yellow]"
+            if search
             else "[yellow]No DLP dictionaries in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         console.print(msg)
@@ -4027,6 +4318,7 @@ def _list_dlp_dictionaries(tenant, search: str = None):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -4061,10 +4353,7 @@ def _pick_dlp_dictionary(tenant):
 
     chosen = questionary.select(
         "Select DLP dictionary:",
-        choices=[
-            questionary.Choice(f"{r['name']} (ID: {r['zia_id']})", value=r)
-            for r in rows
-        ],
+        choices=[questionary.Choice(f"{r['name']} (ID: {r['zia_id']})", value=r) for r in rows],
     ).ask()
     return chosen
 
@@ -4079,6 +4368,7 @@ def _view_dlp_dictionary(tenant):
 def _read_csv_entries(path: str) -> list:
     """Read a CSV file and return a list of value strings (one per row, skips header)."""
     import csv
+
     entries = []
     with open(path.strip()) as fh:
         reader = csv.reader(fh)
@@ -4096,6 +4386,7 @@ def _read_csv_entries(path: str) -> list:
 
 def _create_dlp_dictionary_json(client, tenant):
     import json
+
     console.print("\n[bold]Create DLP Dictionary from JSON File[/bold]")
     path = questionary.path("Path to JSON file:").ask()
     if not path:
@@ -4122,7 +4413,9 @@ def _create_dlp_dictionary_json(client, tenant):
 def _create_dlp_dictionary_csv(client, tenant):
     """Create a DLP dictionary from a CSV file of phrases/patterns."""
     console.print("\n[bold]Create DLP Dictionary from CSV File[/bold]")
-    console.print("[dim]CSV format: one value per row (phrase or regex pattern). Optional header: value/phrase/pattern.[/dim]")
+    console.print(
+        "[dim]CSV format: one value per row (phrase or regex pattern). Optional header: value/phrase/pattern.[/dim]"
+    )
 
     name = questionary.text("Dictionary name:").ask()
     if not name:
@@ -4176,7 +4469,9 @@ def _create_dlp_dictionary_csv(client, tenant):
 
     try:
         result = client.create_dlp_dictionary(payload)
-        console.print(f"[green]✓ Created DLP dictionary ID {result.get('id', '?')} with {len(entries)} entries.[/green]")
+        console.print(
+            f"[green]✓ Created DLP dictionary ID {result.get('id', '?')} with {len(entries)} entries.[/green]"
+        )
         _zia_changed()
         _sync_dlp_resource(client, tenant, "dlp_dictionary")
     except Exception as e:
@@ -4186,6 +4481,7 @@ def _create_dlp_dictionary_csv(client, tenant):
 
 def _edit_dlp_dictionary(client, tenant):
     import json
+
     chosen = _pick_dlp_dictionary(tenant)
     if not chosen:
         return
@@ -4228,7 +4524,9 @@ def _edit_dlp_dictionary_csv(client, tenant):
         return
 
     cfg = chosen["raw_config"]
-    console.print(f"\n[dim]Current: {len(cfg.get('phrases') or [])} phrases, {len(cfg.get('patterns') or [])} patterns[/dim]")
+    console.print(
+        f"\n[dim]Current: {len(cfg.get('phrases') or [])} phrases, {len(cfg.get('patterns') or [])} patterns[/dim]"
+    )
 
     entry_type = questionary.select(
         "Replace which entry type:",
@@ -4262,9 +4560,13 @@ def _edit_dlp_dictionary_csv(client, tenant):
 
     updated_cfg = dict(cfg)
     if entry_type == "phrases":
-        updated_cfg["phrases"] = [{"action": "PHRASE_COUNT_TYPE_UNIQUE", "phrase": e} for e in entries]
+        updated_cfg["phrases"] = [
+            {"action": "PHRASE_COUNT_TYPE_UNIQUE", "phrase": e} for e in entries
+        ]
     else:
-        updated_cfg["patterns"] = [{"action": "PATTERN_COUNT_TYPE_UNIQUE", "pattern": e} for e in entries]
+        updated_cfg["patterns"] = [
+            {"action": "PATTERN_COUNT_TYPE_UNIQUE", "pattern": e} for e in entries
+        ]
 
     try:
         client.update_dlp_dictionary(chosen["zia_id"], updated_cfg)
@@ -4302,6 +4604,7 @@ def _delete_dlp_dictionary(client, tenant):
 # DLP Web Rules (read-only view)
 # ------------------------------------------------------------------
 
+
 def dlp_web_rules_menu(client, tenant):
     while True:
         render_banner()
@@ -4338,10 +4641,19 @@ def _list_dlp_web_rules(tenant, search: str = None):
             .all()
         )
         rows = [
-            {"name": r.name, "zia_id": r.zia_id, "raw_config": r.raw_config or {}, "synced_at": r.synced_at}
+            {
+                "name": r.name,
+                "zia_id": r.zia_id,
+                "raw_config": r.raw_config or {},
+                "synced_at": r.synced_at,
+            }
             for r in resources
         ]
-    rows.sort(key=lambda r: _rule_order_key(r["raw_config"].get("order") or r["raw_config"].get("rank") or 0))
+    rows.sort(
+        key=lambda r: _rule_order_key(
+            r["raw_config"].get("order") or r["raw_config"].get("rank") or 0
+        )
+    )
 
     if search:
         search_lower = search.lower()
@@ -4349,7 +4661,8 @@ def _list_dlp_web_rules(tenant, search: str = None):
 
     if not rows:
         msg = (
-            f"[yellow]No DLP web rules matching '{search}'.[/yellow]" if search
+            f"[yellow]No DLP web rules matching '{search}'.[/yellow]"
+            if search
             else "[yellow]No DLP web rules in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         console.print(msg)
@@ -4369,8 +4682,10 @@ def _list_dlp_web_rules(tenant, search: str = None):
         action = str(cfg.get("action") or "—")
         state_val = cfg.get("state") or "—"
         state_str = (
-            f"[green]{state_val}[/green]" if state_val == "ENABLED"
-            else f"[red]{state_val}[/red]" if state_val == "DISABLED"
+            f"[green]{state_val}[/green]"
+            if state_val == "ENABLED"
+            else f"[red]{state_val}[/red]"
+            if state_val == "DISABLED"
             else state_val
         )
         synced = r["synced_at"].strftime("%Y-%m-%d %H:%M") if r["synced_at"] else "—"
@@ -4378,6 +4693,7 @@ def _list_dlp_web_rules(tenant, search: str = None):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -4411,10 +4727,7 @@ def _pick_dlp_web_rule(tenant):
 
     return questionary.select(
         "Select DLP web rule:",
-        choices=[
-            questionary.Choice(f"{r['name']} (ID: {r['zia_id']})", value=r)
-            for r in rows
-        ],
+        choices=[questionary.Choice(f"{r['name']} (ID: {r['zia_id']})", value=r) for r in rows],
     ).ask()
 
 
@@ -4428,6 +4741,7 @@ def _view_dlp_web_rule(tenant):
 # ------------------------------------------------------------------
 # Cloud Applications
 # ------------------------------------------------------------------
+
 
 def cloud_applications_menu(client, tenant):
     while True:
@@ -4477,7 +4791,8 @@ def _list_cloud_apps_db(tenant, resource_type: str, search: str = None):
 
     if not rows:
         msg = (
-            f"[yellow]No {label} matching '{search}'.[/yellow]" if search
+            f"[yellow]No {label} matching '{search}'.[/yellow]"
+            if search
             else f"[yellow]No {label} in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         console.print(msg)
@@ -4498,6 +4813,7 @@ def _list_cloud_apps_db(tenant, resource_type: str, search: str = None):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -4521,9 +4837,11 @@ def _search_cloud_apps_db(tenant):
 # Cloud App Control
 # ------------------------------------------------------------------
 
+
 def _sync_cloud_app_resource(client, tenant):
     """Re-sync cloud_app_control_rule from the API into the DB."""
     from services.zia_import_service import ZIAImportService
+
     service = ZIAImportService(client, tenant_id=tenant.id)
     service.run(resource_types=["cloud_app_control_rule"])
 
@@ -4539,14 +4857,18 @@ def cloud_app_control_menu(client, tenant):
         with get_session() as session:
             resources = (
                 session.query(ZIAResource)
-                .filter_by(tenant_id=tenant.id, resource_type="cloud_app_control_rule", is_deleted=False)
+                .filter_by(
+                    tenant_id=tenant.id, resource_type="cloud_app_control_rule", is_deleted=False
+                )
                 .all()
             )
-            rule_types = sorted({
-                (r.raw_config or {}).get("type")
-                for r in resources
-                if (r.raw_config or {}).get("type")
-            })
+            rule_types = sorted(
+                {
+                    (r.raw_config or {}).get("type")
+                    for r in resources
+                    if (r.raw_config or {}).get("type")
+                }
+            )
 
         if not rule_types:
             console.print(
@@ -4557,8 +4879,7 @@ def cloud_app_control_menu(client, tenant):
             return
 
         type_choices = [
-            questionary.Choice(rt.replace("_", " ").title(), value=rt)
-            for rt in rule_types
+            questionary.Choice(rt.replace("_", " ").title(), value=rt) for rt in rule_types
         ] + [questionary.Separator(), questionary.Choice("← Back", value="back")]
 
         rule_type = questionary.select(
@@ -4616,7 +4937,9 @@ def _get_cloud_app_rules_from_db(tenant, rule_type: str):
     with get_session() as session:
         resources = (
             session.query(ZIAResource)
-            .filter_by(tenant_id=tenant.id, resource_type="cloud_app_control_rule", is_deleted=False)
+            .filter_by(
+                tenant_id=tenant.id, resource_type="cloud_app_control_rule", is_deleted=False
+            )
             .all()
         )
         rows = [
@@ -4624,7 +4947,11 @@ def _get_cloud_app_rules_from_db(tenant, rule_type: str):
             for r in resources
             if (r.raw_config or {}).get("type") == rule_type
         ]
-    rows.sort(key=lambda r: _rule_order_key(r["raw_config"].get("order") or r["raw_config"].get("rank") or 0))
+    rows.sort(
+        key=lambda r: _rule_order_key(
+            r["raw_config"].get("order") or r["raw_config"].get("rank") or 0
+        )
+    )
     return rows
 
 
@@ -4633,7 +4960,9 @@ def _list_cloud_app_rules_db(tenant, rule_type: str):
     label = rule_type.replace("_", " ").title()
 
     if not rows:
-        console.print(f"[yellow]No rules for {label} in local DB. Run Import Config first.[/yellow]")
+        console.print(
+            f"[yellow]No rules for {label} in local DB. Run Import Config first.[/yellow]"
+        )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
@@ -4649,8 +4978,10 @@ def _list_cloud_app_rules_db(tenant, rule_type: str):
         order = str(cfg.get("order") or cfg.get("rank") or "—")
         state_val = cfg.get("state") or "—"
         state_str = (
-            f"[green]{state_val}[/green]" if state_val == "ENABLED"
-            else f"[red]{state_val}[/red]" if state_val == "DISABLED"
+            f"[green]{state_val}[/green]"
+            if state_val == "ENABLED"
+            else f"[red]{state_val}[/red]"
+            if state_val == "DISABLED"
             else state_val
         )
         actions = ", ".join(cfg.get("actions") or []) or "—"
@@ -4661,6 +4992,7 @@ def _list_cloud_app_rules_db(tenant, rule_type: str):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -4693,7 +5025,10 @@ def _view_cloud_app_rule_db(tenant, rule_type: str):
 def _create_cloud_app_rule(client, tenant, rule_type: str):
     import json
     from services import audit_service
-    console.print(f"\n[bold]Create Cloud App Control Rule — {rule_type.replace('_', ' ').title()}[/bold]")
+
+    console.print(
+        f"\n[bold]Create Cloud App Control Rule — {rule_type.replace('_', ' ').title()}[/bold]"
+    )
     path = questionary.path("Path to JSON file:").ask()
     if not path:
         return
@@ -4710,9 +5045,13 @@ def _create_cloud_app_rule(client, tenant, rule_type: str):
         console.print(f"[green]✓ Created rule ID {result.get('id', '?')}.[/green]")
         _zia_changed()
         audit_service.log(
-            product="ZIA", operation="create_cloud_app_rule", action="CREATE",
-            status="SUCCESS", tenant_id=tenant.id,
-            resource_type=rule_type, details={"name": config.get("name")},
+            product="ZIA",
+            operation="create_cloud_app_rule",
+            action="CREATE",
+            status="SUCCESS",
+            tenant_id=tenant.id,
+            resource_type=rule_type,
+            details={"name": config.get("name")},
         )
         _sync_cloud_app_resource(client, tenant)
     except Exception as e:
@@ -4723,6 +5062,7 @@ def _create_cloud_app_rule(client, tenant, rule_type: str):
 def _edit_cloud_app_rule(client, tenant, rule_type: str):
     import json
     from services import audit_service
+
     chosen = _pick_cloud_app_rule_db(tenant, rule_type)
     if not chosen:
         return
@@ -4745,9 +5085,13 @@ def _edit_cloud_app_rule(client, tenant, rule_type: str):
         console.print("[green]✓ Rule updated.[/green]")
         _zia_changed()
         audit_service.log(
-            product="ZIA", operation="update_cloud_app_rule", action="UPDATE",
-            status="SUCCESS", tenant_id=tenant.id,
-            resource_type=rule_type, details={"id": chosen["zia_id"], "name": chosen["name"]},
+            product="ZIA",
+            operation="update_cloud_app_rule",
+            action="UPDATE",
+            status="SUCCESS",
+            tenant_id=tenant.id,
+            resource_type=rule_type,
+            details={"id": chosen["zia_id"], "name": chosen["name"]},
         )
         _sync_cloud_app_resource(client, tenant)
     except Exception as e:
@@ -4757,6 +5101,7 @@ def _edit_cloud_app_rule(client, tenant, rule_type: str):
 
 def _duplicate_cloud_app_rule(client, tenant, rule_type: str):
     from services import audit_service
+
     chosen = _pick_cloud_app_rule_db(tenant, rule_type)
     if not chosen:
         return
@@ -4773,9 +5118,13 @@ def _duplicate_cloud_app_rule(client, tenant, rule_type: str):
         console.print(f"[green]✓ Duplicated as '{new_name}' (ID {result.get('id', '?')}).[/green]")
         _zia_changed()
         audit_service.log(
-            product="ZIA", operation="duplicate_cloud_app_rule", action="CREATE",
-            status="SUCCESS", tenant_id=tenant.id,
-            resource_type=rule_type, details={"source_id": chosen["zia_id"], "new_name": new_name},
+            product="ZIA",
+            operation="duplicate_cloud_app_rule",
+            action="CREATE",
+            status="SUCCESS",
+            tenant_id=tenant.id,
+            resource_type=rule_type,
+            details={"source_id": chosen["zia_id"], "new_name": new_name},
         )
         _sync_cloud_app_resource(client, tenant)
     except Exception as e:
@@ -4785,6 +5134,7 @@ def _duplicate_cloud_app_rule(client, tenant, rule_type: str):
 
 def _delete_cloud_app_rule(client, tenant, rule_type: str):
     from services import audit_service
+
     chosen = _pick_cloud_app_rule_db(tenant, rule_type)
     if not chosen:
         return
@@ -4801,9 +5151,13 @@ def _delete_cloud_app_rule(client, tenant, rule_type: str):
         console.print("[green]✓ Rule deleted.[/green]")
         _zia_changed()
         audit_service.log(
-            product="ZIA", operation="delete_cloud_app_rule", action="DELETE",
-            status="SUCCESS", tenant_id=tenant.id,
-            resource_type=rule_type, details={"id": chosen["zia_id"], "name": chosen["name"]},
+            product="ZIA",
+            operation="delete_cloud_app_rule",
+            action="DELETE",
+            status="SUCCESS",
+            tenant_id=tenant.id,
+            resource_type=rule_type,
+            details={"id": chosen["zia_id"], "name": chosen["name"]},
         )
         _sync_cloud_app_resource(client, tenant)
     except Exception as e:
@@ -4814,6 +5168,7 @@ def _delete_cloud_app_rule(client, tenant, rule_type: str):
 # ------------------------------------------------------------------
 # License / Subscription Comparison
 # ------------------------------------------------------------------
+
 
 def _warn_subscription_diff(source_tenant, target_tenant):
     """Print a warning if source and target ZIA subscriptions differ.
@@ -4830,7 +5185,11 @@ def _warn_subscription_diff(source_tenant, target_tenant):
         return
 
     def _extract(subs):
-        arr = subs if isinstance(subs, list) else (subs.get("features") if isinstance(subs, dict) else None)
+        arr = (
+            subs
+            if isinstance(subs, list)
+            else (subs.get("features") if isinstance(subs, dict) else None)
+        )
         if not isinstance(arr, list):
             return None
         return {(f.get("name") if isinstance(f, dict) else str(f)) for f in arr if f}
@@ -4839,6 +5198,7 @@ def _warn_subscription_diff(source_tenant, target_tenant):
     tgt_feats = _extract(tgt_subs)
 
     from rich.panel import Panel
+
     lines = [
         "[bold yellow]⚠  License / Subscription Discrepancy[/bold yellow]",
         "",
@@ -4864,6 +5224,7 @@ def _warn_subscription_diff(source_tenant, target_tenant):
 # ------------------------------------------------------------------
 # Cross-Tenant Snapshot Picker
 # ------------------------------------------------------------------
+
 
 def _pick_cross_tenant_snapshot(current_tenant):
     """Prompt user to select a source tenant (excluding current_tenant) then a ZIA
@@ -4900,7 +5261,9 @@ def _pick_cross_tenant_snapshot(current_tenant):
 
     snap_choices = []
     for snap in snaps:
-        local_ts = snap.created_at.replace(tzinfo=timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+        local_ts = (
+            snap.created_at.replace(tzinfo=timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+        )
         comment_suffix = f"  {snap.comment}" if snap.comment else ""
         label = f"{snap.name}  [{local_ts}]  {snap.resource_count} resources{comment_suffix}"
         snap_choices.append(questionary.Choice(label, value=snap))
@@ -4921,18 +5284,27 @@ def _pick_cross_tenant_snapshot(current_tenant):
 # Templates menu
 # ------------------------------------------------------------------
 
+
 def templates_menu(tenant):
     """Browse, create, apply and delete ZIA templates (tenant-agnostic snapshots)."""
     from datetime import timezone
     from db.database import get_session
-    from services.template_service import list_templates, get_template, delete_template, create_template_from_snapshot, preview_template_from_snapshot
+    from services.template_service import (
+        list_templates,
+        get_template,
+        delete_template,
+        create_template_from_snapshot,
+        preview_template_from_snapshot,
+    )
     from services.config_service import list_tenants
     from services.snapshot_service import list_snapshots
 
     while True:
         render_banner()
         console.print("\n[bold]ZIA Templates[/bold]")
-        console.print("[dim]Templates are portable ZIA snapshots with tenant-specific resources stripped.[/dim]\n")
+        console.print(
+            "[dim]Templates are portable ZIA snapshots with tenant-specific resources stripped.[/dim]\n"
+        )
 
         with get_session() as session:
             templates = list_templates(session)
@@ -4941,7 +5313,11 @@ def templates_menu(tenant):
         for tmpl in templates:
             local_ts = ""
             if tmpl.created_at:
-                local_ts = tmpl.created_at.replace(tzinfo=timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M")
+                local_ts = (
+                    tmpl.created_at.replace(tzinfo=timezone.utc)
+                    .astimezone()
+                    .strftime("%Y-%m-%d %H:%M")
+                )
             desc_suffix = f"  {tmpl.description}" if tmpl.description else ""
             label = f"{tmpl.name}  [{local_ts}]  {tmpl.resource_count} resources{desc_suffix}"
             choices.append(questionary.Choice(label, value=tmpl))
@@ -4971,7 +5347,10 @@ def templates_menu(tenant):
 def _templates_create(tenant):
     """Interactively create a ZIA template from a snapshot."""
     from db.database import get_session
-    from services.template_service import create_template_from_snapshot, preview_template_from_snapshot
+    from services.template_service import (
+        create_template_from_snapshot,
+        preview_template_from_snapshot,
+    )
     from services.config_service import list_tenants
     from services.snapshot_service import list_snapshots
     from services import audit_service
@@ -4986,7 +5365,9 @@ def _templates_create(tenant):
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    tenant_choices = [questionary.Choice(t.name, value=t) for t in sorted(all_tenants, key=lambda x: x.name)]
+    tenant_choices = [
+        questionary.Choice(t.name, value=t) for t in sorted(all_tenants, key=lambda x: x.name)
+    ]
     tenant_choices.append(questionary.Choice("<- Cancel", value=_CANCEL))
     source_tenant = questionary.select(
         "Select source tenant:",
@@ -5006,7 +5387,9 @@ def _templates_create(tenant):
 
     snap_choices = []
     for snap in snaps:
-        local_ts = snap.created_at.replace(tzinfo=timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+        local_ts = (
+            snap.created_at.replace(tzinfo=timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+        )
         comment_suffix = f"  {snap.comment}" if snap.comment else ""
         label = f"{snap.name}  [{local_ts}]  {snap.resource_count} resources{comment_suffix}"
         snap_choices.append(questionary.Choice(label, value=snap))
@@ -5034,6 +5417,7 @@ def _templates_create(tenant):
             return
 
     from rich.table import Table as _Table
+
     preview_table = _Table(title="Template Preview", show_lines=False)
     preview_table.add_column("Resource Type")
     preview_table.add_column("Status")
@@ -5045,7 +5429,9 @@ def _templates_create(tenant):
     console.print(preview_table)
 
     if not preview.get("included"):
-        console.print("[red]No portable resources in this snapshot — cannot create a template.[/red]")
+        console.print(
+            "[red]No portable resources in this snapshot — cannot create a template.[/red]"
+        )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
@@ -5078,22 +5464,26 @@ def _templates_create(tenant):
             tmpl_resource_count = tmpl.resource_count
             tmpl_stripped_types = list(tmpl.stripped_types or [])
 
-        pending_audit.append(dict(
-            product="ZIA",
-            operation="create_template",
-            action="CREATE",
-            status="SUCCESS",
-            resource_type="zia_template",
-            resource_id=str(tmpl_id),
-            resource_name=tmpl_name,
-            details={
-                "source_tenant_id": source_tenant.id,
-                "source_snapshot_id": selected_snap.id,
-                "resource_count": tmpl_resource_count,
-                "stripped_types": tmpl_stripped_types,
-            },
-        ))
-        console.print(f"[green]✓ Template '{tmpl_name}' created ({tmpl_resource_count} resources).[/green]")
+        pending_audit.append(
+            dict(
+                product="ZIA",
+                operation="create_template",
+                action="CREATE",
+                status="SUCCESS",
+                resource_type="zia_template",
+                resource_id=str(tmpl_id),
+                resource_name=tmpl_name,
+                details={
+                    "source_tenant_id": source_tenant.id,
+                    "source_snapshot_id": selected_snap.id,
+                    "resource_count": tmpl_resource_count,
+                    "stripped_types": tmpl_stripped_types,
+                },
+            )
+        )
+        console.print(
+            f"[green]✓ Template '{tmpl_name}' created ({tmpl_resource_count} resources).[/green]"
+        )
     except ValueError as exc:
         err_str = str(exc)
         if "duplicate_name:" in err_str:
@@ -5122,7 +5512,9 @@ def _template_detail_menu(tmpl, current_tenant):
         console.print(f"\n[bold]Template: {tmpl.name}[/bold]")
         if tmpl.description:
             console.print(f"[dim]{tmpl.description}[/dim]")
-        console.print(f"Resources: {tmpl.resource_count}  |  Stripped types: {len(tmpl.stripped_types or [])}")
+        console.print(
+            f"Resources: {tmpl.resource_count}  |  Stripped types: {len(tmpl.stripped_types or [])}"
+        )
         if tmpl.stripped_types:
             console.print(f"[dim]Stripped: {', '.join(tmpl.stripped_types)}[/dim]")
         console.print()
@@ -5141,21 +5533,25 @@ def _template_detail_menu(tmpl, current_tenant):
             break
 
         if action == "delete":
-            confirmed = questionary.confirm(f"Delete template '{tmpl.name}'? This cannot be undone.", default=False).ask()
+            confirmed = questionary.confirm(
+                f"Delete template '{tmpl.name}'? This cannot be undone.", default=False
+            ).ask()
             if confirmed:
                 pending_audit = []
                 try:
                     with get_session() as session:
                         delete_template(tmpl.id, session)
-                    pending_audit.append(dict(
-                        product="ZIA",
-                        operation="delete_template",
-                        action="DELETE",
-                        status="SUCCESS",
-                        resource_type="zia_template",
-                        resource_id=str(tmpl.id),
-                        resource_name=tmpl.name,
-                    ))
+                    pending_audit.append(
+                        dict(
+                            product="ZIA",
+                            operation="delete_template",
+                            action="DELETE",
+                            status="SUCCESS",
+                            resource_type="zia_template",
+                            resource_id=str(tmpl.id),
+                            resource_name=tmpl.name,
+                        )
+                    )
                     console.print(f"[green]✓ Template '{tmpl.name}' deleted.[/green]")
                 except LookupError as exc:
                     console.print(f"[red]✗ {exc}[/red]")
@@ -5193,7 +5589,9 @@ def _template_apply(tmpl):
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    tenant_choices = [questionary.Choice(t.name, value=t) for t in sorted(all_tenants, key=lambda x: x.name)]
+    tenant_choices = [
+        questionary.Choice(t.name, value=t) for t in sorted(all_tenants, key=lambda x: x.name)
+    ]
     tenant_choices.append(questionary.Choice("<- Cancel", value=_CANCEL))
     target_tenant = questionary.select(
         "Select target tenant:",
@@ -5206,8 +5604,12 @@ def _template_apply(tmpl):
     mode = questionary.select(
         "Push mode:",
         choices=[
-            questionary.Choice("Wipe-first  — delete resources absent from template first, then push", value="wipe"),
-            questionary.Choice("Delta-only  — non-destructive: creates and updates only", value="delta"),
+            questionary.Choice(
+                "Wipe-first  — delete resources absent from template first, then push", value="wipe"
+            ),
+            questionary.Choice(
+                "Delta-only  — non-destructive: creates and updates only", value="delta"
+            ),
         ],
     ).ask()
     if mode is None:
@@ -5221,7 +5623,9 @@ def _template_apply(tmpl):
         return
 
     # Build client for target tenant
-    target_secret = decrypt_secret(target_tenant.client_secret_enc) if target_tenant.client_secret_enc else None
+    target_secret = (
+        decrypt_secret(target_tenant.client_secret_enc) if target_tenant.client_secret_enc else None
+    )
     if target_secret is None:
         console.print("[red]✗ Target tenant credentials not available.[/red]")
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
@@ -5241,13 +5645,19 @@ def _template_apply(tmpl):
 
     service = ZIAPushService(tgt_client, tenant_id=target_tenant.id, full_clone=False)
 
-    with console.status(f"[cyan]Syncing current state from {target_tenant.name}...[/cyan]") as status:
+    with console.status(
+        f"[cyan]Syncing current state from {target_tenant.name}...[/cyan]"
+    ) as status:
+
         def _import_progress(rtype, done, total):
             status.update(f"[cyan]Comparing: {rtype} ({done}/{total})[/cyan]")
+
         dry_run = service.classify_baseline(baseline, import_progress_callback=_import_progress)
 
     creates, updates, deletes = dry_run.changes_by_action()
-    console.print(f"  [green]{len(creates)} to create[/green]  [cyan]{len(updates)} to update[/cyan]  [red]{len(deletes)} to delete[/red]")
+    console.print(
+        f"  [green]{len(creates)} to create[/green]  [cyan]{len(updates)} to update[/cyan]  [red]{len(deletes)} to delete[/red]"
+    )
 
     push_records = []
     delete_records = []
@@ -5260,9 +5670,13 @@ def _template_apply(tmpl):
         if not wipe_confirmed:
             return
         with console.status("[red]Deleting extraneous resources...[/red]") as status:
+
             def _wipe_progress(_, rtype, rec):
                 status.update(f"[red]Deleting {rtype} — {rec.name}[/red]")
-            delete_records = service.execute_deletes(dry_run.to_delete, progress_callback=_wipe_progress)
+
+            delete_records = service.execute_deletes(
+                dry_run.to_delete, progress_callback=_wipe_progress
+            )
         deleted = sum(1 for r in delete_records if r.is_deleted)
         console.print(f"  [red]Deleted:[/red] {deleted}")
         if deleted > 0:
@@ -5274,18 +5688,22 @@ def _template_apply(tmpl):
     if creates or updates:
         with console.status("[cyan]Pushing template...[/cyan]") as status:
             current_pass = [0]
+
             def _push_progress(pass_num, rtype, rec):
                 if pass_num != current_pass[0]:
                     current_pass[0] = pass_num
                 status.update(f"[cyan][Pass {pass_num}] {rtype} — {rec.name}[/cyan]")
+
             push_records = service.push_classified(dry_run, progress_callback=_push_progress)
 
     created = sum(1 for r in push_records if r.is_created)
     updated = sum(1 for r in push_records if r.is_updated)
-    failed  = sum(1 for r in push_records if r.is_failed)
+    failed = sum(1 for r in push_records if r.is_failed)
 
     console.print(f"\n[bold]Template apply complete[/bold]")
-    console.print(f"  [green]Created:[/green] {created}  [cyan]Updated:[/cyan] {updated}  [red]Failed:[/red] {failed}")
+    console.print(
+        f"  [green]Created:[/green] {created}  [cyan]Updated:[/cyan] {updated}  [red]Failed:[/red] {failed}"
+    )
 
     all_push = push_records + delete_records
     failures = [r for r in all_push if r.is_failed]
@@ -5302,23 +5720,25 @@ def _template_apply(tmpl):
                 console.print(f"  [dim]{r.resource_type}:[/dim] {r.name} — {w}")
 
     status_str = "SUCCESS" if failed == 0 else "PARTIAL"
-    pending_audit = [dict(
-        product="ZIA",
-        operation="apply_template",
-        action="CREATE",
-        status=status_str,
-        tenant_id=target_tenant.id,
-        resource_type="tenant",
-        resource_name=target_tenant.name,
-        details={
-            "template_id": tmpl.id,
-            "template_name": tmpl.name,
-            "mode": mode,
-            "created": created,
-            "updated": updated,
-            "failed": failed,
-        },
-    )]
+    pending_audit = [
+        dict(
+            product="ZIA",
+            operation="apply_template",
+            action="CREATE",
+            status=status_str,
+            tenant_id=target_tenant.id,
+            resource_type="tenant",
+            resource_name=target_tenant.name,
+            details={
+                "template_id": tmpl.id,
+                "template_name": tmpl.name,
+                "mode": mode,
+                "created": created,
+                "updated": updated,
+                "failed": failed,
+            },
+        )
+    ]
     for ev in pending_audit:
         audit_service.log(**ev)
 
@@ -5339,6 +5759,7 @@ def _template_apply(tmpl):
 # Apply Baseline from JSON
 # ------------------------------------------------------------------
 
+
 def _write_push_log(baseline_path, tenant, dry_run, push_records):
     """Write a full push log to the zs-config data directory.
 
@@ -5352,6 +5773,7 @@ def _write_push_log(baseline_path, tenant, dry_run, push_records):
         ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
         if platform.system() == "Windows":
             import os
+
             log_dir = Path(os.environ.get("APPDATA", Path.home())) / "zs-config" / "logs"
         else:
             log_dir = Path.home() / ".local" / "share" / "zs-config" / "logs"
@@ -5373,10 +5795,10 @@ def _write_push_log(baseline_path, tenant, dry_run, push_records):
         lines.append("")
 
         # Push results
-        created  = sum(1 for r in push_records if r.is_created)
-        updated  = sum(1 for r in push_records if r.is_updated)
-        deleted  = sum(1 for r in push_records if r.is_deleted)
-        failed   = sum(1 for r in push_records if r.is_failed)
+        created = sum(1 for r in push_records if r.is_created)
+        updated = sum(1 for r in push_records if r.is_updated)
+        deleted = sum(1 for r in push_records if r.is_deleted)
+        failed = sum(1 for r in push_records if r.is_failed)
         lines.append("=== Push Results ===")
         lines.append(f"  Created : {created}")
         lines.append(f"  Updated : {updated}")
@@ -5411,9 +5833,12 @@ def _write_push_log(baseline_path, tenant, dry_run, push_records):
 
         # Proposed deletes not yet executed (if any remain in to_delete)
         pending_deletes = [
-            r for r in dry_run.to_delete
-            if not any(pr.name == r.name and pr.resource_type == r.resource_type
-                       and pr.is_deleted for pr in push_records)
+            r
+            for r in dry_run.to_delete
+            if not any(
+                pr.name == r.name and pr.resource_type == r.resource_type and pr.is_deleted
+                for pr in push_records
+            )
         ]
         if pending_deletes:
             lines.append("=== Proposed Deletes (not executed — user declined or skipped) ===")
@@ -5428,7 +5853,15 @@ def _write_push_log(baseline_path, tenant, dry_run, push_records):
         return None
 
 
-def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None, full_clone: bool = False, source_tenant=None):
+def apply_baseline_menu(
+    client,
+    tenant,
+    *,
+    baseline=None,
+    baseline_path=None,
+    full_clone: bool = False,
+    source_tenant=None,
+):
     import json
     from collections import defaultdict
     from services.zia_push_service import SKIP_TYPES, ZIAPushService
@@ -5439,22 +5872,27 @@ def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None, fu
     # A cross-tenant baseline_path looks like "TenantA/snap-name" (no leading slash).
     # A file-based baseline_path is an absolute filesystem path.
     import os as _os
+
     _is_file_source = baseline_path is None or _os.path.isabs(str(baseline_path))
     if _is_file_source:
-        _page_title    = "Apply Baseline from JSON"
+        _page_title = "Apply Baseline from JSON"
         _page_subtitle = "Reads a ZIA snapshot export file and pushes it to the live tenant."
-        _table_title   = "Baseline File Contents"
-        _count_col     = "In File"
-        _err_prefix    = "baseline file"
+        _table_title = "Baseline File Contents"
+        _count_col = "In File"
+        _err_prefix = "baseline file"
     else:
-        _src_tenant  = baseline.get("tenant_name", baseline_path.split("/")[0]) if baseline else baseline_path.split("/")[0]
-        _snap_name   = baseline.get("snapshot_name", "") if baseline else ""
+        _src_tenant = (
+            baseline.get("tenant_name", baseline_path.split("/")[0])
+            if baseline
+            else baseline_path.split("/")[0]
+        )
+        _snap_name = baseline.get("snapshot_name", "") if baseline else ""
         _clone_label = " [Full Clone]" if full_clone else ""
-        _page_title    = f"Clone Config from Another Tenant{_clone_label}"
+        _page_title = f"Clone Config from Another Tenant{_clone_label}"
         _page_subtitle = f"Applying snapshot '{_snap_name}' from {_src_tenant} to {tenant.name}."
-        _table_title   = "Snapshot Contents"
-        _count_col     = "Count"
-        _err_prefix    = "snapshot"
+        _table_title = "Snapshot Contents"
+        _count_col = "Count"
+        _err_prefix = "snapshot"
 
     console.print(f"\n[bold]{_page_title}[/bold]")
     console.print(f"[dim]{_page_subtitle}[/dim]\n")
@@ -5516,6 +5954,7 @@ def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None, fu
     console.print()
 
     with console.status(f"[cyan]Syncing current state from {tenant.name}...[/cyan]") as status:
+
         def _import_progress(rtype, done, total):
             status.update(f"[cyan]Comparing: {rtype} ({done}/{total})[/cyan]")
 
@@ -5540,12 +5979,14 @@ def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None, fu
             str(counts["create"]) if counts["create"] else "—",
             str(counts["update"]) if counts["update"] else "—",
             str(counts["delete"]) if counts["delete"] else "—",
-            str(counts["skip"])   if counts["skip"]   else "—",
+            str(counts["skip"]) if counts["skip"] else "—",
         )
     console.print(delta_table)
 
     if create_update_count == 0 and not deletes:
-        console.print("\n[green]✓ Nothing to push — target is already in sync with the baseline.[/green]")
+        console.print(
+            "\n[green]✓ Nothing to push — target is already in sync with the baseline.[/green]"
+        )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
@@ -5567,9 +6008,13 @@ def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None, fu
 
     if deletes:
         if mode == "wipe":
-            console.print(f"\n[red]To delete ({len(deletes)}) — present in tenant but not in baseline:[/red]")
+            console.print(
+                f"\n[red]To delete ({len(deletes)}) — present in tenant but not in baseline:[/red]"
+            )
         else:
-            console.print(f"\n[dim]Not in baseline ({len(deletes)}) — skipped in delta mode (use wipe-first to remove):[/dim]")
+            console.print(
+                f"\n[dim]Not in baseline ({len(deletes)}) — skipped in delta mode (use wipe-first to remove):[/dim]"
+            )
         for rtype, name in deletes[:_MAX_DETAIL]:
             console.print(f"  [dim]{rtype}:[/dim] {name}")
         if len(deletes) > _MAX_DETAIL:
@@ -5592,8 +6037,10 @@ def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None, fu
 
         console.print()
         with console.status("[red]Deleting extraneous resources...[/red]") as status:
+
             def _wipe_del_progress(_, rtype, rec):
                 status.update(f"[red]Deleting {rtype} — {rec.name}[/red]")
+
             delete_records = service.execute_deletes(
                 dry_run.to_delete, progress_callback=_wipe_del_progress
             )
@@ -5610,7 +6057,9 @@ def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None, fu
             try:
                 client.activate()
             except Exception as e:
-                console.print(f"[yellow]⚠ Activation after wipe failed: {e} — proceeding anyway[/yellow]")
+                console.print(
+                    f"[yellow]⚠ Activation after wipe failed: {e} — proceeding anyway[/yellow]"
+                )
 
     # ── Step 4b (Full Clone): fetch and push FC-specific resource types ───
     fc_push_records: list = []
@@ -5621,11 +6070,19 @@ def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None, fu
         from services.zia_import_service import ZIAImportService
 
         console.print()
-        console.print("[bold cyan]Full Clone — fetching tenant-specific resources from source...[/bold cyan]")
+        console.print(
+            "[bold cyan]Full Clone — fetching tenant-specific resources from source...[/bold cyan]"
+        )
 
-        src_secret = decrypt_secret(source_tenant.client_secret_enc) if source_tenant.client_secret_enc else None
+        src_secret = (
+            decrypt_secret(source_tenant.client_secret_enc)
+            if source_tenant.client_secret_enc
+            else None
+        )
         if src_secret is None:
-            console.print("[red]✗ Cannot fetch clone resources: source tenant credentials not available.[/red]")
+            console.print(
+                "[red]✗ Cannot fetch clone resources: source tenant credentials not available.[/red]"
+            )
             questionary.press_any_key_to_continue("Press any key to continue...").ask()
             return
 
@@ -5639,14 +6096,27 @@ def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None, fu
         src_client = ZIAClient(src_auth, source_tenant.oneapi_base_url)
         src_import_svc = ZIAImportService(src_client, tenant_id=source_tenant.id)
 
-        with console.status(f"[cyan]Fetching clone resources from {source_tenant.name}...[/cyan]") as status:
+        with console.status(
+            f"[cyan]Fetching clone resources from {source_tenant.name}...[/cyan]"
+        ) as status:
+
             def _clone_fetch_progress(rtype, done, total):
-                status.update(f"[cyan]Fetching {rtype} from {source_tenant.name} ({done}/{total})[/cyan]")
-            clone_resources = src_import_svc.run_clone_resources(progress_callback=_clone_fetch_progress)
+                status.update(
+                    f"[cyan]Fetching {rtype} from {source_tenant.name} ({done}/{total})[/cyan]"
+                )
 
-        console.print(f"  Fetched {sum(len(v) for v in clone_resources.values())} clone resources across {len(clone_resources)} types.")
+            clone_resources = src_import_svc.run_clone_resources(
+                progress_callback=_clone_fetch_progress
+            )
 
-        with console.status(f"[cyan]Pushing Full Clone resources to {tenant.name}...[/cyan]") as status:
+        console.print(
+            f"  Fetched {sum(len(v) for v in clone_resources.values())} clone resources across {len(clone_resources)} types."
+        )
+
+        with console.status(
+            f"[cyan]Pushing Full Clone resources to {tenant.name}...[/cyan]"
+        ) as status:
+
             def _fc_wipe_progress(rtype, rec):
                 status.update(f"[red]FC wipe {rtype} — {rec.name}[/red]")
 
@@ -5666,8 +6136,10 @@ def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None, fu
 
         fc_created = sum(1 for r in fc_push_records if r.is_created)
         fc_updated = sum(1 for r in fc_push_records if r.is_updated)
-        fc_failed  = sum(1 for r in fc_push_records if r.is_failed)
-        console.print(f"  [green]FC created:[/green] {fc_created}  [cyan]FC updated:[/cyan] {fc_updated}  [red]FC failed:[/red] {fc_failed}")
+        fc_failed = sum(1 for r in fc_push_records if r.is_failed)
+        console.print(
+            f"  [green]FC created:[/green] {fc_created}  [cyan]FC updated:[/cyan] {fc_updated}  [red]FC failed:[/red] {fc_failed}"
+        )
 
         fc_warned = [r for r in fc_push_records if r.warnings]
         if fc_warned:
@@ -5696,6 +6168,7 @@ def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None, fu
 
         console.print()
         with console.status("[cyan]Pushing...[/cyan]") as status:
+
             def _push_progress(pass_num, rtype, rec):
                 if pass_num != current_pass[0]:
                     current_pass[0] = pass_num
@@ -5704,11 +6177,11 @@ def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None, fu
             push_records = service.push_classified(dry_run, progress_callback=_push_progress)
 
     all_records = dry_run.skipped + push_records
-    created  = sum(1 for r in push_records if r.is_created)
-    updated  = sum(1 for r in push_records if r.is_updated)
-    skipped  = sum(1 for r in all_records  if r.is_skipped)
-    failed   = sum(1 for r in push_records if r.is_failed)
-    passes   = current_pass[0] or 1
+    created = sum(1 for r in push_records if r.is_created)
+    updated = sum(1 for r in push_records if r.is_updated)
+    skipped = sum(1 for r in all_records if r.is_skipped)
+    failed = sum(1 for r in push_records if r.is_failed)
+    passes = current_pass[0] or 1
 
     if push_records:
         console.print(f"\n[bold]Push complete[/bold] — {passes} pass(es)")
@@ -5737,14 +6210,14 @@ def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None, fu
         results_table.add_column("Created", justify="right", style="green")
         results_table.add_column("Updated", justify="right", style="cyan")
         results_table.add_column("Deleted", justify="right", style="red")
-        results_table.add_column("Failed",  justify="right", style="red")
+        results_table.add_column("Failed", justify="right", style="red")
         for rtype, counts in sorted(by_type.items()):
             results_table.add_row(
                 rtype,
                 str(counts["created"]) if counts["created"] else "—",
                 str(counts["updated"]) if counts["updated"] else "—",
                 str(counts["deleted"]) if counts["deleted"] else "—",
-                str(counts["failed"])  if counts["failed"]  else "—",
+                str(counts["failed"]) if counts["failed"] else "—",
             )
         console.print(results_table)
 
@@ -5765,7 +6238,9 @@ def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None, fu
     if warned:
         console.print()
         console.print("[bold yellow]Manual action required:[/bold yellow]")
-        console.print("[yellow]The following resources require manual steps in the target tenant.[/yellow]")
+        console.print(
+            "[yellow]The following resources require manual steps in the target tenant.[/yellow]"
+        )
         for r in warned:
             for w in r.warnings:
                 console.print(f"  [dim]{r.resource_type}:[/dim] {r.name} — {w}")
@@ -5781,10 +6256,14 @@ def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None, fu
         console.print()
         verify_result = None
         with console.status("[cyan]Verifying push consistency...[/cyan]") as status:
+
             def _verify_progress(rtype, done, total):
                 status.update(f"[cyan]Verifying: {rtype} ({done}/{total})[/cyan]")
+
             try:
-                verify_result = service.verify_push(baseline, import_progress_callback=_verify_progress)
+                verify_result = service.verify_push(
+                    baseline, import_progress_callback=_verify_progress
+                )
             except Exception as exc:
                 console.print(f"[yellow]⚠ Consistency check failed: {exc}[/yellow]")
 
@@ -5792,10 +6271,14 @@ def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None, fu
             v_creates, v_updates, v_deletes = verify_result.changes_by_action()
             discrepancies = len(v_creates) + len(v_updates) + len(v_deletes)
             if discrepancies == 0:
-                console.print("[green]✓ Consistency check passed — tenant state matches baseline[/green]")
+                console.print(
+                    "[green]✓ Consistency check passed — tenant state matches baseline[/green]"
+                )
             else:
                 verify_clean = False
-                console.print(f"[bold yellow]⚠ Consistency check found {discrepancies} discrepancy(ies):[/bold yellow]")
+                console.print(
+                    f"[bold yellow]⚠ Consistency check found {discrepancies} discrepancy(ies):[/bold yellow]"
+                )
                 disc_table = Table(show_lines=False)
                 disc_table.add_column("Issue", style="yellow")
                 disc_table.add_column("Resource Type")
@@ -5814,24 +6297,32 @@ def apply_baseline_menu(client, tenant, *, baseline=None, baseline_path=None, fu
                 if remediate:
                     remediate_pass = [0]
                     with console.status("[cyan]Remediating...[/cyan]") as status:
+
                         def _rem_progress(pass_num, rtype, rec):
                             if pass_num != remediate_pass[0]:
                                 remediate_pass[0] = pass_num
                             status.update(f"[cyan][Pass {pass_num}] {rtype} — {rec.name}[/cyan]")
-                        rem_records = service.push_classified(verify_result, progress_callback=_rem_progress)
+
+                        rem_records = service.push_classified(
+                            verify_result, progress_callback=_rem_progress
+                        )
                     rem_created = sum(1 for r in rem_records if r.is_created)
                     rem_updated = sum(1 for r in rem_records if r.is_updated)
-                    rem_failed  = sum(1 for r in rem_records if r.is_failed)
-                    console.print(f"  [green]Created:[/green] {rem_created}  "
-                                  f"[cyan]Updated:[/cyan] {rem_updated}  "
-                                  f"[red]Failed:[/red] {rem_failed}")
+                    rem_failed = sum(1 for r in rem_records if r.is_failed)
+                    console.print(
+                        f"  [green]Created:[/green] {rem_created}  "
+                        f"[cyan]Updated:[/cyan] {rem_updated}  "
+                        f"[red]Failed:[/red] {rem_failed}"
+                    )
                     if rem_failed == 0:
                         verify_clean = True
                         push_records = push_records + rem_records
                         created += rem_created
                         updated += rem_updated
                     else:
-                        console.print("[yellow]Some remediations failed — review before activating.[/yellow]")
+                        console.print(
+                            "[yellow]Some remediations failed — review before activating.[/yellow]"
+                        )
 
     # Offer activation
     if created > 0 or updated > 0:

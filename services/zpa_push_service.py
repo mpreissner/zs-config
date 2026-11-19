@@ -55,57 +55,104 @@ from services.push_types import (
 
 # Dependency order — creates run forward, deletes run in reverse.
 RTYPE_ORDER: List[str] = [
-    "segment_group", "app_connector_group", "server_group",
-    "pra_portal", "user_portal", "application", "pra_console",
-    "app_connector", "service_edge",
-    "policy_access", "policy_timeout", "policy_forwarding",
-    "policy_inspection", "policy_isolation",
+    "segment_group",
+    "app_connector_group",
+    "server_group",
+    "pra_portal",
+    "user_portal",
+    "application",
+    "pra_console",
+    "app_connector",
+    "service_edge",
+    "policy_access",
+    "policy_timeout",
+    "policy_forwarding",
+    "policy_inspection",
+    "policy_isolation",
 ]
 
 # Volatile fields stripped from all payloads before sending to the API.
-PAYLOAD_META = frozenset({
-    "id", "creation_time", "modified_time", "modified_by",
-    "creationTime", "modifiedTime", "modifiedBy",
-    "modifiedAt", "createdAt", "modified_at", "created_at",
-})
+PAYLOAD_META = frozenset(
+    {
+        "id",
+        "creation_time",
+        "modified_time",
+        "modified_by",
+        "creationTime",
+        "modifiedTime",
+        "modifiedBy",
+        "modifiedAt",
+        "createdAt",
+        "modified_at",
+        "created_at",
+    }
+)
 
 # Extra fields to strip per resource type (beyond meta).
 TYPE_EXTRA_STRIP: Dict[str, frozenset] = {
-    "application":       frozenset({"tcp_port_ranges", "udp_port_ranges"}),
-    "policy_access":     frozenset({"policy_set_id"}),
-    "policy_timeout":    frozenset({"policy_set_id"}),
+    "application": frozenset({"tcp_port_ranges", "udp_port_ranges"}),
+    "policy_access": frozenset({"policy_set_id"}),
+    "policy_timeout": frozenset({"policy_set_id"}),
     "policy_forwarding": frozenset({"policy_set_id"}),
     "policy_inspection": frozenset({"policy_set_id"}),
-    "policy_isolation":  frozenset({"policy_set_id"}),
+    "policy_isolation": frozenset({"policy_set_id"}),
 }
 
 POLICY_TYPE_MAP = {
-    "policy_access":     "access",
-    "policy_timeout":    "timeout",
+    "policy_access": "access",
+    "policy_timeout": "timeout",
     "policy_forwarding": "client_forwarding",
     "policy_inspection": "inspection",
-    "policy_isolation":  "isolation",
+    "policy_isolation": "isolation",
 }
 
-CAN_CREATE = frozenset({
-    "segment_group", "server_group", "app_connector_group",
-    "application", "pra_portal", "user_portal", "pra_console",
-    "policy_access",
-})
-CAN_UPDATE = frozenset({
-    "segment_group", "server_group", "app_connector_group",
-    "application", "pra_portal", "user_portal", "pra_console",
-    "app_connector", "service_edge",
-    "policy_access", "policy_timeout", "policy_forwarding",
-    "policy_inspection", "policy_isolation",
-})
-CAN_DELETE = frozenset({
-    "segment_group", "server_group", "app_connector_group",
-    "application", "pra_portal", "user_portal", "pra_console",
-    "app_connector",
-    "policy_access", "policy_timeout", "policy_forwarding",
-    "policy_inspection", "policy_isolation",
-})
+CAN_CREATE = frozenset(
+    {
+        "segment_group",
+        "server_group",
+        "app_connector_group",
+        "application",
+        "pra_portal",
+        "user_portal",
+        "pra_console",
+        "policy_access",
+    }
+)
+CAN_UPDATE = frozenset(
+    {
+        "segment_group",
+        "server_group",
+        "app_connector_group",
+        "application",
+        "pra_portal",
+        "user_portal",
+        "pra_console",
+        "app_connector",
+        "service_edge",
+        "policy_access",
+        "policy_timeout",
+        "policy_forwarding",
+        "policy_inspection",
+        "policy_isolation",
+    }
+)
+CAN_DELETE = frozenset(
+    {
+        "segment_group",
+        "server_group",
+        "app_connector_group",
+        "application",
+        "pra_portal",
+        "user_portal",
+        "pra_console",
+        "app_connector",
+        "policy_access",
+        "policy_timeout",
+        "policy_forwarding",
+        "policy_inspection",
+        "policy_isolation",
+    }
+)
 
 # Skip reasons — wire format, surfaced in the job payload.
 _UNSUPPORTED = {
@@ -144,7 +191,7 @@ class ZPAPushService:
     def __init__(self, client, tenant_id: int):
         self._client = client
         self._tenant_id = tenant_id
-        self._id_map: Dict[str, str] = {}                       # source id → target id
+        self._id_map: Dict[str, str] = {}  # source id → target id
         self._executed: List[Tuple[PushPlanEntry, PushRecord]] = []
 
     # ------------------------------------------------------------------
@@ -180,11 +227,15 @@ class ZPAPushService:
             if not rd:
                 continue
             for item in rd.added:
-                plan.deletes.append(self._entry(
-                    rtype, DELETE, item.get("name") or item["id"],
-                    supported=rtype in CAN_DELETE,
-                    target_id=item["id"],
-                ))
+                plan.deletes.append(
+                    self._entry(
+                        rtype,
+                        DELETE,
+                        item.get("name") or item["id"],
+                        supported=rtype in CAN_DELETE,
+                        target_id=item["id"],
+                    )
+                )
 
         # Creates — forward order.  rd.removed is in the snapshot but not the tenant.
         for rtype in RTYPE_ORDER:
@@ -192,12 +243,16 @@ class ZPAPushService:
             if not rd:
                 continue
             for item in rd.removed:
-                plan.creates.append(self._entry(
-                    rtype, CREATE, item.get("name") or item["id"],
-                    supported=rtype in CAN_CREATE,
-                    source_id=item["id"],
-                    desired_config=item.get("raw_config") or {},
-                ))
+                plan.creates.append(
+                    self._entry(
+                        rtype,
+                        CREATE,
+                        item.get("name") or item["id"],
+                        supported=rtype in CAN_CREATE,
+                        source_id=item["id"],
+                        desired_config=item.get("raw_config") or {},
+                    )
+                )
 
         # Updates — forward order.  Restore to the snapshot's config; the
         # tenant's current config is retained as the rollback target.
@@ -206,13 +261,17 @@ class ZPAPushService:
             if not rd:
                 continue
             for item in rd.modified:
-                plan.updates.append(self._entry(
-                    rtype, UPDATE, item.get("name") or item["id"],
-                    supported=rtype in CAN_UPDATE,
-                    target_id=item["id"],
-                    desired_config=item.get("old_config") or {},
-                    pre_config=item.get("new_config") or {},
-                ))
+                plan.updates.append(
+                    self._entry(
+                        rtype,
+                        UPDATE,
+                        item.get("name") or item["id"],
+                        supported=rtype in CAN_UPDATE,
+                        target_id=item["id"],
+                        desired_config=item.get("old_config") or {},
+                        pre_config=item.get("new_config") or {},
+                    )
+                )
 
         return plan
 
@@ -252,21 +311,29 @@ class ZPAPushService:
                 if match:
                     if source_id and match["id"] and source_id != match["id"]:
                         plan.id_remap[str(source_id)] = str(match["id"])
-                    plan.updates.append(self._entry(
-                        rtype, UPDATE, name,
-                        supported=rtype in CAN_UPDATE,
-                        target_id=match["id"],
-                        source_id=source_id,
-                        desired_config=item.get("raw_config") or {},
-                        pre_config=match.get("raw_config") or {},
-                    ))
+                    plan.updates.append(
+                        self._entry(
+                            rtype,
+                            UPDATE,
+                            name,
+                            supported=rtype in CAN_UPDATE,
+                            target_id=match["id"],
+                            source_id=source_id,
+                            desired_config=item.get("raw_config") or {},
+                            pre_config=match.get("raw_config") or {},
+                        )
+                    )
                 else:
-                    plan.creates.append(self._entry(
-                        rtype, CREATE, name,
-                        supported=rtype in CAN_CREATE,
-                        source_id=source_id,
-                        desired_config=item.get("raw_config") or {},
-                    ))
+                    plan.creates.append(
+                        self._entry(
+                            rtype,
+                            CREATE,
+                            name,
+                            supported=rtype in CAN_CREATE,
+                            source_id=source_id,
+                            desired_config=item.get("raw_config") or {},
+                        )
+                    )
 
         return plan
 
@@ -330,11 +397,16 @@ class ZPAPushService:
                 raise ZPAPushCancelled(records)
 
             if not entry.supported:
-                emit(PushRecord(
-                    resource_type=entry.resource_type, name=entry.name,
-                    action=entry.action, status=MANUAL,
-                    reason=entry.skip_reason,
-                ), entry)
+                emit(
+                    PushRecord(
+                        resource_type=entry.resource_type,
+                        name=entry.name,
+                        action=entry.action,
+                        status=MANUAL,
+                        reason=entry.skip_reason,
+                    ),
+                    entry,
+                )
                 continue
 
             if entry.action == DELETE:
@@ -376,22 +448,28 @@ class ZPAPushService:
                 continue
             if record.action == CREATE and record.resource_id:
                 undo = PushPlanEntry(
-                    resource_type=entry.resource_type, name=entry.name,
-                    action=DELETE, supported=entry.resource_type in CAN_DELETE,
+                    resource_type=entry.resource_type,
+                    name=entry.name,
+                    action=DELETE,
+                    supported=entry.resource_type in CAN_DELETE,
                     target_id=record.resource_id,
                     skip_reason=_UNSUPPORTED[DELETE],
                 )
                 out.append(
                     self._do_delete(undo, audit_operation, {})
-                    if undo.supported else
-                    PushRecord(entry.resource_type, entry.name, DELETE, MANUAL,
-                               reason=_UNSUPPORTED[DELETE])
+                    if undo.supported
+                    else PushRecord(
+                        entry.resource_type, entry.name, DELETE, MANUAL, reason=_UNSUPPORTED[DELETE]
+                    )
                 )
             elif record.action == UPDATE and entry.pre_config:
                 undo = PushPlanEntry(
-                    resource_type=entry.resource_type, name=entry.name,
-                    action=UPDATE, supported=True,
-                    target_id=entry.target_id, desired_config=entry.pre_config,
+                    resource_type=entry.resource_type,
+                    name=entry.name,
+                    action=UPDATE,
+                    supported=True,
+                    target_id=entry.target_id,
+                    desired_config=entry.pre_config,
                 )
                 out.append(self._do_update(undo, audit_operation, {}))
         return out
@@ -409,6 +487,7 @@ class ZPAPushService:
             return
         try:
             from services.zpa_import_service import ZPAImportService
+
             ZPAImportService(self._client, self._tenant_id).run(resource_types=affected)
         except Exception:
             pass  # the push result is already recorded; sync is advisory
@@ -427,6 +506,7 @@ class ZPAPushService:
 
         if refresh_from_tenant:
             from services.zpa_import_service import ZPAImportService
+
             ZPAImportService(self._client, self._tenant_id).run(
                 progress_callback=import_progress_callback
             )
@@ -451,9 +531,14 @@ class ZPAPushService:
         pre_config: Optional[dict] = None,
     ) -> PushPlanEntry:
         return PushPlanEntry(
-            resource_type=rtype, name=name, action=action, supported=supported,
-            target_id=target_id, source_id=source_id,
-            desired_config=desired_config or {}, pre_config=pre_config or {},
+            resource_type=rtype,
+            name=name,
+            action=action,
+            supported=supported,
+            target_id=target_id,
+            source_id=source_id,
+            desired_config=desired_config or {},
+            pre_config=pre_config or {},
             skip_reason="" if supported else _UNSUPPORTED[action],
         )
 
@@ -476,15 +561,26 @@ class ZPAPushService:
         strip |= TYPE_EXTRA_STRIP.get(rtype, frozenset())
         return self._remap_ids({k: v for k, v in raw.items() if k not in strip})
 
-    def _audit(self, action: str, status: str, entry: PushPlanEntry,
-               operation: str, details: dict,
-               resource_id: Optional[str] = None, error: str = "") -> None:
+    def _audit(
+        self,
+        action: str,
+        status: str,
+        entry: PushPlanEntry,
+        operation: str,
+        details: dict,
+        resource_id: Optional[str] = None,
+        error: str = "",
+    ) -> None:
         from services import audit_service
 
         kwargs: Dict[str, Any] = {
-            "product": "ZPA", "operation": operation, "action": action.upper(),
-            "status": status, "tenant_id": self._tenant_id,
-            "resource_type": entry.resource_type, "resource_name": entry.name,
+            "product": "ZPA",
+            "operation": operation,
+            "action": action.upper(),
+            "status": status,
+            "tenant_id": self._tenant_id,
+            "resource_type": entry.resource_type,
+            "resource_name": entry.name,
         }
         if resource_id:
             kwargs["resource_id"] = resource_id
@@ -563,8 +659,9 @@ class ZPAPushService:
             return PushRecord(rtype, name, UPDATE, APPLIED, resource_id=rid)
         except Exception as exc:
             reason = _redact(str(exc))
-            self._audit("UPDATE", "FAILURE", entry, operation, details,
-                        resource_id=rid, error=reason)
+            self._audit(
+                "UPDATE", "FAILURE", entry, operation, details, resource_id=rid, error=reason
+            )
             return PushRecord(rtype, name, UPDATE, FAILED, reason=reason, resource_id=rid)
 
     def _do_delete(self, entry: PushPlanEntry, operation: str, details: dict) -> PushRecord:
@@ -596,6 +693,7 @@ class ZPAPushService:
             return PushRecord(rtype, name, DELETE, APPLIED, resource_id=rid)
         except Exception as exc:
             reason = _redact(str(exc))
-            self._audit("DELETE", "FAILURE", entry, operation, details,
-                        resource_id=rid, error=reason)
+            self._audit(
+                "DELETE", "FAILURE", entry, operation, details, resource_id=rid, error=reason
+            )
             return PushRecord(rtype, name, DELETE, FAILED, reason=reason, resource_id=rid)

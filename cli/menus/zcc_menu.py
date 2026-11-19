@@ -110,6 +110,7 @@ def zcc_menu():
 # Devices submenu
 # ------------------------------------------------------------------
 
+
 def devices_menu(client, tenant):
     while True:
         render_banner()
@@ -141,12 +142,11 @@ def devices_menu(client, tenant):
 
 def _list_devices(client, tenant, username=None, os_type=None):
     from services.zcc_service import ZCCService
+
     service = ZCCService(client, tenant_id=tenant.id)
 
     if os_type is None and username is None:
-        os_type = questionary.select(
-            "Filter by OS type:", choices=_OS_CHOICES_ALL
-        ).ask()
+        os_type = questionary.select("Filter by OS type:", choices=_OS_CHOICES_ALL).ask()
         if os_type == 0:
             os_type = None  # sentinel → no filter
 
@@ -178,7 +178,9 @@ def _list_devices(client, tenant, username=None, os_type=None):
         os_int = d.get("type")
         reg_int = d.get("registration_state")
         os_str = OS_TYPE_LABELS.get(os_int, str(os_int) if os_int is not None else "—")
-        reg_str = REGISTRATION_STATE_LABELS.get(reg_int, str(reg_int) if reg_int is not None else "—")
+        reg_str = REGISTRATION_STATE_LABELS.get(
+            reg_int, str(reg_int) if reg_int is not None else "—"
+        )
         reg_style = "green" if reg_int == 1 else ("yellow" if reg_int == 3 else "dim")
         table.add_row(
             d.get("user") or "—",
@@ -191,6 +193,7 @@ def _list_devices(client, tenant, username=None, os_type=None):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -213,17 +216,24 @@ def _device_details(client, tenant):
     if not lookup:
         return
 
-    prompt = "Enter username (full email, e.g. user@company.com):" if lookup == "username" else "Enter UDID:"
+    prompt = (
+        "Enter username (full email, e.g. user@company.com):"
+        if lookup == "username"
+        else "Enter UDID:"
+    )
     value = questionary.text(prompt).ask()
     if not value:
         return
 
     from services.zcc_service import ZCCService
+
     service = ZCCService(client, tenant_id=tenant.id)
 
     with console.status("Fetching device details..."):
         try:
-            kwargs = {"username": value.strip()} if lookup == "username" else {"udid": value.strip()}
+            kwargs = (
+                {"username": value.strip()} if lookup == "username" else {"udid": value.strip()}
+            )
             details = service.get_device_details(**kwargs)
         except Exception as e:
             console.print(f"[red]✗ {e}[/red]")
@@ -265,6 +275,7 @@ def _device_details(client, tenant):
 
 def _remove_device(client, tenant, force: bool = False):
     from services.zcc_service import ZCCService
+
     service = ZCCService(client, tenant_id=tenant.id)
 
     op_label = "Force Remove" if force else "Soft Remove"
@@ -298,8 +309,8 @@ def _remove_device(client, tenant, force: bool = False):
 
     warning = (
         f"[red]Force remove[/red] {by} [bold]{value}[/bold]?"
-        if force else
-        f"Soft remove {by} [bold]{value}[/bold]?"
+        if force
+        else f"Soft remove {by} [bold]{value}[/bold]?"
     )
     confirmed = questionary.confirm(warning, default=False).ask()
     if not confirmed:
@@ -328,8 +339,10 @@ def _remove_device(client, tenant, force: bool = False):
 # OTP Lookup
 # ------------------------------------------------------------------
 
+
 def _otp_lookup(client, tenant):
     from services.zcc_service import ZCCService
+
     service = ZCCService(client, tenant_id=tenant.id)
 
     console.print("\n[bold]OTP Lookup[/bold]")
@@ -365,8 +378,10 @@ def _otp_lookup(client, tenant):
 # App Profile Password Lookup
 # ------------------------------------------------------------------
 
+
 def _password_lookup(client, tenant):
     from services.zcc_service import ZCCService
+
     service = ZCCService(client, tenant_id=tenant.id)
 
     console.print("\n[bold]App Profile Passwords[/bold]")
@@ -394,14 +409,14 @@ def _password_lookup(client, tenant):
         return
 
     password_fields = [
-        ("exitPass",        "Exit Password"),
-        ("logoutPass",      "Logout Password"),
-        ("uninstallPass",   "Uninstall Password"),
-        ("zadDisablePass",  "ZAD Disable"),
-        ("zdpDisablePass",  "ZDP Disable"),
-        ("zdxDisablePass",  "ZDX Disable"),
-        ("ziaDisablePass",  "ZIA Disable"),
-        ("zpaDisablePass",  "ZPA Disable"),
+        ("exitPass", "Exit Password"),
+        ("logoutPass", "Logout Password"),
+        ("uninstallPass", "Uninstall Password"),
+        ("zadDisablePass", "ZAD Disable"),
+        ("zdpDisablePass", "ZDP Disable"),
+        ("zdxDisablePass", "ZDX Disable"),
+        ("ziaDisablePass", "ZIA Disable"),
+        ("zpaDisablePass", "ZPA Disable"),
     ]
 
     lines = []
@@ -428,8 +443,10 @@ def _password_lookup(client, tenant):
 # CSV Exports
 # ------------------------------------------------------------------
 
+
 def _export_devices(client, tenant):
     from services.zcc_service import ZCCService
+
     service = ZCCService(client, tenant_id=tenant.id)
 
     console.print("\n[bold]Export Devices CSV[/bold]\n")
@@ -475,6 +492,7 @@ def _export_devices(client, tenant):
 
 def _export_service_status(client, tenant):
     from services.zcc_service import ZCCService
+
     service = ZCCService(client, tenant_id=tenant.id)
 
     console.print("\n[bold]Export Service Status CSV[/bold]\n")
@@ -520,10 +538,13 @@ def _export_service_status(client, tenant):
 
 def _export_disable_reasons(client, tenant):
     from services.zcc_service import ZCCService
+
     service = ZCCService(client, tenant_id=tenant.id)
 
     console.print("\n[bold]Export Disable Reasons CSV[/bold]\n")
-    console.print("[dim]Columns: User, UDID, Platform, Service, Disable Time, Disable Reason[/dim]\n")
+    console.print(
+        "[dim]Columns: User, UDID, Platform, Service, Disable Time, Disable Reason[/dim]\n"
+    )
 
     start_date = questionary.text("Start date (YYYY-MM-DD):").ask()
     if not start_date:
@@ -574,6 +595,7 @@ def _export_disable_reasons(client, tenant):
 # Import Config
 # ------------------------------------------------------------------
 
+
 def _import_zcc_config(client, tenant):
     from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn
     from services.zcc_import_service import ZCCImportService, RESOURCE_DEFINITIONS
@@ -604,8 +626,8 @@ def _import_zcc_config(client, tenant):
 
         sync = service.run(progress_callback=on_progress)
 
-    status_style = "green" if sync.status == "SUCCESS" else (
-        "yellow" if sync.status == "PARTIAL" else "red"
+    status_style = (
+        "green" if sync.status == "SUCCESS" else ("yellow" if sync.status == "PARTIAL" else "red")
     )
     console.print(f"\n[{status_style}]■ Sync {sync.status}[/{status_style}]")
     console.print(f"  Resources synced:  {sync.resources_synced}")
@@ -622,6 +644,7 @@ def _import_zcc_config(client, tenant):
 
 def _reset_na_resources(client, tenant):
     from services.zcc_import_service import ZCCImportService
+
     service = ZCCImportService(client, tenant_id=tenant.id)
     disabled = service._get_disabled_resource_types()
     if not disabled:
@@ -641,6 +664,7 @@ def _reset_na_resources(client, tenant):
 # ------------------------------------------------------------------
 # Trusted Networks (read-only, from ZCCResource DB cache)
 # ------------------------------------------------------------------
+
 
 def trusted_networks_menu(tenant):
     while True:
@@ -683,13 +707,15 @@ def _list_trusted_networks(tenant, search: str = None):
     if search:
         search_lower = search.lower()
         rows = [
-            r for r in rows
+            r
+            for r in rows
             if search_lower in (r["raw_config"].get("network_name") or r["name"] or "").lower()
         ]
 
     if not rows:
         msg = (
-            f"[yellow]No trusted networks matching '{search}'.[/yellow]" if search
+            f"[yellow]No trusted networks matching '{search}'.[/yellow]"
+            if search
             else "[yellow]No trusted networks in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         console.print(msg)
@@ -710,6 +736,7 @@ def _list_trusted_networks(tenant, search: str = None):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -723,6 +750,7 @@ def _search_trusted_networks(tenant):
 # ------------------------------------------------------------------
 # Forwarding Profiles (read-only, from ZCCResource DB cache)
 # ------------------------------------------------------------------
+
 
 def forwarding_profiles_menu(tenant):
     while True:
@@ -768,7 +796,8 @@ def _list_forwarding_profiles(tenant, search: str = None):
 
     if not rows:
         msg = (
-            f"[yellow]No forwarding profiles matching '{search}'.[/yellow]" if search
+            f"[yellow]No forwarding profiles matching '{search}'.[/yellow]"
+            if search
             else "[yellow]No forwarding profiles in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         console.print(msg)
@@ -793,6 +822,7 @@ def _list_forwarding_profiles(tenant, search: str = None):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -806,6 +836,7 @@ def _search_forwarding_profiles(tenant):
 # ------------------------------------------------------------------
 # Admin Users (read-only, from ZCCResource DB cache)
 # ------------------------------------------------------------------
+
 
 def admin_users_menu(tenant):
     while True:
@@ -851,7 +882,8 @@ def _list_admin_users(tenant, search: str = None):
 
     if not rows:
         msg = (
-            f"[yellow]No admin users matching '{search}'.[/yellow]" if search
+            f"[yellow]No admin users matching '{search}'.[/yellow]"
+            if search
             else "[yellow]No ZCC admin users found. This tenant may manage admins through ZIdentity instead.[/yellow]"
         )
         console.print(msg)
@@ -872,6 +904,7 @@ def _list_admin_users(tenant, search: str = None):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -885,6 +918,7 @@ def _search_admin_users(tenant):
 # ------------------------------------------------------------------
 # Entitlements (ZPA and ZDX group access)
 # ------------------------------------------------------------------
+
 
 def entitlements_menu(client, tenant):
     while True:
@@ -923,12 +957,7 @@ def _fetch_entitlements(client, product: str) -> dict:
     else:
         raw = client.get_zdx_entitlements()
     # Normalise: look for a list of group objects under common keys
-    groups = (
-        raw.get("upmGroupList")
-        or raw.get("groupList")
-        or raw.get("groups")
-        or []
-    )
+    groups = raw.get("upmGroupList") or raw.get("groupList") or raw.get("groups") or []
     return {"raw": raw, "groups": groups}
 
 
@@ -946,6 +975,7 @@ def _view_entitlements(client, tenant, product: str):
     raw = data["raw"]
 
     from services import audit_service
+
     audit_service.log(
         product="ZCC",
         operation=f"view_{product}_entitlements",
@@ -960,11 +990,14 @@ def _view_entitlements(client, tenant, product: str):
         from rich.syntax import Syntax
         from cli.banner import capture_banner
         from cli.scroll_view import render_rich_to_lines, scroll_view
+
         syntax = Syntax(json.dumps(raw, indent=2, default=str), "json", theme="monokai")
         scroll_view(render_rich_to_lines(syntax), header_ansi=capture_banner())
         return
 
-    table = Table(title=f"{label} Entitlements — Group Access ({len(groups)} groups)", show_lines=False)
+    table = Table(
+        title=f"{label} Entitlements — Group Access ({len(groups)} groups)", show_lines=False
+    )
     table.add_column("Group Name")
     table.add_column("Group ID", style="dim")
     table.add_column("Enabled")
@@ -972,7 +1005,13 @@ def _view_entitlements(client, tenant, product: str):
     for g in groups:
         name = g.get("name") or g.get("groupName") or "—"
         gid = str(g.get("id") or g.get("groupId") or "—")
-        enabled = g.get("enabled") if "enabled" in g else g.get("zdxEnabled") if "zdxEnabled" in g else None
+        enabled = (
+            g.get("enabled")
+            if "enabled" in g
+            else g.get("zdxEnabled")
+            if "zdxEnabled" in g
+            else None
+        )
         if enabled is True:
             enabled_str = "[green]Yes[/green]"
         elif enabled is False:
@@ -983,6 +1022,7 @@ def _view_entitlements(client, tenant, product: str):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -1026,9 +1066,7 @@ def _manage_entitlements(client, tenant, product: str):
     if selected is None:
         return
 
-    selected_ids = {
-        str(g.get("id") or g.get("groupId")) for g in selected
-    }
+    selected_ids = {str(g.get("id") or g.get("groupId")) for g in selected}
 
     # Build updated payload: mark selected as enabled, others disabled
     updated_groups = []
@@ -1058,7 +1096,9 @@ def _manage_entitlements(client, tenant, product: str):
         return
 
     # Rebuild payload using same top-level structure as raw response
-    group_key = "upmGroupList" if "upmGroupList" in raw else "groupList" if "groupList" in raw else "groups"
+    group_key = (
+        "upmGroupList" if "upmGroupList" in raw else "groupList" if "groupList" in raw else "groups"
+    )
     payload = dict(raw)
     payload[group_key] = updated_groups
 
@@ -1069,6 +1109,7 @@ def _manage_entitlements(client, tenant, product: str):
             client.update_zdx_entitlements(payload)
         console.print(f"[green]✓ {label} entitlements updated.[/green]")
         from services import audit_service
+
         audit_service.log(
             product="ZCC",
             operation=f"update_{product}_entitlements",
@@ -1086,6 +1127,7 @@ def _manage_entitlements(client, tenant, product: str):
 # Bypass App Definitions
 # Zscaler-managed (web_app_service) + user-created (custom_app_service)
 # ------------------------------------------------------------------
+
 
 def _custom_app_bypasses_menu(tenant):
     while True:
@@ -1141,8 +1183,12 @@ def _load_bypass_app_rows(tenant, search: str = None) -> list:
     if search:
         sl = search.lower()
         rows = [
-            r for r in rows
-            if sl in (r["raw_config"].get("app_name") or r["raw_config"].get("name") or r["name"] or "").lower()
+            r
+            for r in rows
+            if sl
+            in (
+                r["raw_config"].get("app_name") or r["raw_config"].get("name") or r["name"] or ""
+            ).lower()
         ]
 
     return rows
@@ -1159,7 +1205,8 @@ def _list_bypass_app_definitions(tenant, search: str = None):
 
     if not rows:
         msg = (
-            f"[yellow]No bypass app definitions matching '{search}'.[/yellow]" if search
+            f"[yellow]No bypass app definitions matching '{search}'.[/yellow]"
+            if search
             else "[yellow]No bypass app definitions in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         console.print(msg)
@@ -1181,7 +1228,11 @@ def _list_bypass_app_definitions(tenant, search: str = None):
             type_str = "[cyan]Custom[/cyan]"
         else:
             created_by = str(cfg.get("created_by") or "")
-            type_str = "[dim]Zscaler[/dim]" if (not created_by or created_by.isdigit()) else "[cyan]Custom[/cyan]"
+            type_str = (
+                "[dim]Zscaler[/dim]"
+                if (not created_by or created_by.isdigit())
+                else "[cyan]Custom[/cyan]"
+            )
         row_id = str(cfg.get("id") or cfg.get("app_svc_id") or r["zcc_id"] or "—")
         # web_app_service: proto/port in appDataBlob (SDK snake_case: app_data_blob)
         # custom_app_service: proto/port in appData (camelCase, raw API)
@@ -1199,6 +1250,7 @@ def _list_bypass_app_definitions(tenant, search: str = None):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -1212,17 +1264,18 @@ def _search_bypass_app_definitions(tenant):
 def _view_bypass_app_definition_details(tenant):
     rows = _load_bypass_app_rows(tenant)
     if not rows:
-        console.print("[yellow]No bypass app definitions in local DB. Run Import Config first.[/yellow]")
+        console.print(
+            "[yellow]No bypass app definitions in local DB. Run Import Config first.[/yellow]"
+        )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    choices = [
-        questionary.Choice(title=_bypass_row_display_name(r), value=r)
-        for r in rows
-    ]
+    choices = [questionary.Choice(title=_bypass_row_display_name(r), value=r) for r in rows]
     choices.append(questionary.Choice("← Back", value=None))
 
-    selected = questionary.select("Select definition to view:", choices=choices, use_indicator=True).ask()
+    selected = questionary.select(
+        "Select definition to view:", choices=choices, use_indicator=True
+    ).ask()
     if not isinstance(selected, dict):
         return
 
@@ -1231,13 +1284,16 @@ def _view_bypass_app_definition_details(tenant):
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
 
-    syntax = Syntax(json.dumps(selected["raw_config"], indent=2, default=str), "json", theme="monokai")
+    syntax = Syntax(
+        json.dumps(selected["raw_config"], indent=2, default=str), "json", theme="monokai"
+    )
     scroll_view(render_rich_to_lines(syntax), header_ansi=capture_banner())
 
 
 # ------------------------------------------------------------------
 # App Profiles (web_policy, with edit/activate/delete from DB cache)
 # ------------------------------------------------------------------
+
 
 def _app_profiles_menu(client, tenant):
     while True:
@@ -1308,7 +1364,8 @@ def _list_web_policies(tenant, search: str = None):
 
     if not rows:
         msg = (
-            f"[yellow]No app profiles matching '{search}'.[/yellow]" if search
+            f"[yellow]No app profiles matching '{search}'.[/yellow]"
+            if search
             else "[yellow]No app profiles in local DB. Run [bold]Import Config[/bold] first.[/yellow]"
         )
         console.print(msg)
@@ -1340,6 +1397,7 @@ def _list_web_policies(tenant, search: str = None):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -1357,13 +1415,12 @@ def _view_web_policy_details(tenant):
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    choices = [
-        questionary.Choice(title=r["name"] or r["zcc_id"], value=r)
-        for r in rows
-    ]
+    choices = [questionary.Choice(title=r["name"] or r["zcc_id"], value=r) for r in rows]
     choices.append(questionary.Choice("← Back", value=None))
 
-    selected = questionary.select("Select profile to view:", choices=choices, use_indicator=True).ask()
+    selected = questionary.select(
+        "Select profile to view:", choices=choices, use_indicator=True
+    ).ask()
     if not isinstance(selected, dict):
         return
 
@@ -1372,7 +1429,9 @@ def _view_web_policy_details(tenant):
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
 
-    syntax = Syntax(json.dumps(selected["raw_config"], indent=2, default=str), "json", theme="monokai")
+    syntax = Syntax(
+        json.dumps(selected["raw_config"], indent=2, default=str), "json", theme="monokai"
+    )
     scroll_view(render_rich_to_lines(syntax), header_ansi=capture_banner())
 
 
@@ -1383,10 +1442,7 @@ def _select_policy_for_bypass(client, tenant):
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    choices = [
-        questionary.Choice(title=r["name"] or r["zcc_id"], value=r)
-        for r in rows
-    ]
+    choices = [questionary.Choice(title=r["name"] or r["zcc_id"], value=r) for r in rows]
     choices.append(questionary.Choice("← Back", value=None))
 
     selected = questionary.select(
@@ -1408,12 +1464,16 @@ def _manage_bypass_apps(policy_row: dict, client, tenant):
     policy_id = policy_raw.get("id") or int(policy_row["zcc_id"])
 
     # raw_config for web_policy uses the API's native camelCase keys
-    raw_bypass_ids = policy_raw.get("bypassCustomAppIds") or policy_raw.get("bypass_custom_app_ids") or []
+    raw_bypass_ids = (
+        policy_raw.get("bypassCustomAppIds") or policy_raw.get("bypass_custom_app_ids") or []
+    )
     current_ids = {int(x) for x in raw_bypass_ids if x is not None}
 
     svc_rows = _load_web_app_service_rows(tenant)
     if not svc_rows:
-        console.print("[yellow]No custom app bypass services in DB. Run Import Config first.[/yellow]")
+        console.print(
+            "[yellow]No custom app bypass services in DB. Run Import Config first.[/yellow]"
+        )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
@@ -1425,7 +1485,9 @@ def _manage_bypass_apps(policy_row: dict, client, tenant):
         console.print(f"\n[dim]Currently assigned ({len(assigned)}):[/dim]")
         for r in assigned:
             cfg = r["raw_config"]
-            console.print(f"  [cyan]{cfg.get('app_name') or r['name']}[/cyan]  [dim](id: {cfg.get('id')})[/dim]")
+            console.print(
+                f"  [cyan]{cfg.get('app_name') or r['name']}[/cyan]  [dim](id: {cfg.get('id')})[/dim]"
+            )
     else:
         console.print("\n[dim]No custom bypass apps currently assigned.[/dim]")
 
@@ -1485,8 +1547,7 @@ def _manage_bypass_apps(policy_row: dict, client, tenant):
     updated_policy.pop("device_type", None)
 
     console.print(
-        f"\n[bold]Pending:[/bold] {change_desc} "
-        f"({len(current_ids)} → {len(new_ids)} total)"
+        f"\n[bold]Pending:[/bold] {change_desc} ({len(current_ids)} → {len(new_ids)} total)"
     )
     confirmed = questionary.confirm("Apply changes?", default=True).ask()
     if not confirmed:
@@ -1586,10 +1647,7 @@ def _delete_web_policy(client, tenant):
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    choices = [
-        questionary.Choice(title=r["name"] or r["zcc_id"], value=r)
-        for r in rows
-    ]
+    choices = [questionary.Choice(title=r["name"] or r["zcc_id"], value=r) for r in rows]
     choices.append(questionary.Choice("← Back", value=None))
 
     selected = questionary.select(
@@ -1631,6 +1689,7 @@ def _delete_web_policy(client, tenant):
 # View Traffic Profile (reads from DB; requires prior Import Config)
 # ------------------------------------------------------------------
 
+
 def _view_traffic_profile(tenant):
     rows = _load_web_policy_rows(tenant)
     if not rows:
@@ -1638,10 +1697,7 @@ def _view_traffic_profile(tenant):
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    choices = [
-        questionary.Choice(title=r["name"] or r["zcc_id"], value=r)
-        for r in rows
-    ]
+    choices = [questionary.Choice(title=r["name"] or r["zcc_id"], value=r) for r in rows]
     choices.append(questionary.Choice("← Back", value="cancel"))
 
     selected = questionary.select(
@@ -1662,8 +1718,12 @@ def _view_traffic_profile(tenant):
         if fp_id:
             fp_row = (
                 session.query(ZCCResource)
-                .filter_by(tenant_id=tenant.id, resource_type="forwarding_profile",
-                           zcc_id=fp_id, is_deleted=False)
+                .filter_by(
+                    tenant_id=tenant.id,
+                    resource_type="forwarding_profile",
+                    zcc_id=fp_id,
+                    is_deleted=False,
+                )
                 .first()
             )
         raw_fp = fp_row.raw_config if fp_row else None
@@ -1754,9 +1814,9 @@ def _view_traffic_profile(tenant):
                 table.add_row("IPv4 Tunnel", cidr, "[green]include[/green]")
             for cidr in exclude_routes:
                 table.add_row("IPv4 Tunnel", cidr, "[red]exclude[/red]")
-            for cidr in (pe.get("packetTunnelIncludeListForIPv6") or []):
+            for cidr in pe.get("packetTunnelIncludeListForIPv6") or []:
                 table.add_row("IPv6 Tunnel", cidr, "[green]include[/green]")
-            for cidr in (pe.get("packetTunnelExcludeListForIPv6") or []):
+            for cidr in pe.get("packetTunnelExcludeListForIPv6") or []:
                 table.add_row("IPv6 Tunnel", cidr, "[red]exclude[/red]")
             for s in dns_include:
                 table.add_row("DNS", s, "[green]include[/green]")
@@ -1768,11 +1828,16 @@ def _view_traffic_profile(tenant):
                     proto = str(pb.get("protocol") or pb.get("proto") or "")
                     table.add_row("Port Bypass", port, proto)
             for gw in vpn_gateways:
-                gw_str = gw if isinstance(gw, str) else (gw.get("gateway") or gw.get("domain") or str(gw))
+                gw_str = (
+                    gw
+                    if isinstance(gw, str)
+                    else (gw.get("gateway") or gw.get("domain") or str(gw))
+                )
                 table.add_row("VPN Gateway", gw_str, "—")
 
             from cli.banner import capture_banner
             from cli.scroll_view import render_rich_to_lines, scroll_view
+
             scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
             return
 
@@ -1782,6 +1847,7 @@ def _view_traffic_profile(tenant):
 # ------------------------------------------------------------------
 # Admin Roles (read-only, from ZCCResource DB cache)
 # ------------------------------------------------------------------
+
 
 def _admin_roles_menu(tenant):
     while True:
@@ -1833,7 +1899,8 @@ def _list_admin_roles(tenant, search: str = None):
 
     if not rows:
         msg = (
-            f"[yellow]No admin roles matching '{search}'.[/yellow]" if search
+            f"[yellow]No admin roles matching '{search}'.[/yellow]"
+            if search
             else "[yellow]No admin roles in local DB. Run Import Config first.[/yellow]"
         )
         console.print(msg)
@@ -1857,6 +1924,7 @@ def _list_admin_roles(tenant, search: str = None):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -1867,15 +1935,10 @@ def _view_admin_role_details(tenant):
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    choices = [
-        questionary.Choice(title=r["name"] or r["zcc_id"], value=r)
-        for r in rows
-    ]
+    choices = [questionary.Choice(title=r["name"] or r["zcc_id"], value=r) for r in rows]
     choices.append(questionary.Choice("← Back", value="cancel"))
 
-    selected = questionary.select(
-        "Select role to view:", choices=choices, use_indicator=True
-    ).ask()
+    selected = questionary.select("Select role to view:", choices=choices, use_indicator=True).ask()
     if selected == "cancel" or selected is None or not isinstance(selected, dict):
         return
 
@@ -1884,13 +1947,16 @@ def _view_admin_role_details(tenant):
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
 
-    syntax = Syntax(json.dumps(selected["raw_config"], indent=2, default=str), "json", theme="monokai")
+    syntax = Syntax(
+        json.dumps(selected["raw_config"], indent=2, default=str), "json", theme="monokai"
+    )
     scroll_view(render_rich_to_lines(syntax), header_ansi=capture_banner())
 
 
 # ------------------------------------------------------------------
 # Fail Open Policy (read-only, from ZCCResource DB cache)
 # ------------------------------------------------------------------
+
 
 def _fail_open_policy_menu(tenant):
     while True:
@@ -1950,12 +2016,14 @@ def _view_fail_open_policy(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
 # ------------------------------------------------------------------
 # Web Privacy (singleton, read-only, from ZCCResource DB cache)
 # ------------------------------------------------------------------
+
 
 def _web_privacy_menu(tenant):
     while True:
@@ -1989,7 +2057,9 @@ def _view_web_privacy(tenant):
         raw_config = row.raw_config if row else None
 
     if not raw_config:
-        console.print("[yellow]No web privacy settings in local DB. Run Import Config first.[/yellow]")
+        console.print(
+            "[yellow]No web privacy settings in local DB. Run Import Config first.[/yellow]"
+        )
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
@@ -2005,6 +2075,7 @@ def _view_web_privacy(tenant):
 # ------------------------------------------------------------------
 # Snapshots submenu
 # ------------------------------------------------------------------
+
 
 def _zcc_snapshots_menu(client, tenant):
     while True:
@@ -2039,6 +2110,7 @@ def _zcc_snapshots_menu(client, tenant):
 
 def _list_zcc_snapshots(tenant):
     from services.zcc_snapshot_service import ZCCSnapshotService
+
     service = ZCCSnapshotService(None, tenant.id)
     snapshots = service.list_snapshots()
 
@@ -2066,6 +2138,7 @@ def _list_zcc_snapshots(tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -2093,7 +2166,9 @@ def _create_zcc_snapshot(client, tenant):
             questionary.press_any_key_to_continue("Press any key to continue...").ask()
             return
 
-    console.print(f"[green]Snapshot created: {snap.label} ({snap.resource_count} resources)[/green]")
+    console.print(
+        f"[green]Snapshot created: {snap.label} ({snap.resource_count} resources)[/green]"
+    )
     questionary.press_any_key_to_continue("Press any key to continue...").ask()
 
 
@@ -2127,9 +2202,21 @@ def _diff_zcc_snapshot(client, tenant):
     table.add_column("Restorable")
 
     for entry in diff:
-        added_str = f"[yellow]{entry['added_since']}[/yellow]" if entry["added_since"] > 0 else str(entry["added_since"])
-        removed_str = f"[red]{entry['removed_since']}[/red]" if entry["removed_since"] > 0 else str(entry["removed_since"])
-        changed_str = f"[yellow]{entry['changed_since']}[/yellow]" if entry["changed_since"] > 0 else str(entry["changed_since"])
+        added_str = (
+            f"[yellow]{entry['added_since']}[/yellow]"
+            if entry["added_since"] > 0
+            else str(entry["added_since"])
+        )
+        removed_str = (
+            f"[red]{entry['removed_since']}[/red]"
+            if entry["removed_since"] > 0
+            else str(entry["removed_since"])
+        )
+        changed_str = (
+            f"[yellow]{entry['changed_since']}[/yellow]"
+            if entry["changed_since"] > 0
+            else str(entry["changed_since"])
+        )
         restorable_str = "[green]Yes[/green]" if entry["restorable"] else "[red]No[/red]"
         table.add_row(
             entry["resource_type"],
@@ -2142,6 +2229,7 @@ def _diff_zcc_snapshot(client, tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
 
@@ -2185,10 +2273,7 @@ def _restore_zcc_snapshot(client, tenant):
         questionary.press_any_key_to_continue("Press any key to continue...").ask()
         return
 
-    type_choices = [
-        questionary.Choice(rt, value=rt, checked=True)
-        for rt in restorable_types
-    ]
+    type_choices = [questionary.Choice(rt, value=rt, checked=True) for rt in restorable_types]
     selected_types = questionary.checkbox(
         "Select resource types to restore:",
         choices=type_choices,
@@ -2206,6 +2291,7 @@ def _restore_zcc_snapshot(client, tenant):
         from services.config_service import get_tenant, decrypt_secret
         from lib.auth import ZscalerAuth
         from lib.zcc_client import ZCCClient, ZCCUnavailableError
+
         tgt = get_tenant(target_tenant_name)
         if not tgt:
             console.print(f"[red]x Tenant '{target_tenant_name}' not found.[/red]")
@@ -2219,7 +2305,9 @@ def _restore_zcc_snapshot(client, tenant):
             gov_tier=tgt.gov_cloud_tier,
         )
         try:
-            target_client = ZCCClient(tgt_auth, tgt.oneapi_base_url, tgt.zia_cloud, tgt.zia_tenant_id)
+            target_client = ZCCClient(
+                tgt_auth, tgt.oneapi_base_url, tgt.zia_cloud, tgt.zia_tenant_id
+            )
         except ZCCUnavailableError as e:
             console.print(f"[red]x Target tenant '{target_tenant_name}': {e}[/red]")
             questionary.press_any_key_to_continue("Press any key to continue...").ask()
@@ -2276,6 +2364,7 @@ def _restore_zcc_snapshot(client, tenant):
 
     from cli.banner import capture_banner
     from cli.scroll_view import render_rich_to_lines, scroll_view
+
     scroll_view(render_rich_to_lines(table), header_ansi=capture_banner())
 
     console.print(
@@ -2323,6 +2412,7 @@ def _delete_zcc_snapshot(tenant):
 
 def _pick_zcc_snapshot(tenant):
     from services.zcc_snapshot_service import ZCCSnapshotService
+
     service = ZCCSnapshotService(None, tenant.id)
     snapshots = service.list_snapshots()
     if not snapshots:

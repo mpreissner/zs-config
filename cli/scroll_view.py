@@ -89,7 +89,7 @@ def scroll_view(lines: List[str], header_ansi: str = "") -> None:
         offset[0] = max_offset
 
     def _get_content():
-        visible = lines[offset[0]: offset[0] + content_height]
+        visible = lines[offset[0] : offset[0] + content_height]
         # Pad with blank lines so the status bar doesn't jump when content
         # is shorter than the window.
         if len(visible) < content_height:

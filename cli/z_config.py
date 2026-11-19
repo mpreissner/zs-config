@@ -18,7 +18,10 @@ def _run_data_migrations(console) -> None:
     from rich.panel import Panel
     from rich.progress import BarColumn, MofNCompleteColumn, Progress, SpinnerColumn, TextColumn
     from rich.table import Table
-    from services.config_service import backfill_org_info_for_tenant, get_tenants_needing_org_backfill
+    from services.config_service import (
+        backfill_org_info_for_tenant,
+        get_tenants_needing_org_backfill,
+    )
 
     migrations = [
         (
@@ -71,7 +74,11 @@ def _run_data_migrations(console) -> None:
             table.add_row(label, "[red]✗ Failed[/red]", err or "")
 
         border = "green" if not failed else "yellow"
-        title = "[bold green]Migration Complete[/bold green]" if not failed else "[bold yellow]Migration Complete (with errors)[/bold yellow]"
+        title = (
+            "[bold green]Migration Complete[/bold green]"
+            if not failed
+            else "[bold yellow]Migration Complete (with errors)[/bold yellow]"
+        )
         console.print(Panel(table, title=title, border_style=border))
 
         if failed:
@@ -90,6 +97,7 @@ def main():
     # ── SSL: use the OS trust store so corporate inspection certs are trusted ──
     try:
         import truststore
+
         truststore.inject_into_ssl()
     except ImportError:
         pass  # not installed; requests falls back to certifi
@@ -101,6 +109,7 @@ def main():
 
     # ── Ensure default working directory exists ────────────────────────────
     from lib.defaults import DEFAULT_WORK_DIR
+
     DEFAULT_WORK_DIR.mkdir(parents=True, exist_ok=True)
 
     from db.database import init_db
@@ -121,9 +130,11 @@ def main():
     # Skip in container mode — no TTY available; questionary would hang.
     if not _container_mode:
         from lib.plugin_manager import get_pending_plugin_install, clear_pending_plugin_install
+
         _pending = get_pending_plugin_install()
         if _pending:
             from cli.menus.plugin_menu import _complete_pending_install
+
             _complete_pending_install(_pending)
             clear_pending_plugin_install()
 
@@ -134,12 +145,14 @@ def main():
             check_plugin_updates()
 
     from services.config_service import list_tenants
+
     if list_tenants():
         _run_data_migrations(console)
         tenant = select_tenant()
         if tenant:
             import questionary
             from cli.menus.main_menu import verify_and_activate_tenant
+
             verify_and_activate_tenant(tenant)
             questionary.press_any_key_to_continue("Press any key to continue...").ask()
 

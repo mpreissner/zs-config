@@ -21,10 +21,10 @@ log = logging.getLogger(__name__)
 # Override with ZSCALER_DB_URL (full SQLAlchemy URL) or ZSCALER_DB_PATH.
 if platform.system() == "Windows":
     _DEFAULT_DB_PATH = Path(os.environ.get("APPDATA", Path.home())) / "zs-config" / "zscaler.db"
-    _LEGACY_DB_PATH  = Path(os.environ.get("APPDATA", Path.home())) / "z-config"  / "zscaler.db"
+    _LEGACY_DB_PATH = Path(os.environ.get("APPDATA", Path.home())) / "z-config" / "zscaler.db"
 else:
     _DEFAULT_DB_PATH = Path.home() / ".local" / "share" / "zs-config" / "zscaler.db"
-    _LEGACY_DB_PATH  = Path.home() / ".local" / "share" / "z-config"  / "zscaler.db"
+    _LEGACY_DB_PATH = Path.home() / ".local" / "share" / "z-config" / "zscaler.db"
 
 _engine = None
 _SessionFactory = None
@@ -48,6 +48,7 @@ def _migrate_db_path() -> None:
 # ---------------------------------------------------------------------------
 # SQLCipher helpers
 # ---------------------------------------------------------------------------
+
 
 def _is_plaintext_sqlite(db_path: str) -> bool:
     """Return True if the file exists and starts with the SQLite plaintext magic header."""
@@ -83,8 +84,10 @@ def _make_sqlcipher_creator(db_path: str):
     the pool opens the encrypted database correctly. PRAGMA key must be the first
     statement executed on each new connection.
     """
+
     def creator():
         import sqlcipher3.dbapi2 as sqlcipher
+
         # timeout is SQLite's busy handler: with a pool there are now several
         # connections, and WAL admits one writer at a time, so a write that
         # arrives mid-import waits its turn instead of raising "database is
@@ -94,7 +97,7 @@ def _make_sqlcipher_creator(db_path: str):
         hex_key = binascii.hexlify(key_bytes).decode()
         conn.execute(f"PRAGMA key = \"x'{hex_key}'\"")
         conn.execute("PRAGMA cipher_compatibility = 4")  # SQLCipher 4 defaults
-        conn.execute("PRAGMA journal_mode = WAL")        # keep WAL after encryption
+        conn.execute("PRAGMA journal_mode = WAL")  # keep WAL after encryption
         return conn
 
     return creator
@@ -443,7 +446,8 @@ def _migrate_scheduled_tasks_target_nullable(engine) -> None:
         conn.commit()
         try:
             with conn.begin():
-                conn.execute(text("""
+                conn.execute(
+                    text("""
                     CREATE TABLE scheduled_tasks_new (
                         id INTEGER NOT NULL,
                         name VARCHAR(255) NOT NULL,
@@ -467,8 +471,10 @@ def _migrate_scheduled_tasks_target_nullable(engine) -> None:
                         FOREIGN KEY(source_tenant_id) REFERENCES tenant_configs (id),
                         FOREIGN KEY(target_tenant_id) REFERENCES tenant_configs (id)
                     )
-                """))
-                conn.execute(text("""
+                """)
+                )
+                conn.execute(
+                    text("""
                     INSERT INTO scheduled_tasks_new (
                         id, name, source_tenant_id, target_tenant_id, resource_groups,
                         cron_expression, sync_deletes, enabled, owner_email,
@@ -481,7 +487,8 @@ def _migrate_scheduled_tasks_target_nullable(engine) -> None:
                         created_at, updated_at, sync_mode, label_name,
                         label_resource_types, task_type, target_tenant_ids, import_products
                     FROM scheduled_tasks
-                """))
+                """)
+                )
                 conn.execute(text("DROP TABLE scheduled_tasks"))
                 conn.execute(text("ALTER TABLE scheduled_tasks_new RENAME TO scheduled_tasks"))
         except Exception:
@@ -526,9 +533,14 @@ def _migrate_scim_groups_to_user_groups(engine) -> None:
     """
     with engine.connect() as conn:
         legacy = _table_exists(conn, "scim_groups")
-        pe_sql = conn.execute(
-            text("SELECT sql FROM sqlite_master WHERE type='table' AND name='plugin_entitlements'")
-        ).scalar() or ""
+        pe_sql = (
+            conn.execute(
+                text(
+                    "SELECT sql FROM sqlite_master WHERE type='table' AND name='plugin_entitlements'"
+                )
+            ).scalar()
+            or ""
+        )
         stale_fk = "scim_groups" in pe_sql
         if not legacy and not stale_fk:
             return
@@ -542,29 +554,34 @@ def _migrate_scim_groups_to_user_groups(engine) -> None:
         try:
             with conn.begin():
                 if legacy:
-                    conn.execute(text("""
+                    conn.execute(
+                        text("""
                         INSERT OR IGNORE INTO user_groups
                             (id, external_id, display_name, mapped_role, source,
                              created_at, updated_at)
                         SELECT id, external_id, display_name, mapped_role, 'scim',
                                created_at, updated_at
                         FROM scim_groups
-                    """))
+                    """)
+                    )
                     # WHERE group_id IN (...) drops any membership whose group lost
                     # the display_name race with a group already created locally —
                     # a dangling member row is worse than a missing one.
-                    conn.execute(text("""
+                    conn.execute(
+                        text("""
                         INSERT OR IGNORE INTO user_group_members
                             (id, group_id, user_id, source, added_at)
                         SELECT id, group_id, user_id, 'scim', CURRENT_TIMESTAMP
                         FROM scim_group_members
                         WHERE group_id IN (SELECT id FROM user_groups)
-                    """))
+                    """)
+                    )
                     conn.execute(text("DROP TABLE scim_group_members"))
                     conn.execute(text("DROP TABLE scim_groups"))
 
                 if stale_fk:
-                    conn.execute(text("""
+                    conn.execute(
+                        text("""
                         CREATE TABLE plugin_entitlements_new (
                             id INTEGER PRIMARY KEY,
                             package VARCHAR(255) NOT NULL,
@@ -573,26 +590,33 @@ def _migrate_scim_groups_to_user_groups(engine) -> None:
                             granted_at DATETIME NOT NULL,
                             granted_by VARCHAR(255)
                         )
-                    """))
-                    conn.execute(text("""
+                    """)
+                    )
+                    conn.execute(
+                        text("""
                         INSERT INTO plugin_entitlements_new
                             (id, package, user_id, group_id, granted_at, granted_by)
                         SELECT id, package, user_id, group_id, granted_at, granted_by
                         FROM plugin_entitlements
-                    """))
+                    """)
+                    )
                     conn.execute(text("DROP TABLE plugin_entitlements"))
-                    conn.execute(text(
-                        "ALTER TABLE plugin_entitlements_new RENAME TO plugin_entitlements"
-                    ))
+                    conn.execute(
+                        text("ALTER TABLE plugin_entitlements_new RENAME TO plugin_entitlements")
+                    )
                     # Dropped with the old table, so they have to be remade here.
-                    conn.execute(text("""
+                    conn.execute(
+                        text("""
                         CREATE UNIQUE INDEX IF NOT EXISTS uq_plugin_ent_user
                         ON plugin_entitlements (package, user_id) WHERE user_id IS NOT NULL
-                    """))
-                    conn.execute(text("""
+                    """)
+                    )
+                    conn.execute(
+                        text("""
                         CREATE UNIQUE INDEX IF NOT EXISTS uq_plugin_ent_group
                         ON plugin_entitlements (package, group_id) WHERE group_id IS NOT NULL
-                    """))
+                    """)
+                    )
         except Exception:
             with engine.connect() as cleanup:
                 try:

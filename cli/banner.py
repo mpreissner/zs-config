@@ -17,6 +17,7 @@ VERSION = "3.6.4"
 # Falls back to the hand-drawn art if pyfiglet isn't installed.
 try:
     import pyfiglet
+
     _LOGO_TEXT = pyfiglet.figlet_format("zs-Config", font="slant").rstrip()
 except Exception:
     _LOGO_TEXT = (
@@ -63,7 +64,8 @@ def capture_banner() -> str:
     from io import StringIO
 
     buf = StringIO()
-    cap = Console(file=buf, width=shutil.get_terminal_size().columns,
-                  force_terminal=True, highlight=False)
+    cap = Console(
+        file=buf, width=shutil.get_terminal_size().columns, force_terminal=True, highlight=False
+    )
     cap.print(_build_banner_panel())
     return buf.getvalue()

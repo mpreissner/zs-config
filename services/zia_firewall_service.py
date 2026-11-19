@@ -28,14 +28,29 @@ from db.database import get_session
 from db.models import ZIAResource
 from services import audit_service
 
-_CAMEL_RO_FIELDS = frozenset({
-    "lastModifiedTime", "lastModifiedBy", "createdBy", "creationTime",
-    "accessControl", "predefined", "defaultRule", "defaultDnsRuleNameUsed",
-})
-_SNAKE_RO_FIELDS = frozenset({
-    "last_modified_time", "last_modified_by", "created_by", "creation_time",
-    "access_control", "predefined", "default_rule",
-})
+_CAMEL_RO_FIELDS = frozenset(
+    {
+        "lastModifiedTime",
+        "lastModifiedBy",
+        "createdBy",
+        "creationTime",
+        "accessControl",
+        "predefined",
+        "defaultRule",
+        "defaultDnsRuleNameUsed",
+    }
+)
+_SNAKE_RO_FIELDS = frozenset(
+    {
+        "last_modified_time",
+        "last_modified_by",
+        "created_by",
+        "creation_time",
+        "access_control",
+        "predefined",
+        "default_rule",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -43,9 +58,20 @@ _SNAKE_RO_FIELDS = frozenset({
 # ---------------------------------------------------------------------------
 
 CSV_FIELDNAMES = [
-    "id", "name", "order", "action", "state", "description",
-    "src_ips", "src_ip_groups", "dest_addresses", "dest_ip_groups",
-    "nw_services", "nw_service_groups", "locations", "enable_full_logging",
+    "id",
+    "name",
+    "order",
+    "action",
+    "state",
+    "description",
+    "src_ips",
+    "src_ip_groups",
+    "dest_addresses",
+    "dest_ip_groups",
+    "nw_services",
+    "nw_service_groups",
+    "locations",
+    "enable_full_logging",
 ]
 
 TEMPLATE_ROWS = [
@@ -85,7 +111,11 @@ TEMPLATE_ROWS = [
 
 _REQUIRED = {"name", "action"}
 _VALID_ACTIONS = {
-    "ALLOW", "BLOCK_DROP", "BLOCK_RESET", "BLOCK_ICMP", "EVAL_SEC_POLICY",
+    "ALLOW",
+    "BLOCK_DROP",
+    "BLOCK_RESET",
+    "BLOCK_ICMP",
+    "EVAL_SEC_POLICY",
 }
 _VALID_STATES = {"ENABLED", "DISABLED"}
 
@@ -94,9 +124,11 @@ _VALID_STATES = {"ENABLED", "DISABLED"}
 # Result types
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class SyncClassification:
     """Output of classify_sync() — what would happen on apply."""
+
     csv_rows: List[Dict] = field(default_factory=list)  # action: UPDATE|CREATE|SKIP
     to_delete: List[Dict] = field(default_factory=list)
     reorder_needed: bool = False
@@ -132,6 +164,7 @@ class SyncResult:
 # ---------------------------------------------------------------------------
 # CSV parsing
 # ---------------------------------------------------------------------------
+
 
 def parse_csv(path: str) -> List[Dict]:
     """Read and validate a firewall rule CSV. Raises ValueError on failure."""
@@ -173,6 +206,7 @@ def parse_csv(path: str) -> List[Dict]:
 # Export helpers
 # ---------------------------------------------------------------------------
 
+
 def export_rules_to_csv(tenant_id: int) -> List[Dict]:
     """Read firewall rules from DB and return list of CSV-ready dicts."""
     with get_session() as session:
@@ -197,10 +231,15 @@ def export_rules_to_csv(tenant_id: int) -> List[Dict]:
             session.query(ZIAResource)
             .filter(
                 ZIAResource.tenant_id == tenant_id,
-                ZIAResource.resource_type.in_([
-                    "ip_source_group", "ip_destination_group",
-                    "network_service", "network_svc_group", "location",
-                ]),
+                ZIAResource.resource_type.in_(
+                    [
+                        "ip_source_group",
+                        "ip_destination_group",
+                        "network_service",
+                        "network_svc_group",
+                        "location",
+                    ]
+                ),
                 ZIAResource.is_deleted.is_(False),
             )
             .all()
@@ -236,22 +275,26 @@ def export_rules_to_csv(tenant_id: int) -> List[Dict]:
         src_ips_raw = cfg.get("src_ips") or []
         dest_addrs_raw = cfg.get("dest_addresses") or []
 
-        csv_rows.append({
-            "id":                 r["zia_id"] or cfg.get("id") or "",
-            "name":               r["name"] or "",
-            "order":              str(order),
-            "action":             action,
-            "state":              cfg.get("state") or "ENABLED",
-            "description":        cfg.get("description") or "",
-            "src_ips":            ";".join(str(ip) for ip in src_ips_raw),
-            "src_ip_groups":      _resolve_names(cfg.get("src_ip_groups"), "ip_source_group"),
-            "dest_addresses":     ";".join(str(ip) for ip in dest_addrs_raw),
-            "dest_ip_groups":     _resolve_names(cfg.get("dest_ip_groups"), "ip_destination_group"),
-            "nw_services":        _resolve_names(cfg.get("nw_services"), "network_service"),
-            "nw_service_groups":  _resolve_names(cfg.get("nw_service_groups"), "network_svc_group"),
-            "locations":          _resolve_names(cfg.get("locations"), "location"),
-            "enable_full_logging": logging_str,
-        })
+        csv_rows.append(
+            {
+                "id": r["zia_id"] or cfg.get("id") or "",
+                "name": r["name"] or "",
+                "order": str(order),
+                "action": action,
+                "state": cfg.get("state") or "ENABLED",
+                "description": cfg.get("description") or "",
+                "src_ips": ";".join(str(ip) for ip in src_ips_raw),
+                "src_ip_groups": _resolve_names(cfg.get("src_ip_groups"), "ip_source_group"),
+                "dest_addresses": ";".join(str(ip) for ip in dest_addrs_raw),
+                "dest_ip_groups": _resolve_names(cfg.get("dest_ip_groups"), "ip_destination_group"),
+                "nw_services": _resolve_names(cfg.get("nw_services"), "network_service"),
+                "nw_service_groups": _resolve_names(
+                    cfg.get("nw_service_groups"), "network_svc_group"
+                ),
+                "locations": _resolve_names(cfg.get("locations"), "location"),
+                "enable_full_logging": logging_str,
+            }
+        )
 
     return csv_rows
 
@@ -259,6 +302,7 @@ def export_rules_to_csv(tenant_id: int) -> List[Dict]:
 # ---------------------------------------------------------------------------
 # Dependency resolution
 # ---------------------------------------------------------------------------
+
 
 def resolve_dependencies(
     tenant_id: int,
@@ -305,8 +349,9 @@ def resolve_dependencies(
         for name in names:
             rec = (
                 session.query(ZIAResource)
-                .filter_by(tenant_id=tenant_id, resource_type=resource_type,
-                            name=name, is_deleted=False)
+                .filter_by(
+                    tenant_id=tenant_id, resource_type=resource_type, name=name, is_deleted=False
+                )
                 .first()
             )
             if rec:
@@ -315,22 +360,36 @@ def resolve_dependencies(
                 missing[missing_key].append(name)
 
     with get_session() as session:
-        _lookup(session, "ip_source_group",      src_group_names,    src_group_map,    "src_ip_group")
-        _lookup(session, "ip_destination_group", dest_group_names,   dest_group_map,   "dest_ip_group")
-        _lookup(session, "network_service",      nw_service_names,   nw_service_map,   "nw_service")
-        _lookup(session, "network_svc_group",    nw_svc_group_names, nw_svc_group_map, "nw_service_group")
-        _lookup(session, "location",             location_names,     location_map,     "location")
+        _lookup(session, "ip_source_group", src_group_names, src_group_map, "src_ip_group")
+        _lookup(session, "ip_destination_group", dest_group_names, dest_group_map, "dest_ip_group")
+        _lookup(session, "network_service", nw_service_names, nw_service_map, "nw_service")
+        _lookup(
+            session, "network_svc_group", nw_svc_group_names, nw_svc_group_map, "nw_service_group"
+        )
+        _lookup(session, "location", location_names, location_map, "location")
 
     enriched: List[Dict] = []
     for row in rows:
         r = dict(row)
-        r["_src_ip_group_ids"]  = [src_group_map[n]    for n in _split(row.get("src_ip_groups", ""))   if n in src_group_map]
-        r["_dest_ip_group_ids"] = [dest_group_map[n]   for n in _split(row.get("dest_ip_groups", ""))  if n in dest_group_map]
-        r["_nw_service_ids"]    = [nw_service_map[n]   for n in _split(row.get("nw_services", ""))     if n in nw_service_map]
-        r["_nw_svc_group_ids"]  = [nw_svc_group_map[n] for n in _split(row.get("nw_service_groups", "")) if n in nw_svc_group_map]
-        r["_location_ids"]      = [location_map[n]     for n in _split(row.get("locations", ""))       if n in location_map]
-        r["_src_ips"]           = [ip for ip in _split(row.get("src_ips", "")) if ip]
-        r["_dest_addresses"]    = [ip for ip in _split(row.get("dest_addresses", "")) if ip]
+        r["_src_ip_group_ids"] = [
+            src_group_map[n] for n in _split(row.get("src_ip_groups", "")) if n in src_group_map
+        ]
+        r["_dest_ip_group_ids"] = [
+            dest_group_map[n] for n in _split(row.get("dest_ip_groups", "")) if n in dest_group_map
+        ]
+        r["_nw_service_ids"] = [
+            nw_service_map[n] for n in _split(row.get("nw_services", "")) if n in nw_service_map
+        ]
+        r["_nw_svc_group_ids"] = [
+            nw_svc_group_map[n]
+            for n in _split(row.get("nw_service_groups", ""))
+            if n in nw_svc_group_map
+        ]
+        r["_location_ids"] = [
+            location_map[n] for n in _split(row.get("locations", "")) if n in location_map
+        ]
+        r["_src_ips"] = [ip for ip in _split(row.get("src_ips", "")) if ip]
+        r["_dest_addresses"] = [ip for ip in _split(row.get("dest_addresses", "")) if ip]
         enriched.append(r)
 
     return enriched, missing
@@ -339,6 +398,7 @@ def resolve_dependencies(
 # ---------------------------------------------------------------------------
 # Sync classification (dry run)
 # ---------------------------------------------------------------------------
+
 
 def classify_sync(tenant_id: int, rows: List[Dict]) -> SyncClassification:
     """Classify CSV rows vs existing DB rules. No API calls."""
@@ -351,7 +411,11 @@ def classify_sync(tenant_id: int, rows: List[Dict]) -> SyncClassification:
             .all()
         )
         existing_by_id = {
-            str(r.zia_id): {"zia_id": str(r.zia_id), "name": r.name, "raw_config": r.raw_config or {}}
+            str(r.zia_id): {
+                "zia_id": str(r.zia_id),
+                "name": r.name,
+                "raw_config": r.raw_config or {},
+            }
             for r in existing_records
         }
         existing_ordered = sorted(
@@ -375,52 +439,62 @@ def classify_sync(tenant_id: int, rows: List[Dict]) -> SyncClassification:
             csv_existing_ids.append(rule_id)
             existing_cfg = existing_by_id[rule_id]["raw_config"]
             if issues:
-                classification.csv_rows.append({
-                    "action": "MISSING_DEP",
-                    "row": row,
-                    "zia_id": rule_id,
-                    "desired_order": desired_order,
-                    "existing_cfg": existing_cfg,
-                    "changes": [],
-                    "issues": issues,
-                })
-            else:
-                unchanged, changes = _is_row_unchanged(row, existing_cfg)
-                if unchanged:
-                    classification.csv_rows.append({
-                        "action": "SKIP",
+                classification.csv_rows.append(
+                    {
+                        "action": "MISSING_DEP",
                         "row": row,
                         "zia_id": rule_id,
                         "desired_order": desired_order,
                         "existing_cfg": existing_cfg,
                         "changes": [],
-                    })
+                        "issues": issues,
+                    }
+                )
+            else:
+                unchanged, changes = _is_row_unchanged(row, existing_cfg)
+                if unchanged:
+                    classification.csv_rows.append(
+                        {
+                            "action": "SKIP",
+                            "row": row,
+                            "zia_id": rule_id,
+                            "desired_order": desired_order,
+                            "existing_cfg": existing_cfg,
+                            "changes": [],
+                        }
+                    )
                 else:
-                    classification.csv_rows.append({
-                        "action": "UPDATE",
-                        "row": row,
-                        "zia_id": rule_id,
-                        "desired_order": desired_order,
-                        "existing_cfg": existing_cfg,
-                        "changes": changes,
-                    })
+                    classification.csv_rows.append(
+                        {
+                            "action": "UPDATE",
+                            "row": row,
+                            "zia_id": rule_id,
+                            "desired_order": desired_order,
+                            "existing_cfg": existing_cfg,
+                            "changes": changes,
+                        }
+                    )
         elif rule_id and rule_id not in existing_by_id:
-            classification.csv_rows.append({
-                "action": "MISSING_DEP" if issues else "CREATE",
-                "row": row,
-                "zia_id": None,
-                "desired_order": desired_order,
-                "warn": f"ID {rule_id!r} not found in DB — creating as new rule",
-                "issues": issues,
-            })
+            classification.csv_rows.append(
+                {
+                    "action": "MISSING_DEP" if issues else "CREATE",
+                    "row": row,
+                    "zia_id": None,
+                    "desired_order": desired_order,
+                    "warn": f"ID {rule_id!r} not found in DB — creating as new rule",
+                    "issues": issues,
+                }
+            )
         else:
-            classification.csv_rows.append({
-                "action": "MISSING_DEP" if issues else "CREATE",
-                "row": row,
-                "zia_id": None,
-                "desired_order": desired_order,
-                "issues": issues,
-            })
+            classification.csv_rows.append(
+                {
+                    "action": "MISSING_DEP" if issues else "CREATE",
+                    "row": row,
+                    "zia_id": None,
+                    "desired_order": desired_order,
+                    "issues": issues,
+                }
+            )
 
     for zia_id, rec in existing_by_id.items():
         if zia_id not in seen_ids:
@@ -438,8 +512,11 @@ def classify_sync(tenant_id: int, rows: List[Dict]) -> SyncClassification:
             classification.to_delete.append({"zia_id": zia_id, "name": rec["name"]})
 
     existing_id_order = [r["zia_id"] for r in existing_ordered]
-    if (classification.to_create or classification.to_delete
-            or csv_existing_ids != existing_id_order):
+    if (
+        classification.to_create
+        or classification.to_delete
+        or csv_existing_ids != existing_id_order
+    ):
         classification.reorder_needed = True
 
     return classification
@@ -448,6 +525,7 @@ def classify_sync(tenant_id: int, rows: List[Dict]) -> SyncClassification:
 # ---------------------------------------------------------------------------
 # Sync execution
 # ---------------------------------------------------------------------------
+
 
 def sync_rules(
     client,
@@ -485,21 +563,36 @@ def sync_rules(
             config = _build_payload(row, item["desired_order"], item.get("existing_cfg"))
             client.update_firewall_rule(zia_id, config)
             audit_service.log(
-                product="ZIA", operation="sync_firewall_rules", action="UPDATE",
-                status="SUCCESS", tenant_id=tenant_id, resource_type="firewall_rule",
-                resource_id=zia_id, resource_name=name,
+                product="ZIA",
+                operation="sync_firewall_rules",
+                action="UPDATE",
+                status="SUCCESS",
+                tenant_id=tenant_id,
+                resource_type="firewall_rule",
+                resource_id=zia_id,
+                resource_name=name,
                 details={"changes": item.get("changes", [])},
             )
-            result.rows_detail.append({"name": name, "status": "UPDATED", "id": zia_id, "error": None})
+            result.rows_detail.append(
+                {"name": name, "status": "UPDATED", "id": zia_id, "error": None}
+            )
             result.updated += 1
         except Exception as exc:
             error_msg = str(exc)
             audit_service.log(
-                product="ZIA", operation="sync_firewall_rules", action="UPDATE",
-                status="FAILURE", tenant_id=tenant_id, resource_type="firewall_rule",
-                resource_id=zia_id, resource_name=name, error_message=error_msg,
+                product="ZIA",
+                operation="sync_firewall_rules",
+                action="UPDATE",
+                status="FAILURE",
+                tenant_id=tenant_id,
+                resource_type="firewall_rule",
+                resource_id=zia_id,
+                resource_name=name,
+                error_message=error_msg,
             )
-            result.rows_detail.append({"name": name, "status": "FAILED", "id": zia_id, "error": error_msg})
+            result.rows_detail.append(
+                {"name": name, "status": "FAILED", "id": zia_id, "error": error_msg}
+            )
             result.errors.append(f"UPDATE {name!r}: {error_msg}")
         _tick(f"Updating {name}")
 
@@ -510,20 +603,35 @@ def sync_rules(
         try:
             client.delete_firewall_rule(zia_id)
             audit_service.log(
-                product="ZIA", operation="sync_firewall_rules", action="DELETE",
-                status="SUCCESS", tenant_id=tenant_id, resource_type="firewall_rule",
-                resource_id=zia_id, resource_name=name,
+                product="ZIA",
+                operation="sync_firewall_rules",
+                action="DELETE",
+                status="SUCCESS",
+                tenant_id=tenant_id,
+                resource_type="firewall_rule",
+                resource_id=zia_id,
+                resource_name=name,
             )
-            result.rows_detail.append({"name": name, "status": "DELETED", "id": zia_id, "error": None})
+            result.rows_detail.append(
+                {"name": name, "status": "DELETED", "id": zia_id, "error": None}
+            )
             result.deleted += 1
         except Exception as exc:
             error_msg = str(exc)
             audit_service.log(
-                product="ZIA", operation="sync_firewall_rules", action="DELETE",
-                status="FAILURE", tenant_id=tenant_id, resource_type="firewall_rule",
-                resource_id=zia_id, resource_name=name, error_message=error_msg,
+                product="ZIA",
+                operation="sync_firewall_rules",
+                action="DELETE",
+                status="FAILURE",
+                tenant_id=tenant_id,
+                resource_type="firewall_rule",
+                resource_id=zia_id,
+                resource_name=name,
+                error_message=error_msg,
             )
-            result.rows_detail.append({"name": name, "status": "FAILED", "id": zia_id, "error": error_msg})
+            result.rows_detail.append(
+                {"name": name, "status": "FAILED", "id": zia_id, "error": error_msg}
+            )
             result.errors.append(f"DELETE {name!r}: {error_msg}")
         _tick(f"Deleting {name}")
 
@@ -537,42 +645,60 @@ def sync_rules(
             rule_id = str(created.get("id", ""))
             item["zia_id"] = rule_id
             audit_service.log(
-                product="ZIA", operation="sync_firewall_rules", action="CREATE",
-                status="SUCCESS", tenant_id=tenant_id, resource_type="firewall_rule",
-                resource_id=rule_id, resource_name=name,
+                product="ZIA",
+                operation="sync_firewall_rules",
+                action="CREATE",
+                status="SUCCESS",
+                tenant_id=tenant_id,
+                resource_type="firewall_rule",
+                resource_id=rule_id,
+                resource_name=name,
             )
-            result.rows_detail.append({"name": name, "status": "CREATED", "id": rule_id, "error": None})
+            result.rows_detail.append(
+                {"name": name, "status": "CREATED", "id": rule_id, "error": None}
+            )
             result.created += 1
         except Exception as exc:
             error_msg = str(exc)
             audit_service.log(
-                product="ZIA", operation="sync_firewall_rules", action="CREATE",
-                status="FAILURE", tenant_id=tenant_id, resource_type="firewall_rule",
-                resource_name=name, error_message=error_msg,
+                product="ZIA",
+                operation="sync_firewall_rules",
+                action="CREATE",
+                status="FAILURE",
+                tenant_id=tenant_id,
+                resource_type="firewall_rule",
+                resource_name=name,
+                error_message=error_msg,
             )
-            result.rows_detail.append({"name": name, "status": "FAILED", "id": None, "error": error_msg})
+            result.rows_detail.append(
+                {"name": name, "status": "FAILED", "id": None, "error": error_msg}
+            )
             result.errors.append(f"CREATE {name!r}: {error_msg}")
         _tick(f"Creating {name}")
 
     # Add SKIPPED entries
     for item in classification.unchanged:
         row = item["row"]
-        result.rows_detail.append({
-            "name": row.get("name", ""),
-            "status": "SKIPPED",
-            "id": item.get("zia_id"),
-            "error": None,
-        })
+        result.rows_detail.append(
+            {
+                "name": row.get("name", ""),
+                "status": "SKIPPED",
+                "id": item.get("zia_id"),
+                "error": None,
+            }
+        )
 
     # Add MISSING_DEP entries
     for item in classification.missing_dep:
         row = item["row"]
-        result.rows_detail.append({
-            "name": row.get("name", ""),
-            "status": "SKIPPED (missing deps)",
-            "id": item.get("zia_id"),
-            "error": "; ".join(item.get("issues", [])),
-        })
+        result.rows_detail.append(
+            {
+                "name": row.get("name", ""),
+                "status": "SKIPPED (missing deps)",
+                "id": item.get("zia_id"),
+                "error": "; ".join(item.get("issues", [])),
+            }
+        )
 
     # 4. Reorder SKIP rules (content unchanged but position may differ)
     # Issue PUTs in descending order to avoid upward conflicts.
@@ -607,8 +733,12 @@ def sync_rules(
         else:
             result.reordered = True
             audit_service.log(
-                product="ZIA", operation="sync_firewall_rules", action="REORDER",
-                status="SUCCESS", tenant_id=tenant_id, resource_type="firewall_rule",
+                product="ZIA",
+                operation="sync_firewall_rules",
+                action="REORDER",
+                status="SUCCESS",
+                tenant_id=tenant_id,
+                resource_type="firewall_rule",
                 details={"reordered_count": len(skip_items_needing_reorder)},
             )
         _tick("Reordering rules")
@@ -619,6 +749,7 @@ def sync_rules(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _split(value: str) -> List[str]:
     return [v.strip() for v in value.split(";") if v.strip()]
@@ -637,7 +768,8 @@ def _build_payload(row: Dict, order: int, existing_cfg: Optional[Dict] = None) -
     if existing_cfg:
         # Strip read-only and empty-collection fields from base
         payload = {
-            k: v for k, v in existing_cfg.items()
+            k: v
+            for k, v in existing_cfg.items()
             if k not in _CAMEL_RO_FIELDS
             and k not in _SNAKE_RO_FIELDS
             and v is not None
@@ -647,10 +779,10 @@ def _build_payload(row: Dict, order: int, existing_cfg: Optional[Dict] = None) -
         payload = {}
 
     # Apply CSV-covered scalar fields (always authoritative)
-    payload["name"]   = row.get("name", "")
-    payload["order"]  = order
+    payload["name"] = row.get("name", "")
+    payload["order"] = order
     payload["action"] = (row.get("action") or "").strip().upper() or "ALLOW"
-    payload["state"]  = (row.get("state") or "ENABLED").strip().upper()
+    payload["state"] = (row.get("state") or "ENABLED").strip().upper()
     payload["description"] = row.get("description") or ""
 
     logging_str = (row.get("enable_full_logging") or "").strip().lower()
@@ -658,13 +790,15 @@ def _build_payload(row: Dict, order: int, existing_cfg: Optional[Dict] = None) -
         payload["enable_full_logging"] = logging_str == "true"
 
     # Apply CSV-covered ref fields (always overwrite existing; empty = clear)
-    payload["src_ips"]         = row.get("_src_ips") or []
-    payload["dest_addresses"]  = row.get("_dest_addresses") or []
-    payload["src_ip_groups"]   = [{"id": int(gid)} for gid in (row.get("_src_ip_group_ids") or [])]
-    payload["dest_ip_groups"]  = [{"id": int(gid)} for gid in (row.get("_dest_ip_group_ids") or [])]
-    payload["nw_services"]     = [{"id": int(sid)} for sid in (row.get("_nw_service_ids") or [])]
-    payload["nw_service_groups"] = [{"id": int(gid)} for gid in (row.get("_nw_svc_group_ids") or [])]
-    payload["locations"]       = [{"id": int(lid)} for lid in (row.get("_location_ids") or [])]
+    payload["src_ips"] = row.get("_src_ips") or []
+    payload["dest_addresses"] = row.get("_dest_addresses") or []
+    payload["src_ip_groups"] = [{"id": int(gid)} for gid in (row.get("_src_ip_group_ids") or [])]
+    payload["dest_ip_groups"] = [{"id": int(gid)} for gid in (row.get("_dest_ip_group_ids") or [])]
+    payload["nw_services"] = [{"id": int(sid)} for sid in (row.get("_nw_service_ids") or [])]
+    payload["nw_service_groups"] = [
+        {"id": int(gid)} for gid in (row.get("_nw_svc_group_ids") or [])
+    ]
+    payload["locations"] = [{"id": int(lid)} for lid in (row.get("_location_ids") or [])]
 
     # Strip empty lists (ZIA rejects them)
     payload = {k: v for k, v in payload.items() if not (isinstance(v, list) and len(v) == 0)}
@@ -674,7 +808,11 @@ def _build_payload(row: Dict, order: int, existing_cfg: Optional[Dict] = None) -
         del payload["description"]
 
     # Strip ZPA segment extension objects — keep only {id, name, external_id}
-    for field_name in ("zpa_app_segments", "zpa_application_segments", "zpa_application_segment_groups"):
+    for field_name in (
+        "zpa_app_segments",
+        "zpa_application_segments",
+        "zpa_application_segment_groups",
+    ):
         if field_name in payload and isinstance(payload[field_name], list):
             reduced = [
                 {k2: v2 for k2, v2 in seg.items() if k2 in ("id", "name", "external_id")}
@@ -707,23 +845,22 @@ def _decode_rule(cfg: Dict) -> Dict[str, str]:
         if not obj_list:
             return ""
         return ";".join(
-            obj.get("name", str(obj.get("id", "")))
-            if isinstance(obj, dict) else str(obj)
+            obj.get("name", str(obj.get("id", ""))) if isinstance(obj, dict) else str(obj)
             for obj in obj_list
         )
 
     return {
-        "name":        (cfg.get("name") or "").strip(),
-        "action":      action.strip().upper(),
-        "state":       (cfg.get("state") or "ENABLED").strip().upper(),
+        "name": (cfg.get("name") or "").strip(),
+        "action": action.strip().upper(),
+        "state": (cfg.get("state") or "ENABLED").strip().upper(),
         "description": (cfg.get("description") or "").strip(),
-        "src_ips":     ";".join(str(ip) for ip in (cfg.get("src_ips") or [])),
-        "src_ip_groups":     _names(cfg.get("src_ip_groups")),
-        "dest_addresses":    ";".join(str(ip) for ip in (cfg.get("dest_addresses") or [])),
-        "dest_ip_groups":    _names(cfg.get("dest_ip_groups")),
-        "nw_services":       _names(cfg.get("nw_services")),
+        "src_ips": ";".join(str(ip) for ip in (cfg.get("src_ips") or [])),
+        "src_ip_groups": _names(cfg.get("src_ip_groups")),
+        "dest_addresses": ";".join(str(ip) for ip in (cfg.get("dest_addresses") or [])),
+        "dest_ip_groups": _names(cfg.get("dest_ip_groups")),
+        "nw_services": _names(cfg.get("nw_services")),
         "nw_service_groups": _names(cfg.get("nw_service_groups")),
-        "locations":         _names(cfg.get("locations")),
+        "locations": _names(cfg.get("locations")),
         "enable_full_logging": str(cfg.get("enable_full_logging") or "").lower(),
     }
 
@@ -752,13 +889,13 @@ def _is_row_unchanged(row: Dict, existing_cfg: Dict) -> Tuple[bool, List[str]]:
 
     # Compare group/address fields by name string (best effort)
     for csv_key, db_key in [
-        ("src_ips",           "src_ips"),
-        ("src_ip_groups",     "src_ip_groups"),
-        ("dest_addresses",    "dest_addresses"),
-        ("dest_ip_groups",    "dest_ip_groups"),
-        ("nw_services",       "nw_services"),
+        ("src_ips", "src_ips"),
+        ("src_ip_groups", "src_ip_groups"),
+        ("dest_addresses", "dest_addresses"),
+        ("dest_ip_groups", "dest_ip_groups"),
+        ("nw_services", "nw_services"),
         ("nw_service_groups", "nw_service_groups"),
-        ("locations",         "locations"),
+        ("locations", "locations"),
         ("enable_full_logging", "enable_full_logging"),
     ]:
         csv_val = ";".join(_split(row.get(csv_key, "")))
@@ -795,15 +932,29 @@ def _check_dependency_issues(row: Dict, all_missing: Dict[str, set]) -> List[str
 # ---------------------------------------------------------------------------
 
 IP_SOURCE_GROUP_FIELDNAMES = ["name", "description", "ip_addresses"]
-IP_DEST_GROUP_FIELDNAMES   = ["name", "type", "description", "ip_addresses"]
+IP_DEST_GROUP_FIELDNAMES = ["name", "type", "description", "ip_addresses"]
 
 IP_SOURCE_GROUP_TEMPLATE = [
-    {"name": "Corp-HQ-Subnet", "description": "Headquarters IP range", "ip_addresses": "10.1.0.0/16;10.2.0.0/16"},
-    {"name": "Branch-London",  "description": "London office",          "ip_addresses": "192.168.10.0/24"},
+    {
+        "name": "Corp-HQ-Subnet",
+        "description": "Headquarters IP range",
+        "ip_addresses": "10.1.0.0/16;10.2.0.0/16",
+    },
+    {"name": "Branch-London", "description": "London office", "ip_addresses": "192.168.10.0/24"},
 ]
 IP_DEST_GROUP_TEMPLATE = [
-    {"name": "Cloud-DNS-Servers", "type": "DSTN_IP", "description": "Public DNS",        "ip_addresses": "8.8.8.8;8.8.4.4;1.1.1.1"},
-    {"name": "Internal-Web-Farm", "type": "DSTN_IP", "description": "Internal web tier", "ip_addresses": "10.50.0.0/24"},
+    {
+        "name": "Cloud-DNS-Servers",
+        "type": "DSTN_IP",
+        "description": "Public DNS",
+        "ip_addresses": "8.8.8.8;8.8.4.4;1.1.1.1",
+    },
+    {
+        "name": "Internal-Web-Farm",
+        "type": "DSTN_IP",
+        "description": "Internal web tier",
+        "ip_addresses": "10.50.0.0/24",
+    },
 ]
 
 _VALID_DEST_TYPES = {"DSTN_IP", "DSTN_FQDN", "DSTN_DOMAIN", "DSTN_OTHER"}
@@ -875,8 +1026,12 @@ def bulk_create_ip_source_groups(
                 config["description"] = row["description"]
             client.create_ip_source_group(config)
             audit_service.log(
-                product="ZIA", operation="bulk_create_ip_source_groups", action="CREATE",
-                status="SUCCESS", tenant_id=tenant_id, resource_type="ip_source_group",
+                product="ZIA",
+                operation="bulk_create_ip_source_groups",
+                action="CREATE",
+                status="SUCCESS",
+                tenant_id=tenant_id,
+                resource_type="ip_source_group",
                 resource_name=name,
             )
             result.rows_detail.append({"name": name, "status": "CREATED", "error": None})
@@ -884,9 +1039,14 @@ def bulk_create_ip_source_groups(
         except Exception as exc:
             error_msg = str(exc)
             audit_service.log(
-                product="ZIA", operation="bulk_create_ip_source_groups", action="CREATE",
-                status="FAILURE", tenant_id=tenant_id, resource_type="ip_source_group",
-                resource_name=name, error_message=error_msg,
+                product="ZIA",
+                operation="bulk_create_ip_source_groups",
+                action="CREATE",
+                status="FAILURE",
+                tenant_id=tenant_id,
+                resource_type="ip_source_group",
+                resource_name=name,
+                error_message=error_msg,
             )
             result.rows_detail.append({"name": name, "status": "FAILED", "error": error_msg})
             result.failed += 1
@@ -913,8 +1073,12 @@ def bulk_create_ip_dest_groups(
                 config["description"] = row["description"]
             client.create_ip_destination_group(config)
             audit_service.log(
-                product="ZIA", operation="bulk_create_ip_dest_groups", action="CREATE",
-                status="SUCCESS", tenant_id=tenant_id, resource_type="ip_destination_group",
+                product="ZIA",
+                operation="bulk_create_ip_dest_groups",
+                action="CREATE",
+                status="SUCCESS",
+                tenant_id=tenant_id,
+                resource_type="ip_destination_group",
                 resource_name=name,
             )
             result.rows_detail.append({"name": name, "status": "CREATED", "error": None})
@@ -922,9 +1086,14 @@ def bulk_create_ip_dest_groups(
         except Exception as exc:
             error_msg = str(exc)
             audit_service.log(
-                product="ZIA", operation="bulk_create_ip_dest_groups", action="CREATE",
-                status="FAILURE", tenant_id=tenant_id, resource_type="ip_destination_group",
-                resource_name=name, error_message=error_msg,
+                product="ZIA",
+                operation="bulk_create_ip_dest_groups",
+                action="CREATE",
+                status="FAILURE",
+                tenant_id=tenant_id,
+                resource_type="ip_destination_group",
+                resource_name=name,
+                error_message=error_msg,
             )
             result.rows_detail.append({"name": name, "status": "FAILED", "error": error_msg})
             result.failed += 1

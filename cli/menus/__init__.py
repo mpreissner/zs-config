@@ -47,8 +47,13 @@ def get_zpa_client(tenant=None):
         console.print(f"[red]Tenant '{tenant.name}' has no ZPA Customer ID configured.[/red]")
         return None, None
 
-    auth = ZscalerAuth(tenant.zidentity_base_url, tenant.client_id, decrypt_secret(tenant.client_secret_enc),
-                       govcloud=tenant.govcloud, gov_tier=tenant.gov_cloud_tier)
+    auth = ZscalerAuth(
+        tenant.zidentity_base_url,
+        tenant.client_id,
+        decrypt_secret(tenant.client_secret_enc),
+        govcloud=tenant.govcloud,
+        gov_tier=tenant.gov_cloud_tier,
+    )
     return ZPAClient(auth, tenant.zpa_customer_id, tenant.oneapi_base_url), tenant
 
 
@@ -69,8 +74,13 @@ def get_zia_client(tenant=None):
     if tenant is None:
         return None, None
 
-    auth = ZscalerAuth(tenant.zidentity_base_url, tenant.client_id, decrypt_secret(tenant.client_secret_enc),
-                       govcloud=tenant.govcloud, gov_tier=tenant.gov_cloud_tier)
+    auth = ZscalerAuth(
+        tenant.zidentity_base_url,
+        tenant.client_id,
+        decrypt_secret(tenant.client_secret_enc),
+        govcloud=tenant.govcloud,
+        gov_tier=tenant.gov_cloud_tier,
+    )
     return ZIAClient(auth, tenant.oneapi_base_url), tenant
 
 
@@ -91,8 +101,13 @@ def get_zcc_client(tenant=None):
     if tenant is None:
         return None, None
 
-    auth = ZscalerAuth(tenant.zidentity_base_url, tenant.client_id, decrypt_secret(tenant.client_secret_enc),
-                       govcloud=tenant.govcloud, gov_tier=tenant.gov_cloud_tier)
+    auth = ZscalerAuth(
+        tenant.zidentity_base_url,
+        tenant.client_id,
+        decrypt_secret(tenant.client_secret_enc),
+        govcloud=tenant.govcloud,
+        gov_tier=tenant.gov_cloud_tier,
+    )
     try:
         client = ZCCClient(auth, tenant.oneapi_base_url, tenant.zia_cloud, tenant.zia_tenant_id)
     except ZCCUnavailableError as exc:
@@ -118,8 +133,13 @@ def get_zidentity_client(tenant=None):
     if tenant is None:
         return None, None
 
-    auth = ZscalerAuth(tenant.zidentity_base_url, tenant.client_id, decrypt_secret(tenant.client_secret_enc),
-                       govcloud=tenant.govcloud, gov_tier=tenant.gov_cloud_tier)
+    auth = ZscalerAuth(
+        tenant.zidentity_base_url,
+        tenant.client_id,
+        decrypt_secret(tenant.client_secret_enc),
+        govcloud=tenant.govcloud,
+        gov_tier=tenant.gov_cloud_tier,
+    )
     return ZIdentityClient(auth, tenant.oneapi_base_url), tenant
 
 
@@ -140,6 +160,11 @@ def get_zdx_client(tenant=None):
     if tenant is None:
         return None, None
 
-    auth = ZscalerAuth(tenant.zidentity_base_url, tenant.client_id, decrypt_secret(tenant.client_secret_enc),
-                       govcloud=tenant.govcloud, gov_tier=tenant.gov_cloud_tier)
+    auth = ZscalerAuth(
+        tenant.zidentity_base_url,
+        tenant.client_id,
+        decrypt_secret(tenant.client_secret_enc),
+        govcloud=tenant.govcloud,
+        gov_tier=tenant.gov_cloud_tier,
+    )
     return ZDXClient(auth), tenant
