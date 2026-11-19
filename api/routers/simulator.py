@@ -43,17 +43,30 @@ def simulate_traffic(tenant_id: int, req: SimulateRequest, user: AuthUser = Depe
             raise HTTPException(status_code=404, detail="Tenant not found")
 
     from services.traffic_sim_service import simulate
+
     result = simulate(
-        tenant_id, req.destination, req.port, req.protocol,
-        req.nw_application, req.app_service_group, req.cloud_app, req.zcc_profile,
-        req.src_ip, req.user_name, req.dept_name, req.group_name, req.location_name,
+        tenant_id,
+        req.destination,
+        req.port,
+        req.protocol,
+        req.nw_application,
+        req.app_service_group,
+        req.cloud_app,
+        req.zcc_profile,
+        req.src_ip,
+        req.user_name,
+        req.dept_name,
+        req.group_name,
+        req.location_name,
         req.network_context,
     )
     return asdict(result)
 
 
 @router.post("/{tenant_id}/simulate/all")
-def simulate_traffic_all(tenant_id: int, req: SimulateRequest, user: AuthUser = Depends(require_user)):
+def simulate_traffic_all(
+    tenant_id: int, req: SimulateRequest, user: AuthUser = Depends(require_user)
+):
     _check_access(tenant_id, user)
 
     with get_session() as s:
@@ -62,13 +75,24 @@ def simulate_traffic_all(tenant_id: int, req: SimulateRequest, user: AuthUser = 
             raise HTTPException(status_code=404, detail="Tenant not found")
 
     from services.traffic_sim_service import simulate
+
     args = (
-        tenant_id, req.destination, req.port, req.protocol,
-        req.nw_application, req.app_service_group, req.cloud_app, req.zcc_profile,
-        req.src_ip, req.user_name, req.dept_name, req.group_name, req.location_name,
+        tenant_id,
+        req.destination,
+        req.port,
+        req.protocol,
+        req.nw_application,
+        req.app_service_group,
+        req.cloud_app,
+        req.zcc_profile,
+        req.src_ip,
+        req.user_name,
+        req.dept_name,
+        req.group_name,
+        req.location_name,
     )
     return {
-        "on":  asdict(simulate(*args, "on")),
+        "on": asdict(simulate(*args, "on")),
         "vpn": asdict(simulate(*args, "vpn")),
         "off": asdict(simulate(*args, "off")),
     }
@@ -80,10 +104,13 @@ def list_sim_applications(tenant_id: int, user: AuthUser = Depends(require_user)
     _check_access(tenant_id, user)
 
     from db.models import ZIAResource
+
     with get_session() as s:
-        rules = s.query(ZIAResource).filter_by(
-            tenant_id=tenant_id, resource_type="firewall_rule", is_deleted=False
-        ).all()
+        rules = (
+            s.query(ZIAResource)
+            .filter_by(tenant_id=tenant_id, resource_type="firewall_rule", is_deleted=False)
+            .all()
+        )
 
     apps: set[str] = set()
     for r in rules:
@@ -95,8 +122,13 @@ def list_sim_applications(tenant_id: int, user: AuthUser = Depends(require_user)
 
 def _unique_names(tenant_id: int, resource_type: str, name_field: str = "name") -> list[str]:
     from db.models import ZIAResource
+
     with get_session() as s:
-        rows = s.query(ZIAResource).filter_by(tenant_id=tenant_id, resource_type=resource_type, is_deleted=False).all()
+        rows = (
+            s.query(ZIAResource)
+            .filter_by(tenant_id=tenant_id, resource_type=resource_type, is_deleted=False)
+            .all()
+        )
     names: set[str] = set()
     for r in rows:
         v = (r.raw_config or {}).get(name_field)
@@ -134,8 +166,13 @@ def list_sim_zcc_profiles(tenant_id: int, user: AuthUser = Depends(require_user)
     """Return ZCC web policy names for this tenant."""
     _check_access(tenant_id, user)
     from db.models import ZCCResource
+
     with get_session() as s:
-        rows = s.query(ZCCResource).filter_by(tenant_id=tenant_id, resource_type="web_policy", is_deleted=False).all()
+        rows = (
+            s.query(ZCCResource)
+            .filter_by(tenant_id=tenant_id, resource_type="web_policy", is_deleted=False)
+            .all()
+        )
     names: set[str] = set()
     for r in rows:
         n = (r.raw_config or {}).get("name")
@@ -149,10 +186,15 @@ def list_sim_cloud_apps(tenant_id: int, user: AuthUser = Depends(require_user)):
     """Return unique cloud app IDs referenced by this tenant's cloud app control rules."""
     _check_access(tenant_id, user)
     from db.models import ZIAResource
+
     with get_session() as s:
-        rules = s.query(ZIAResource).filter_by(
-            tenant_id=tenant_id, resource_type="cloud_app_control_rule", is_deleted=False
-        ).all()
+        rules = (
+            s.query(ZIAResource)
+            .filter_by(
+                tenant_id=tenant_id, resource_type="cloud_app_control_rule", is_deleted=False
+            )
+            .all()
+        )
     apps: set[str] = set()
     for r in rules:
         for app in (r.raw_config or {}).get("applications", []):
@@ -167,10 +209,13 @@ def list_sim_app_service_groups(tenant_id: int, user: AuthUser = Depends(require
     _check_access(tenant_id, user)
 
     from db.models import ZIAResource
+
     with get_session() as s:
-        rules = s.query(ZIAResource).filter_by(
-            tenant_id=tenant_id, resource_type="firewall_rule", is_deleted=False
-        ).all()
+        rules = (
+            s.query(ZIAResource)
+            .filter_by(tenant_id=tenant_id, resource_type="firewall_rule", is_deleted=False)
+            .all()
+        )
 
     groups: set[str] = set()
     for r in rules:
