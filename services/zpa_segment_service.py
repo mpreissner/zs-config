@@ -5,6 +5,7 @@ application segments. No CLI concerns — returns plain data structures.
 """
 
 import csv
+import io
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -80,37 +81,90 @@ class BulkCreateResult:
 # CSV parsing
 # ---------------------------------------------------------------------------
 
+def parse_csv_text(text: str) -> Tuple[List[Dict], List[str]]:
+    """Parse and validate CSV text of application segment rows.
+
+    Returns (valid_rows, errors). Invalid rows are reported in ``errors`` and
+    left out of ``valid_rows``; nothing is raised for row-level problems.
+    """
+    errors: List[str] = []
+    rows: List[Dict] = []
+
+    reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff"), newline=""))
+    header = [h.strip() for h in (reader.fieldnames or [])]
+    missing_cols = sorted(_REQUIRED - set(header))
+    if missing_cols:
+        return [], [f"Missing required column(s): {', '.join(missing_cols)}"]
+
+    for i, raw in enumerate(reader, start=2):  # row 1 = header
+        row = {(k or "").strip(): (v or "") for k, v in raw.items() if k is not None}
+        if not any(v.strip() for v in row.values()):
+            continue  # blank line
+
+        row_errors = []
+        if None in raw:
+            # Usually an unquoted comma inside a value (e.g. a domain list).
+            row_errors.append("more values than header columns (quote values that contain commas)")
+        for col in sorted(_REQUIRED):
+            if not row.get(col, "").strip():
+                row_errors.append(f"'{col}' is required")
+
+        if not row.get("tcp_ports", "").strip() and not row.get("udp_ports", "").strip():
+            row_errors.append("at least one of 'tcp_ports' or 'udp_ports' must be non-empty")
+
+        if row_errors:
+            label = f"Row {i} ({row['name']!r})" if row.get("name") else f"Row {i}"
+            errors.append(f"{label}: {'; '.join(row_errors)}")
+        else:
+            rows.append(row)
+
+    return rows, errors
+
+
 def parse_csv(path: str) -> List[Dict]:
     """Read and validate a CSV file of application segment rows.
 
     Returns a list of row dicts.  Raises ValueError if any required fields
     are missing or both tcp_ports and udp_ports are blank.
     """
-    errors: List[str] = []
-    rows: List[Dict] = []
-
     with open(path, newline="", encoding="utf-8-sig") as fh:
-        reader = csv.DictReader(fh)
-        for i, row in enumerate(reader, start=2):  # row 1 = header
-            row_errors = []
-
-            for col in _REQUIRED:
-                if not row.get(col, "").strip():
-                    row_errors.append(f"'{col}' is required")
-
-            if not row.get("tcp_ports", "").strip() and not row.get("udp_ports", "").strip():
-                row_errors.append("at least one of 'tcp_ports' or 'udp_ports' must be non-empty")
-
-            if row_errors:
-                name = row.get("name", f"row {i}")
-                errors.append(f"Row {i} ({name!r}): {'; '.join(row_errors)}")
-            else:
-                rows.append(dict(row))
+        rows, errors = parse_csv_text(fh.read())
 
     if errors:
         raise ValueError("CSV validation failed:\n" + "\n".join(errors))
 
     return rows
+
+
+def template_csv() -> str:
+    """Return the CSV template (header plus minimal and full example rows)."""
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=CSV_FIELDNAMES)
+    writer.writeheader()
+    writer.writerows(TEMPLATE_ROWS)
+    return buf.getvalue()
+
+
+# (field, required, default, accepted values / format)
+FIELD_REFERENCE: List[Tuple[str, str, str, str]] = [
+    ("name", "yes", "", "Any string; must be unique within the tenant"),
+    ("domain_names", "yes", "", "Semicolon-separated FQDNs or wildcards, e.g. app.example.com;*.internal.example.com"),
+    ("segment_group", "yes", "", "Exact name of a Segment Group (must be in the local DB; run Import Config first)"),
+    ("server_groups", "yes", "", "Semicolon-separated Server Group names, e.g. SG-East;SG-West"),
+    ("tcp_ports", "if no udp_ports", "", "Semicolon-separated ports or ranges, e.g. 443 or 80;443;8080-8090"),
+    ("udp_ports", "if no tcp_ports", "", "Same format as tcp_ports, e.g. 53;123"),
+    ("description", "", "", "Free text"),
+    ("enabled", "", "true", "true / false"),
+    ("app_type", "", "", "Blank for standard segments; BROWSER_ACCESS | SIPA | INSPECT | SECURE_REMOTE_ACCESS"),
+    ("bypass_type", "", "NEVER", "NEVER | ALWAYS | ON_NET"),
+    ("double_encrypt", "", "false", "true / false"),
+    ("health_check_type", "", "DEFAULT", "DEFAULT | NONE"),
+    ("health_reporting", "", "ON_ACCESS", "NONE | ON_ACCESS | CONTINUOUS"),
+    ("icmp_access_type", "", "NONE", "NONE | PING | PING_TRACEROUTING"),
+    ("passive_health_enabled", "", "true", "true / false"),
+    ("is_cname_enabled", "", "true", "true / false"),
+    ("select_connector_close_to_app", "", "false", "true / false"),
+]
 
 
 # ---------------------------------------------------------------------------

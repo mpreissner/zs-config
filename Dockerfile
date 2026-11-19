@@ -21,7 +21,7 @@ RUN npm run build
 # Pinned to the multi-arch index digest. Dependabot opens the digest bumps, which
 # is how base image security fixes arrive. Python minor version upgrades are
 # intentional, not automatic.
-FROM python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159 AS runtime
+FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b AS runtime
 
 WORKDIR /app
 
@@ -29,7 +29,10 @@ WORKDIR /app
 # - git: needed by pip for plugin installs from GitHub URLs (pip install git+https://...)
 # xmlsec, lxml and sqlcipher3 install from wheels that bundle their native
 # libraries, so no -dev packages are needed.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# The upgrade pulls Debian security fixes that land before the next base-image
+# rebuild (the digest pin above would otherwise freeze them out).
+RUN apt-get update && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends \
     git \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
