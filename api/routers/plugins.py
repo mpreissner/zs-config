@@ -99,7 +99,7 @@ _NOT_AUTHENTICATED = "Not authenticated to GitHub — log in first."
 # job result because the entry carries a server path and the owning account:
 # neither belongs in something the browser reads, and the job store has no
 # notion of who a job was for.
-_ARTIFACT_TTL_SECONDS = 3600            # api.jobs._FINISHED_TTL_SECONDS
+_ARTIFACT_TTL_SECONDS = 3600  # api.jobs._FINISHED_TTL_SECONDS
 _artifacts: Dict[str, dict] = {}
 _artifacts_lock = threading.Lock()
 
@@ -148,6 +148,7 @@ def require_plugin_admin(user: AuthUser = Depends(require_auth)) -> AuthUser:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _serialisable(plugin: dict) -> dict:
     """Drop the menu callable — the rest of the entry is JSON."""
     return {
@@ -193,8 +194,12 @@ def _prune_artifacts_locked() -> None:
 def _register_artifact(job_id: str, spool: str, artifact: dict, user_id: int) -> None:
     with _artifacts_lock:
         _prune_artifacts_locked()
-        _artifacts[job_id] = {**artifact, "spool": spool, "user_id": user_id,
-                              "created_at": time.time()}
+        _artifacts[job_id] = {
+            **artifact,
+            "spool": spool,
+            "user_id": user_id,
+            "created_at": time.time(),
+        }
 
 
 def _register_prompt(job_id: str, package: str, prompt: dict, user_id: int) -> None:
@@ -202,8 +207,12 @@ def _register_prompt(job_id: str, package: str, prompt: dict, user_id: int) -> N
         cutoff = time.time() - _ARTIFACT_TTL_SECONDS
         for stale in [j for j, p in _prompts.items() if p["created_at"] < cutoff]:
             del _prompts[stale]
-        _prompts[job_id] = {"package": package, "prompt": prompt, "user_id": user_id,
-                            "created_at": time.time()}
+        _prompts[job_id] = {
+            "package": package,
+            "prompt": prompt,
+            "user_id": user_id,
+            "created_at": time.time(),
+        }
 
 
 def _prompt_for(job_id: str, package: str, user: AuthUser) -> dict:
@@ -252,6 +261,7 @@ def _audit(operation: str, action: str, status: str, package: str, **details) ->
 # Installed plugins and manager state
 # ---------------------------------------------------------------------------
 
+
 @router.get("")
 def list_installed(user: AuthUser = Depends(require_plugin_admin)):
     """Plugins discovered via entry points in the running interpreter."""
@@ -270,7 +280,9 @@ def plugin_status(verify: bool = True, user: AuthUser = Depends(require_plugin_a
     """
     from lib.github_auth import get_token, verify_token
     from lib.plugin_manager import (
-        get_pending_plugin_install, get_plugin_branch_overrides, get_plugin_channel,
+        get_pending_plugin_install,
+        get_plugin_branch_overrides,
+        get_plugin_channel,
     )
 
     token = get_token()
@@ -296,6 +308,7 @@ def plugin_status(verify: bool = True, user: AuthUser = Depends(require_plugin_a
 # ---------------------------------------------------------------------------
 # GitHub authentication (device flow)
 # ---------------------------------------------------------------------------
+
 
 @router.post("/auth/device", status_code=202)
 def start_github_login(user: AuthUser = Depends(require_plugin_admin)):
@@ -365,6 +378,7 @@ def github_logout(user: AuthUser = Depends(require_plugin_admin)):
 # Manifest
 # ---------------------------------------------------------------------------
 
+
 @router.get("/available")
 def list_available(user: AuthUser = Depends(require_plugin_admin)):
     """Manifest entries for the active channel, annotated with install state.
@@ -379,8 +393,12 @@ def list_available(user: AuthUser = Depends(require_plugin_admin)):
     from "pinned to dev regardless of the channel".
     """
     from lib.plugin_manager import (
-        effective_install_url, fetch_manifest, get_installed_plugins,
-        get_manifest_ref, get_plugin_branch_overrides, get_plugin_channel,
+        effective_install_url,
+        fetch_manifest,
+        get_installed_plugins,
+        get_manifest_ref,
+        get_plugin_branch_overrides,
+        get_plugin_channel,
     )
 
     available, error = fetch_manifest()
@@ -395,18 +413,20 @@ def list_available(user: AuthUser = Depends(require_plugin_admin)):
         package = entry.get("package")
         current = installed.get(package)
         pinned = pins.get(package)
-        plugins.append({
-            "name": entry.get("display_name") or entry.get("name"),
-            "package": package,
-            "description": entry.get("description", ""),
-            "version": entry.get("version", ""),
-            "installed": current is not None,
-            "installed_version": current.get("version") if current else None,
-            "install_url": effective_install_url(entry),
-            "pinned_ref": pinned,
-            "effective_ref": pinned or channel,
-            "has_dev": bool(entry.get("install_url_dev")),
-        })
+        plugins.append(
+            {
+                "name": entry.get("display_name") or entry.get("name"),
+                "package": package,
+                "description": entry.get("description", ""),
+                "version": entry.get("version", ""),
+                "installed": current is not None,
+                "installed_version": current.get("version") if current else None,
+                "install_url": effective_install_url(entry),
+                "pinned_ref": pinned,
+                "effective_ref": pinned or channel,
+                "has_dev": bool(entry.get("install_url_dev")),
+            }
+        )
     return {"plugins": plugins, "ref": get_manifest_ref(), "channel": channel}
 
 
@@ -426,6 +446,7 @@ def list_branches(package: str, user: AuthUser = Depends(require_plugin_admin)):
 # Channel
 # ---------------------------------------------------------------------------
 
+
 class ChannelRequest(BaseModel):
     channel: str
 
@@ -444,8 +465,9 @@ def set_channel(body: ChannelRequest, user: AuthUser = Depends(require_plugin_ad
 
     previous = get_plugin_channel()
     set_plugin_channel(channel)
-    _audit("plugin_channel", "UPDATE", "SUCCESS", "plugin_channel",
-           previous=previous, channel=channel)
+    _audit(
+        "plugin_channel", "UPDATE", "SUCCESS", "plugin_channel", previous=previous, channel=channel
+    )
     return {"channel": channel, "previous": previous}
 
 
@@ -453,9 +475,10 @@ def set_channel(body: ChannelRequest, user: AuthUser = Depends(require_plugin_ad
 # Install
 # ---------------------------------------------------------------------------
 
+
 class InstallRequest(BaseModel):
-    package: Optional[str] = None   # resolve the URL from the manifest
-    url: Optional[str] = None       # or install straight from a git URL
+    package: Optional[str] = None  # resolve the URL from the manifest
+    url: Optional[str] = None  # or install straight from a git URL
 
 
 def _resolve_install_url(body: InstallRequest) -> tuple[str, str]:
@@ -473,9 +496,7 @@ def _resolve_install_url(body: InstallRequest) -> tuple[str, str]:
     if error:
         raise _github_error(error)
 
-    entry = next(
-        (p for p in (available or []) if p.get("package") == body.package), None
-    )
+    entry = next((p for p in (available or []) if p.get("package") == body.package), None)
     if entry is None:
         raise HTTPException(
             status_code=404, detail=f"'{body.package}' is not in the plugin manifest"
@@ -519,12 +540,15 @@ def install(body: InstallRequest, user: AuthUser = Depends(require_plugin_admin)
             _audit("plugin_install", "CREATE", "FAILED", label, error=message)
             return
 
-        store.complete(job_id, {
-            "installed": True,
-            "package": label,
-            "message": message,
-            "restart_required": True,
-        })
+        store.complete(
+            job_id,
+            {
+                "installed": True,
+                "package": label,
+                "message": message,
+                "restart_required": True,
+            },
+        )
         _audit("plugin_install", "CREATE", "SUCCESS", label)
 
     threading.Thread(target=run, daemon=True).start()
@@ -535,8 +559,9 @@ def install(body: InstallRequest, user: AuthUser = Depends(require_plugin_admin)
 # Branch override
 # ---------------------------------------------------------------------------
 
+
 class BranchOverrideRequest(BaseModel):
-    branch: Optional[str] = None    # 'stable' | 'dev' | a branch; None follows the channel
+    branch: Optional[str] = None  # 'stable' | 'dev' | a branch; None follows the channel
     reinstall: bool = True
 
 
@@ -558,9 +583,14 @@ def set_branch(
     plugin that is not installed yet.
     """
     from lib.plugin_manager import (
-        clear_pending_plugin_install, fetch_manifest, get_plugin_channel,
-        install_plugin, install_url_for_ref, set_pending_plugin_install,
-        set_plugin_branch_override, uninstall_plugin,
+        clear_pending_plugin_install,
+        fetch_manifest,
+        get_plugin_channel,
+        install_plugin,
+        install_url_for_ref,
+        set_pending_plugin_install,
+        set_plugin_branch_override,
+        uninstall_plugin,
     )
 
     _validate_package(package)
@@ -577,13 +607,9 @@ def set_branch(
     if error:
         raise _github_error(error)
 
-    entry = next(
-        (p for p in (available or []) if p.get("package") == package), None
-    )
+    entry = next((p for p in (available or []) if p.get("package") == package), None)
     if entry is None:
-        raise HTTPException(
-            status_code=404, detail=f"'{package}' is not in the plugin manifest"
-        )
+        raise HTTPException(status_code=404, detail=f"'{package}' is not in the plugin manifest")
 
     # A cleared pin falls back to the channel, so both cases resolve through the
     # same ref vocabulary — 'stable' and 'dev' are refs like any branch name.
@@ -591,9 +617,7 @@ def set_branch(
     ref = branch or channel
     install_url = install_url_for_ref(entry, ref)
     if not install_url:
-        raise HTTPException(
-            status_code=422, detail=f"No install URL for '{package}' at '{ref}'"
-        )
+        raise HTTPException(status_code=422, detail=f"No install URL for '{package}' at '{ref}'")
 
     job_id, created = store.create_unique(_PIP_JOB_KEY)
     if not created:
@@ -604,11 +628,17 @@ def set_branch(
     def run():
         try:
             store.append(job_id, {"type": "progress", "message": f"Uninstalling {package}..."})
-            ok, message = uninstall_plugin(package)   # never purge on a version switch
+            ok, message = uninstall_plugin(package)  # never purge on a version switch
             if not ok:
                 store.fail(job_id, message)
-                _audit("plugin_branch_override", "UPDATE", "FAILED", package,
-                       branch=branch, error=message)
+                _audit(
+                    "plugin_branch_override",
+                    "UPDATE",
+                    "FAILED",
+                    package,
+                    branch=branch,
+                    error=message,
+                )
                 return
 
             set_plugin_branch_override(package, branch)
@@ -616,28 +646,39 @@ def set_branch(
             # the next TUI launch completes the install that did not happen here.
             set_pending_plugin_install(package, install_url)
 
-            store.append(job_id, {"type": "progress",
-                                  "message": f"Installing {package} from {label}..."})
+            store.append(
+                job_id, {"type": "progress", "message": f"Installing {package} from {label}..."}
+            )
             ok, message = install_plugin(install_url)
             if not ok:
                 store.fail(job_id, message)
-                _audit("plugin_branch_override", "UPDATE", "FAILED", package,
-                       branch=branch, error=message)
+                _audit(
+                    "plugin_branch_override",
+                    "UPDATE",
+                    "FAILED",
+                    package,
+                    branch=branch,
+                    error=message,
+                )
                 return
 
             clear_pending_plugin_install()
-            store.complete(job_id, {
-                "package": package,
-                "branch": branch,
-                "reinstalled": True,
-                "message": message,
-                "restart_required": True,
-            })
+            store.complete(
+                job_id,
+                {
+                    "package": package,
+                    "branch": branch,
+                    "reinstalled": True,
+                    "message": message,
+                    "restart_required": True,
+                },
+            )
             _audit("plugin_branch_override", "UPDATE", "SUCCESS", package, branch=branch)
         except Exception as exc:
             store.fail(job_id, str(exc))
-            _audit("plugin_branch_override", "UPDATE", "FAILED", package,
-                   branch=branch, error=str(exc))
+            _audit(
+                "plugin_branch_override", "UPDATE", "FAILED", package, branch=branch, error=str(exc)
+            )
 
     threading.Thread(target=run, daemon=True).start()
     return {"job_id": job_id, "already_running": False}
@@ -650,6 +691,7 @@ def set_branch(
 # /entitlements/{id} is two segments and safe, but keeping the whole literal
 # family above the wildcard means a later addition cannot be swallowed by it.
 # ---------------------------------------------------------------------------
+
 
 class EntitlementGrant(BaseModel):
     package: str
@@ -688,11 +730,13 @@ def my_plugins(user: AuthUser = Depends(require_plugin_user)):
         spec = plugin_web.describe(plugin)
         if not spec:
             continue
-        plugins.append({
-            "package": package,
-            "name": plugin.get("name"),
-            "version": plugin.get("version"),
-        })
+        plugins.append(
+            {
+                "package": package,
+                "name": plugin.get("name"),
+                "version": plugin.get("version"),
+            }
+        )
     plugins.sort(key=lambda p: (p["name"] or "").lower())
 
     return {"packages": packages, "plugins": plugins}
@@ -726,15 +770,11 @@ def plugin_ui(package: str, user: AuthUser = Depends(require_plugin_user)):
     plugin = _entitled_plugin(package, user)
     spec = plugin_web.describe(plugin)
     if not spec:
-        raise HTTPException(
-            status_code=404, detail=f"Plugin '{package}' has no web interface"
-        )
+        raise HTTPException(status_code=404, detail=f"Plugin '{package}' has no web interface")
     return spec
 
 
-def _resolve_action(
-    package: str, action_key: str, user: AuthUser
-) -> tuple[dict, dict, dict, dict]:
+def _resolve_action(package: str, action_key: str, user: AuthUser) -> tuple[dict, dict, dict, dict]:
     """`(plugin, spec, described action, raw action)` for a package the caller may use.
 
     Both actions come back with the plugin's page-level context folded in as
@@ -744,9 +784,7 @@ def _resolve_action(
     """
     plugin = _entitled_plugin(package, user)
     described = plugin_web.describe(plugin)
-    action = next(
-        (a for a in (described or {}).get("actions", []) if a["key"] == action_key), None
-    )
+    action = next((a for a in (described or {}).get("actions", []) if a["key"] == action_key), None)
     if not action:
         raise HTTPException(status_code=404, detail=f"Unknown action '{action_key}'")
 
@@ -768,9 +806,7 @@ def _described(package: str, user: AuthUser) -> tuple[dict, dict]:
     plugin = _entitled_plugin(package, user)
     described = plugin_web.describe(plugin)
     if not described:
-        raise HTTPException(
-            status_code=404, detail=f"Plugin '{package}' has no web interface"
-        )
+        raise HTTPException(status_code=404, detail=f"Plugin '{package}' has no web interface")
     return plugin, described
 
 
@@ -1014,8 +1050,7 @@ def _checked_params(
         if not params.get(name):
             continue
         allowed = {
-            o["value"]
-            for o in _authorized_options(action, raw_action, name, supplied, user)
+            o["value"] for o in _authorized_options(action, raw_action, name, supplied, user)
         }
         # A selection grid submits many values; each one has to have been on the
         # list the plugin just produced, not merely most of them.
@@ -1065,8 +1100,15 @@ def _start_action_job(
             result = run_callable(params, ctx)
         except Exception as exc:
             store.fail(job_id, str(exc))
-            _audit("plugin_action", "EXECUTE", "FAILED", package,
-                   plugin_action=action_key, by=user.username, error=str(exc))
+            _audit(
+                "plugin_action",
+                "EXECUTE",
+                "FAILED",
+                package,
+                plugin_action=action_key,
+                by=user.username,
+                error=str(exc),
+            )
             return
         finally:
             if tmpdir:
@@ -1082,8 +1124,15 @@ def _start_action_job(
         except plugin_web.PluginWebError as exc:
             shutil.rmtree(spool, ignore_errors=True)
             store.fail(job_id, str(exc))
-            _audit("plugin_action", "EXECUTE", "FAILED", package,
-                   plugin_action=action_key, by=user.username, error=str(exc))
+            _audit(
+                "plugin_action",
+                "EXECUTE",
+                "FAILED",
+                package,
+                plugin_action=action_key,
+                by=user.username,
+                error=str(exc),
+            )
             return
 
         payload = plugin_web.normalize_result(
@@ -1105,8 +1154,14 @@ def _start_action_job(
             _register_prompt(job_id, package, payload["prompt"], user.user_id)
 
         store.complete(job_id, payload)
-        _audit("plugin_action", "EXECUTE", "SUCCESS", package,
-               plugin_action=action_key, by=user.username)
+        _audit(
+            "plugin_action",
+            "EXECUTE",
+            "SUCCESS",
+            package,
+            plugin_action=action_key,
+            by=user.username,
+        )
 
     threading.Thread(target=run, daemon=True).start()
     return job_id
@@ -1175,9 +1230,7 @@ def download_artifact(job_id: str, user: AuthUser = Depends(require_plugin_user)
         entry = _artifacts.get(job_id)
         if not entry or entry["user_id"] != user.user_id:
             raise HTTPException(status_code=404, detail="No download for that job")
-        path, filename, content_type = (
-            entry["path"], entry["filename"], entry["content_type"]
-        )
+        path, filename, content_type = (entry["path"], entry["filename"], entry["content_type"])
 
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="No download for that job")
@@ -1185,8 +1238,9 @@ def download_artifact(job_id: str, user: AuthUser = Depends(require_plugin_user)
 
 
 @router.get("/entitlements")
-def list_entitlements(package: Optional[str] = None,
-                      user: AuthUser = Depends(require_plugin_admin)):
+def list_entitlements(
+    package: Optional[str] = None, user: AuthUser = Depends(require_plugin_admin)
+):
     """Every plugin grant, or those for one package."""
     from services import plugin_entitlement_service
 
@@ -1196,8 +1250,7 @@ def list_entitlements(package: Optional[str] = None,
 
 
 @router.post("/entitlements", status_code=201)
-def grant_entitlement(body: EntitlementGrant,
-                      user: AuthUser = Depends(require_plugin_admin)):
+def grant_entitlement(body: EntitlementGrant, user: AuthUser = Depends(require_plugin_admin)):
     """Grant a plugin to users and/or SCIM groups.
 
     Granting does not require the plugin to be installed — an admin can line
@@ -1218,15 +1271,19 @@ def grant_entitlement(body: EntitlementGrant,
         raise HTTPException(status_code=400, detail=str(exc))
 
     if result["granted"]:
-        _audit("plugin_entitlement", "CREATE", "SUCCESS", package,
-               user_ids=[e["user_id"] for e in result["granted"] if e["user_id"]],
-               group_ids=[e["group_id"] for e in result["granted"] if e["group_id"]])
+        _audit(
+            "plugin_entitlement",
+            "CREATE",
+            "SUCCESS",
+            package,
+            user_ids=[e["user_id"] for e in result["granted"] if e["user_id"]],
+            group_ids=[e["group_id"] for e in result["granted"] if e["group_id"]],
+        )
     return result
 
 
 @router.delete("/entitlements/{entitlement_id}", status_code=204)
-def revoke_entitlement(entitlement_id: int,
-                       user: AuthUser = Depends(require_plugin_admin)):
+def revoke_entitlement(entitlement_id: int, user: AuthUser = Depends(require_plugin_admin)):
     """Revoke one grant. Takes effect on the holder's next request."""
     from services import plugin_entitlement_service
 
@@ -1236,8 +1293,14 @@ def revoke_entitlement(entitlement_id: int,
         raise HTTPException(status_code=404, detail="Entitlement not found")
 
     plugin_entitlement_service.revoke(entitlement_id)
-    _audit("plugin_entitlement", "DELETE", "SUCCESS", row["package"],
-           user_id=row["user_id"], group_id=row["group_id"])
+    _audit(
+        "plugin_entitlement",
+        "DELETE",
+        "SUCCESS",
+        row["package"],
+        user_id=row["user_id"],
+        group_id=row["group_id"],
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1246,6 +1309,7 @@ def revoke_entitlement(entitlement_id: int,
 # Declared before DELETE /{package}: FastAPI matches in declaration order, and
 # the literal path would otherwise be swallowed as a package name.
 # ---------------------------------------------------------------------------
+
 
 @router.delete("/pending-install")
 def clear_pending(user: AuthUser = Depends(require_plugin_admin)):
@@ -1264,6 +1328,7 @@ def clear_pending(user: AuthUser = Depends(require_plugin_admin)):
 # ---------------------------------------------------------------------------
 # Uninstall
 # ---------------------------------------------------------------------------
+
 
 @router.get("/{package}/data")
 def plugin_data(package: str, user: AuthUser = Depends(require_plugin_admin)):
@@ -1305,31 +1370,53 @@ def uninstall(
             ok, message = uninstall_plugin(package, purge_data=purge_data)
         except Exception as exc:
             store.fail(job_id, str(exc))
-            _audit("plugin_uninstall", "DELETE", "FAILED", package,
-                   purge_data=purge_data, error=str(exc))
+            _audit(
+                "plugin_uninstall",
+                "DELETE",
+                "FAILED",
+                package,
+                purge_data=purge_data,
+                error=str(exc),
+            )
             return
 
         if not ok:
             store.fail(job_id, message)
-            _audit("plugin_uninstall", "DELETE", "FAILED", package,
-                   purge_data=purge_data, error=message)
+            _audit(
+                "plugin_uninstall",
+                "DELETE",
+                "FAILED",
+                package,
+                purge_data=purge_data,
+                error=message,
+            )
             return
 
         revoked = 0
         if purge_data:
             from services import plugin_entitlement_service
+
             revoked = plugin_entitlement_service.revoke_package(package)
 
-        store.complete(job_id, {
-            "uninstalled": True,
-            "package": package,
-            "purged_data": purge_data,
-            "revoked_entitlements": revoked,
-            "message": message,
-            "restart_required": True,
-        })
-        _audit("plugin_uninstall", "DELETE", "SUCCESS", package,
-               purge_data=purge_data, revoked_entitlements=revoked)
+        store.complete(
+            job_id,
+            {
+                "uninstalled": True,
+                "package": package,
+                "purged_data": purge_data,
+                "revoked_entitlements": revoked,
+                "message": message,
+                "restart_required": True,
+            },
+        )
+        _audit(
+            "plugin_uninstall",
+            "DELETE",
+            "SUCCESS",
+            package,
+            purge_data=purge_data,
+            revoked_entitlements=revoked,
+        )
 
     threading.Thread(target=run, daemon=True).start()
     return {"job_id": job_id, "already_running": False}

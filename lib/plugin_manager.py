@@ -32,30 +32,29 @@ import requests
 from lib.github_auth import get_token
 
 # PEP 508 package name: letters, digits, hyphens, underscores, dots.
-_SAFE_PACKAGE_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9._-]*$')
+_SAFE_PACKAGE_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 
 # Allowed install URL patterns — must point to github.com via HTTPS or SSH.
-_ALLOWED_URL_RE = re.compile(
-    r'^git\+(?:https://(?:[^@/]+@)?|ssh://git@)github\.com/'
-)
+_ALLOWED_URL_RE = re.compile(r"^git\+(?:https://(?:[^@/]+@)?|ssh://git@)github\.com/")
 
-_PLUGIN_GROUP   = "zs_config.plugins"
-_MANIFEST_REPO  = "mpreissner/zs-plugins"
-_MANIFEST_FILE  = "manifest.json"
+_PLUGIN_GROUP = "zs_config.plugins"
+_MANIFEST_REPO = "mpreissner/zs-plugins"
+_MANIFEST_FILE = "manifest.json"
 
 # Keyword used to filter work-in-progress branches per plugin package.
 # Branches under feature/ and fix/ are included only if the keyword appears in
 # the name — so a branch meant to be installed has to carry it.
 # Add an entry here whenever a new plugin is added to zs-plugins.
 _PLUGIN_BRANCH_FILTERS: dict[str, str] = {
-    "palo-tools":          "pan",
-    "snapshot-tools":      "snap",
+    "palo-tools": "pan",
+    "snapshot-tools": "snap",
 }
 
 
 # ---------------------------------------------------------------------------
 # Installed plugins (entry point discovery)
 # ---------------------------------------------------------------------------
+
 
 def is_valid_package_name(name: str) -> bool:
     """Whether a string is a package name safe to hand to pip.
@@ -82,31 +81,36 @@ def get_installed_plugins() -> list[dict]:
     for ep in entry_points(group=_PLUGIN_GROUP):
         base = {
             "entry_point": ep.name,
-            "package":     ep.dist.name    if ep.dist else ep.name,
-            "version":     ep.dist.version if ep.dist else "unknown",
+            "package": ep.dist.name if ep.dist else ep.name,
+            "version": ep.dist.version if ep.dist else "unknown",
         }
         try:
-            info = ep.load()()   # call register()
-            plugins.append({
-                **base,
-                "name":  info.get("name", ep.name),
-                "menu":  info.get("menu"),
-                "web":   info.get("web"),
-            })
+            info = ep.load()()  # call register()
+            plugins.append(
+                {
+                    **base,
+                    "name": info.get("name", ep.name),
+                    "menu": info.get("menu"),
+                    "web": info.get("web"),
+                }
+            )
         except Exception as exc:
-            plugins.append({
-                **base,
-                "name":  ep.name,
-                "menu":  None,
-                "web":   None,
-                "error": str(exc),
-            })
+            plugins.append(
+                {
+                    **base,
+                    "name": ep.name,
+                    "menu": None,
+                    "web": None,
+                    "error": str(exc),
+                }
+            )
     return plugins
 
 
 # ---------------------------------------------------------------------------
 # Available plugins (manifest from GitHub)
 # ---------------------------------------------------------------------------
+
 
 def get_manifest_ref() -> str:
     """Return the git ref to fetch the manifest from based on the active channel."""
@@ -141,7 +145,7 @@ def fetch_manifest(ref: Optional[str] = None) -> tuple[Optional[list], Optional[
             url,
             headers={
                 "Authorization": f"Bearer {token}",
-                "Accept":        "application/vnd.github.raw+json",
+                "Accept": "application/vnd.github.raw+json",
             },
             timeout=10,
         )
@@ -183,7 +187,7 @@ def fetch_plugin_branches(package_name: str) -> tuple[list[str], Optional[str]]:
             f"https://api.github.com/repos/{_MANIFEST_REPO}/branches",
             headers={
                 "Authorization": f"Bearer {token}",
-                "Accept":        "application/vnd.github+json",
+                "Accept": "application/vnd.github+json",
             },
             params={"per_page": 100},
             timeout=10,
@@ -196,8 +200,7 @@ def fetch_plugin_branches(package_name: str) -> tuple[list[str], Optional[str]]:
             return [], "Repository not found."
         resp.raise_for_status()
 
-        branches = [b["name"] for b in resp.json()
-                    if b["name"].startswith(("feature/", "fix/"))]
+        branches = [b["name"] for b in resp.json() if b["name"].startswith(("feature/", "fix/"))]
         if keyword:
             branches = [b for b in branches if keyword in b]
         return sorted(branches), None
@@ -208,6 +211,7 @@ def fetch_plugin_branches(package_name: str) -> tuple[list[str], Optional[str]]:
 # ---------------------------------------------------------------------------
 # Install / uninstall
 # ---------------------------------------------------------------------------
+
 
 def _pip_install_args() -> list[str]:
     """Return extra pip args for plugin install. Adds --user in container mode."""
@@ -253,11 +257,11 @@ def _askpass_env(token: str) -> tuple[dict, str]:
         os.write(fd, script.encode())
     finally:
         os.close(fd)
-    os.chmod(path, stat.S_IRWXU)   # 700 — owner execute only
+    os.chmod(path, stat.S_IRWXU)  # 700 — owner execute only
 
     env = os.environ.copy()
-    env["GIT_ASKPASS"]        = path
-    env["_ZS_GIT_TOKEN"]      = token
+    env["GIT_ASKPASS"] = path
+    env["_ZS_GIT_TOKEN"] = token
     env["GIT_TERMINAL_PROMPT"] = "0"
     return env, path
 
@@ -273,7 +277,7 @@ def install_plugin(install_url: str) -> tuple[bool, str]:
     if not _ALLOWED_URL_RE.match(install_url):
         return False, f"Install URL must point to github.com: {install_url!r}"
 
-    url   = _to_https_url(install_url)
+    url = _to_https_url(install_url)
     token = get_token()
     env, askpass_path = _askpass_env(token) if token else (None, None)
 
@@ -304,12 +308,14 @@ def install_plugin(install_url: str) -> tuple[bool, str]:
 def get_plugin_channel() -> str:
     """Return the active plugin channel: 'stable' (default) or 'dev'."""
     from db.database import get_setting
+
     return get_setting("plugin_channel", default="stable") or "stable"
 
 
 def set_plugin_channel(channel: str) -> None:
     """Persist the plugin channel ('stable' or 'dev')."""
     from db.database import set_setting
+
     set_setting("plugin_channel", channel)
 
 
@@ -317,6 +323,7 @@ def get_plugin_branch_overrides() -> dict:
     """Return per-package ref pins: {package_name: ref}, ref per install_url_for_ref()."""
     import json
     from db.database import get_setting
+
     raw = get_setting("plugin_branch_overrides")
     if not raw:
         return {}
@@ -330,6 +337,7 @@ def get_pending_plugin_install() -> Optional[dict]:
     """Return a pending deferred plugin install as {package, url}, or None."""
     import json
     from db.database import get_setting
+
     raw = get_setting("plugin_pending_install")
     if not raw:
         return None
@@ -343,12 +351,14 @@ def set_pending_plugin_install(package: str, url: str) -> None:
     """Store a plugin install to be completed on the next launch."""
     import json
     from db.database import set_setting
+
     set_setting("plugin_pending_install", json.dumps({"package": package, "url": url}))
 
 
 def clear_pending_plugin_install() -> None:
     """Clear any pending plugin install record."""
     from db.database import set_setting
+
     set_setting("plugin_pending_install", None)
 
 
@@ -362,6 +372,7 @@ def set_plugin_branch_override(package_name: str, branch: Optional[str]) -> None
     """
     import json
     from db.database import set_setting
+
     overrides = get_plugin_branch_overrides()
     if branch:
         overrides[package_name] = branch
@@ -379,12 +390,12 @@ def url_for_branch(base_url: str, branch: str) -> str:
     # Strip any existing @ref before the fragment (handles both https and ssh URLs).
     # SSH URLs contain 'git@github.com' so the pattern anchors past that literal.
     stripped = re.sub(
-        r'(git\+(?:https://(?:[^@/]+@)?|ssh://git@)github\.com/[^@#]+)@[^#]+',
-        r'\1',
+        r"(git\+(?:https://(?:[^@/]+@)?|ssh://git@)github\.com/[^@#]+)@[^#]+",
+        r"\1",
         base_url,
     )
-    if '#' in stripped:
-        base, fragment = stripped.split('#', 1)
+    if "#" in stripped:
+        base, fragment = stripped.split("#", 1)
         return f"{base}@{branch}#{fragment}"
     return f"{stripped}@{branch}"
 
@@ -398,7 +409,7 @@ def install_url_for_ref(plugin_entry: dict, ref: str) -> str:
     without a global setting deciding for all of them.
     """
     stable = plugin_entry.get("install_url", "")
-    dev    = plugin_entry.get("install_url_dev") or stable
+    dev = plugin_entry.get("install_url_dev") or stable
 
     if ref == "stable":
         return stable
@@ -419,7 +430,7 @@ def effective_install_url(plugin_entry: dict) -> str:
     a plugin can stay on stable while the channel says dev.
     """
     package = plugin_entry.get("package", "")
-    pin     = get_plugin_branch_overrides().get(package)
+    pin = get_plugin_branch_overrides().get(package)
     return install_url_for_ref(plugin_entry, pin or get_plugin_channel())
 
 
@@ -447,7 +458,15 @@ def uninstall_plugin(package_name: str, purge_data: bool = False) -> tuple[bool,
 
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "pip", "uninstall", "--yes", *_pip_uninstall_args(), package_name],
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "uninstall",
+                "--yes",
+                *_pip_uninstall_args(),
+                package_name,
+            ],
             capture_output=True,
             text=True,
             timeout=30,
@@ -466,7 +485,7 @@ def uninstall_plugin(package_name: str, purge_data: bool = False) -> tuple[bool,
 
 # Plugin-declared table names are interpolated into DDL, so they are validated
 # against this before use — never trusted as-is.
-_SAFE_TABLE_RE = re.compile(r'^[a-zA-Z0-9_]+$')
+_SAFE_TABLE_RE = re.compile(r"^[a-zA-Z0-9_]+$")
 
 
 def _plugin_entry(package_name: str) -> Optional[dict]:
@@ -529,17 +548,23 @@ def plugin_data_summary(package_name: str) -> dict:
     try:
         with get_engine().connect() as conn:
             for name in tables:
-                summary["rows"] += conn.execute(
-                    text(f'SELECT COUNT(*) FROM "{name}"')  # name validated above
-                ).scalar() or 0
+                summary["rows"] += (
+                    conn.execute(
+                        text(f'SELECT COUNT(*) FROM "{name}"')  # name validated above
+                    ).scalar()
+                    or 0
+                )
 
             # Unpushed migration candidates in core tables. Pushed objects have
             # source reverted to 'tenant' and are deliberately not counted.
             for core in ("zia_resources", "zpa_resources"):
-                summary["candidates"] += conn.execute(
-                    text(f"SELECT COUNT(*) FROM {core} WHERE source = :s"),
-                    {"s": "palo"},
-                ).scalar() or 0
+                summary["candidates"] += (
+                    conn.execute(
+                        text(f"SELECT COUNT(*) FROM {core} WHERE source = :s"),
+                        {"s": "palo"},
+                    ).scalar()
+                    or 0
+                )
     except Exception as exc:
         summary["error"] = str(exc)
     return summary

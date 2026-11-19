@@ -84,6 +84,7 @@ async def remove_ssl(_: AuthUser = Depends(require_admin)) -> dict:
 
 # ── Let's Encrypt (ACME dns-01 over Cloudflare) ────────────────────────────────
 
+
 class LetsEncryptConfig(BaseModel):
     domain: str
     email: str

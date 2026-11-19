@@ -13,9 +13,8 @@ from .auth import ZscalerAuth
 # the @property returns a fresh instance on each access).
 try:
     from zscaler.zpa.service_edges import ServiceEdgeControllerAPI as _SECA
-    if not hasattr(_SECA, "_zpa") or not isinstance(
-        getattr(_SECA, "_zpa", None), property
-    ):
+
+    if not hasattr(_SECA, "_zpa") or not isinstance(getattr(_SECA, "_zpa", None), property):
         _SECA._zpa = property(lambda self: self._zpa_base_endpoint)
 except Exception:
     pass  # SDK not installed or class moved — fail gracefully at call-time
@@ -59,7 +58,7 @@ def _to_dicts(items) -> list:
     if not items:
         return []
     raw = [
-        i if isinstance(i, dict) else (i.as_dict() if hasattr(i, 'as_dict') else vars(i))
+        i if isinstance(i, dict) else (i.as_dict() if hasattr(i, "as_dict") else vars(i))
         for i in items
     ]
     # Round-trip through JSON to coerce any non-serializable SDK types (e.g. packaging.version.Version)
@@ -72,7 +71,7 @@ def _to_dict(item) -> dict:
         return {}
     if isinstance(item, dict):
         return item
-    if hasattr(item, 'as_dict'):
+    if hasattr(item, "as_dict"):
         return item.as_dict()
     return vars(item)
 
@@ -109,11 +108,15 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_certificates(self, page: int = 1, page_size: int = 500) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.certificates.list_certificates(query_params={"pagesize": page_size})
+        result, resp, err = self._sdk.zpa.certificates.list_certificates(
+            query_params={"pagesize": page_size}
+        )
         return _to_dicts(_unwrap_all(result, resp, err))
 
     def list_issued_certificates(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.certificates.list_issued_certificates(query_params=_list_params())
+        result, resp, err = self._sdk.zpa.certificates.list_issued_certificates(
+            query_params=_list_params()
+        )
         return _to_dicts(_unwrap_all(result, resp, err))
 
     def get_certificate(self, cert_id: str) -> Optional[Dict]:
@@ -139,7 +142,9 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_applications(self, app_type: str = "BROWSER_ACCESS") -> List[Dict]:
-        result, resp, err = self._sdk.zpa.application_segment.list_segments(query_params=_list_params())
+        result, resp, err = self._sdk.zpa.application_segment.list_segments(
+            query_params=_list_params()
+        )
         return _to_dicts(_unwrap_all(result, resp, err))
 
     def get_application(self, app_id: str) -> Dict:
@@ -207,7 +212,9 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_user_portals(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.user_portal_controller.list_user_portals(query_params=_list_params())
+        result, resp, err = self._sdk.zpa.user_portal_controller.list_user_portals(
+            query_params=_list_params()
+        )
         return _to_dicts(_unwrap_all(result, resp, err))
 
     def get_user_portal(self, portal_id: str) -> Dict:
@@ -219,7 +226,9 @@ class ZPAClient:
         return _to_dict(_unwrap(result, resp, err))
 
     def update_user_portal(self, portal_id: str, config: Dict) -> bool:
-        result, resp, err = self._sdk.zpa.user_portal_controller.update_user_portal(portal_id, **config)
+        result, resp, err = self._sdk.zpa.user_portal_controller.update_user_portal(
+            portal_id, **config
+        )
         _unwrap(result, resp, err)
         return True
 
@@ -233,7 +242,9 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_credentials(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.pra_credential.list_credentials(query_params=_list_params())
+        result, resp, err = self._sdk.zpa.pra_credential.list_credentials(
+            query_params=_list_params()
+        )
         return _to_dicts(_unwrap_all(result, resp, err))
 
     # ------------------------------------------------------------------
@@ -293,11 +304,15 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_connector_groups(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.app_connector_groups.list_connector_groups(query_params=_list_params())
+        result, resp, err = self._sdk.zpa.app_connector_groups.list_connector_groups(
+            query_params=_list_params()
+        )
         return _to_dicts(_unwrap_all(result, resp, err))
 
     def list_connectors(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.app_connectors.list_connectors(query_params=_list_params())
+        result, resp, err = self._sdk.zpa.app_connectors.list_connectors(
+            query_params=_list_params()
+        )
         return _to_dicts(_unwrap_all(result, resp, err))
 
     # Connectors
@@ -325,7 +340,9 @@ class ZPAClient:
         return _to_dict(_unwrap(result, resp, err))
 
     def update_connector_group(self, group_id: str, config: Dict) -> bool:
-        result, resp, err = self._sdk.zpa.app_connector_groups.update_connector_group(group_id, **config)
+        result, resp, err = self._sdk.zpa.app_connector_groups.update_connector_group(
+            group_id, **config
+        )
         _unwrap(result, resp, err)
         return True
 
@@ -343,18 +360,24 @@ class ZPAClient:
         return _to_dicts(_unwrap_all(result, resp, err))
 
     def list_saml_attributes(self, idp_id: Optional[str] = None) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.saml_attributes.list_saml_attributes(query_params=_list_params())
+        result, resp, err = self._sdk.zpa.saml_attributes.list_saml_attributes(
+            query_params=_list_params()
+        )
         return _to_dicts(_unwrap_all(result, resp, err))
 
     def list_scim_groups(self, idp_id: str) -> List[Dict]:
         # Ordered by modification time by default, which ties across a
         # provisioning batch; id is unique and this endpoint honours sort_by
         # (most other ZPA list endpoints ignore it, and app connectors reject it).
-        result, resp, err = self._sdk.zpa.scim_groups.list_scim_groups(idp_id, query_params=_list_params(sort_by="id", sort_order="ASC"))
+        result, resp, err = self._sdk.zpa.scim_groups.list_scim_groups(
+            idp_id, query_params=_list_params(sort_by="id", sort_order="ASC")
+        )
         return _to_dicts(_unwrap_all(result, resp, err))
 
     def list_scim_attributes(self, idp_id: str) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.scim_attributes.list_scim_attributes(idp_id, query_params=_list_params())
+        result, resp, err = self._sdk.zpa.scim_attributes.list_scim_attributes(
+            idp_id, query_params=_list_params()
+        )
         return _to_dicts(_unwrap_all(result, resp, err))
 
     # ------------------------------------------------------------------
@@ -362,7 +385,9 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_microtenants(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.microtenants.list_microtenants(query_params=_list_params())
+        result, resp, err = self._sdk.zpa.microtenants.list_microtenants(
+            query_params=_list_params()
+        )
         return _to_dicts(_unwrap_all(result, resp, err))
 
     # ------------------------------------------------------------------
@@ -370,7 +395,9 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_enrollment_certificates(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.enrollment_certificates.list_enrolment(query_params=_list_params())
+        result, resp, err = self._sdk.zpa.enrollment_certificates.list_enrolment(
+            query_params=_list_params()
+        )
         return _to_dicts(_unwrap_all(result, resp, err))
 
     # ------------------------------------------------------------------
@@ -378,7 +405,9 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_policy_rules(self, policy_type: str) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.policies.list_rules(policy_type, query_params=_list_params())
+        result, resp, err = self._sdk.zpa.policies.list_rules(
+            policy_type, query_params=_list_params()
+        )
         return _to_dicts(_unwrap_all(result, resp, err))
 
     def get_policy_set(self, policy_type: str) -> Dict:
@@ -395,7 +424,9 @@ class ZPAClient:
         return True
 
     def create_access_rule(self, name: str, action: str, **kwargs) -> Dict:
-        result, resp, err = self._sdk.zpa.policies.add_access_rule(name=name, action=action, **kwargs)
+        result, resp, err = self._sdk.zpa.policies.add_access_rule(
+            name=name, action=action, **kwargs
+        )
         return _to_dict(_unwrap(result, resp, err))
 
     def update_access_rule(self, rule_id: str, name: str, action: str, **kwargs) -> Dict:
@@ -450,7 +481,9 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_service_edge_groups(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.service_edge_group.list_service_edge_groups(query_params=_list_params())
+        result, resp, err = self._sdk.zpa.service_edge_group.list_service_edge_groups(
+            query_params=_list_params()
+        )
         return _to_dicts(_unwrap_all(result, resp, err))
 
     # ------------------------------------------------------------------
@@ -458,7 +491,9 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_service_edges(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.service_edges.list_service_edges(query_params=_list_params())
+        result, resp, err = self._sdk.zpa.service_edges.list_service_edges(
+            query_params=_list_params()
+        )
         return _to_dicts(_unwrap_all(result, resp, err))
 
     def get_service_edge(self, service_edge_id: str) -> Dict:
@@ -466,7 +501,9 @@ class ZPAClient:
         return _to_dict(_unwrap(result, resp, err))
 
     def update_service_edge(self, service_edge_id: str, config: Dict) -> bool:
-        result, resp, err = self._sdk.zpa.service_edges.update_service_edge(service_edge_id, **config)
+        result, resp, err = self._sdk.zpa.service_edges.update_service_edge(
+            service_edge_id, **config
+        )
         _unwrap(result, resp, err)
         return True
 
@@ -483,7 +520,9 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_posture_profiles(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.posture_profiles.list_posture_profiles(query_params=_list_params())
+        result, resp, err = self._sdk.zpa.posture_profiles.list_posture_profiles(
+            query_params=_list_params()
+        )
         return _to_dicts(_unwrap_all(result, resp, err))
 
     # ------------------------------------------------------------------
@@ -491,7 +530,9 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_machine_groups(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.machine_groups.list_machine_groups(query_params=_list_params())
+        result, resp, err = self._sdk.zpa.machine_groups.list_machine_groups(
+            query_params=_list_params()
+        )
         return _to_dicts(_unwrap_all(result, resp, err))
 
     # ------------------------------------------------------------------
@@ -499,7 +540,9 @@ class ZPAClient:
     # ------------------------------------------------------------------
 
     def list_trusted_networks(self) -> List[Dict]:
-        result, resp, err = self._sdk.zpa.trusted_networks.list_trusted_networks(query_params=_list_params())
+        result, resp, err = self._sdk.zpa.trusted_networks.list_trusted_networks(
+            query_params=_list_params()
+        )
         return _to_dicts(_unwrap_all(result, resp, err))
 
     # ------------------------------------------------------------------

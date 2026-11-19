@@ -38,7 +38,9 @@ def _get_service(tenant_name: str, user: AuthUser):
     if not tenant:
         raise HTTPException(status_code=404, detail=f"Tenant '{tenant_name}' not found")
     if not tenant.zpa_customer_id:
-        raise HTTPException(status_code=400, detail=f"Tenant '{tenant_name}' has no ZPA Customer ID")
+        raise HTTPException(
+            status_code=400, detail=f"Tenant '{tenant_name}' has no ZPA Customer ID"
+        )
     check_tenant_access(tenant.id, user)
 
     auth = ZscalerAuth(
@@ -73,6 +75,7 @@ def _get_db_service(tenant_name: str, user: AuthUser):
     Does not require zpa_customer_id and avoids constructing a ZPAClient.
     """
     from services.zpa_service import ZPAService
+
     tenant = _get_db_context(tenant_name, user)
     return ZPAService(tenant_id=tenant.id)
 
@@ -80,6 +83,7 @@ def _get_db_service(tenant_name: str, user: AuthUser):
 # ------------------------------------------------------------------
 # Certificates
 # ------------------------------------------------------------------
+
 
 @router.get("/{tenant}/certificates")
 def list_certificates(tenant: str, user: AuthUser = Depends(require_auth)):
@@ -95,7 +99,9 @@ def delete_certificate(tenant: str, cert_id: str, user: AuthUser = Depends(requi
 
 
 @router.post("/{tenant}/certificates/rotate")
-def rotate_certificate(tenant: str, req: CertificateRotateRequest, user: AuthUser = Depends(require_auth)):
+def rotate_certificate(
+    tenant: str, req: CertificateRotateRequest, user: AuthUser = Depends(require_auth)
+):
     """Certificate rotation is not supported via the web API. Use the CLI."""
     raise HTTPException(
         status_code=400,
@@ -109,6 +115,7 @@ def rotate_certificate(tenant: str, req: CertificateRotateRequest, user: AuthUse
 # the web UI uses them as part of a create/edit form flow that requires
 # real-time data. Candidates for DB-first migration in a future branch.
 # ------------------------------------------------------------------
+
 
 @router.get("/{tenant}/applications")
 def list_applications(tenant: str, q: Optional[str] = None, user: AuthUser = Depends(require_auth)):
@@ -127,7 +134,9 @@ def create_application(tenant: str, body: Dict[str, Any], user: AuthUser = Depen
 
 
 @router.put("/{tenant}/applications/{app_id}")
-def update_application(tenant: str, app_id: str, body: Dict[str, Any], user: AuthUser = Depends(require_auth)):
+def update_application(
+    tenant: str, app_id: str, body: Dict[str, Any], user: AuthUser = Depends(require_auth)
+):
     return _get_service(tenant, user).update_application(app_id, body)
 
 
@@ -197,8 +206,7 @@ def application_csv_fields(tenant: str, user: AuthUser = Depends(require_user)):
 
     _get_db_context(tenant, user)
     return [
-        {"field": f, "required": r, "default": d, "format": fmt}
-        for f, r, d, fmt in FIELD_REFERENCE
+        {"field": f, "required": r, "default": d, "format": fmt} for f, r, d, fmt in FIELD_REFERENCE
     ]
 
 
@@ -295,8 +303,14 @@ def bulk_create_applications(
             if create_missing:
                 missing = resolve_dependencies(svc.tenant_id, rows)[1]
                 if missing["segment_group"] or missing["server_group"]:
-                    store.append(job_id, {"type": "progress", "phase": "groups",
-                                          "message": "Creating missing groups..."})
+                    store.append(
+                        job_id,
+                        {
+                            "type": "progress",
+                            "phase": "groups",
+                            "message": "Creating missing groups...",
+                        },
+                    )
                     try:
                         groups = create_missing_groups(svc.client, svc.tenant_id, missing)
                     except Exception as exc:
@@ -306,18 +320,28 @@ def bulk_create_applications(
             annotated = dry_run(svc.tenant_id, rows)
 
             def on_progress(done: int, total: int) -> None:
-                store.append(job_id, {"type": "progress", "phase": "create",
-                                      "message": f"Creating segments... {done}/{total}",
-                                      "done": done, "total": total})
+                store.append(
+                    job_id,
+                    {
+                        "type": "progress",
+                        "phase": "create",
+                        "message": f"Creating segments... {done}/{total}",
+                        "done": done,
+                        "total": total,
+                    },
+                )
 
-            result = bulk_create(svc.client, svc.tenant_id, annotated, progress_callback=on_progress)
+            result = bulk_create(
+                svc.client, svc.tenant_id, annotated, progress_callback=on_progress
+            )
 
             # Segments now exist in ZPA. From here on a failure must not
             # discard the per-row result, or a retry duplicates names.
             sync_error: Optional[str] = None
             if result.created:
-                store.append(job_id, {"type": "progress", "phase": "sync",
-                                      "message": "Syncing local DB..."})
+                store.append(
+                    job_id, {"type": "progress", "phase": "sync", "message": "Syncing local DB..."}
+                )
                 try:
                     log = ZPAImportService(svc.client, svc.tenant_id).run(
                         resource_types=["application"]
@@ -361,6 +385,7 @@ def bulk_create_applications(
 # Reference data (DB-first — for create/edit form dropdowns)
 # ------------------------------------------------------------------
 
+
 @router.get("/{tenant}/segment-groups")
 def list_segment_groups(tenant: str, user: AuthUser = Depends(require_auth)):
     return _get_db_service(tenant, user).list_segment_groups()
@@ -374,6 +399,7 @@ def list_server_groups(tenant: str, user: AuthUser = Depends(require_auth)):
 # ------------------------------------------------------------------
 # App Connectors (DB-first list + mutations)
 # ------------------------------------------------------------------
+
 
 @router.get("/{tenant}/app-connectors")
 def list_app_connectors(tenant: str, user: AuthUser = Depends(require_auth)):
@@ -418,7 +444,9 @@ def delete_connector(
     """Delete an app connector."""
     svc = _get_service(tenant, user)
     rows = svc.list_connectors_from_db()  # TODO: test name-lookup-then-delete pattern
-    name = next((r.get("name", connector_id) for r in rows if r.get("zpa_id") == connector_id), connector_id)
+    name = next(
+        (r.get("name", connector_id) for r in rows if r.get("zpa_id") == connector_id), connector_id
+    )
     svc.delete_connector(connector_id, name)
     return {"deleted": True}
 
@@ -427,8 +455,11 @@ def delete_connector(
 # Connector Groups
 # ------------------------------------------------------------------
 
+
 @router.get("/{tenant}/connector-groups")
-def list_connector_groups(tenant: str, q: Optional[str] = None, user: AuthUser = Depends(require_auth)):
+def list_connector_groups(
+    tenant: str, q: Optional[str] = None, user: AuthUser = Depends(require_auth)
+):
     """List all connector groups (DB-first) with optional name search."""
     return _get_service(tenant, user).list_connector_groups_from_db(q=q)
 
@@ -472,8 +503,11 @@ def delete_connector_group(
 # Service Edges (DB-first list + enable/disable)
 # ------------------------------------------------------------------
 
+
 @router.get("/{tenant}/service-edges")
-def list_service_edges(tenant: str, q: Optional[str] = None, user: AuthUser = Depends(require_auth)):
+def list_service_edges(
+    tenant: str, q: Optional[str] = None, user: AuthUser = Depends(require_auth)
+):
     """List all service edges (DB-first) with optional name search."""
     return _get_service(tenant, user).list_service_edges_from_db(q=q)
 
@@ -492,6 +526,7 @@ def patch_service_edge_enabled(
 # ------------------------------------------------------------------
 # PRA Portals (DB-first list + mutations)
 # ------------------------------------------------------------------
+
 
 @router.get("/{tenant}/pra-portals")
 def list_pra_portals(tenant: str, q: Optional[str] = None, user: AuthUser = Depends(require_auth)):
@@ -546,6 +581,7 @@ def delete_pra_portal(
 # User Portals (DB-first list + mutations)
 # ------------------------------------------------------------------
 
+
 @router.get("/{tenant}/user-portals")
 def list_user_portals(tenant: str, q: Optional[str] = None, user: AuthUser = Depends(require_auth)):
     """List all user portals (DB-first) with optional name search."""
@@ -581,6 +617,7 @@ def delete_user_portal(
 # PRA Consoles (DB-first list + mutations)
 # ------------------------------------------------------------------
 
+
 @router.get("/{tenant}/pra-consoles")
 def list_pra_consoles(tenant: str, q: Optional[str] = None, user: AuthUser = Depends(require_auth)):
     """List all PRA consoles (DB-first) with optional name search."""
@@ -607,7 +644,9 @@ def delete_pra_console(
     """Delete a PRA console."""
     svc = _get_service(tenant, user)
     rows = svc.list_pra_consoles_from_db()
-    name = next((r.get("name", console_id) for r in rows if r.get("zpa_id") == console_id), console_id)
+    name = next(
+        (r.get("name", console_id) for r in rows if r.get("zpa_id") == console_id), console_id
+    )
     svc.delete_pra_console(console_id, name)
     return {"deleted": True}
 
@@ -615,6 +654,7 @@ def delete_pra_console(
 # ------------------------------------------------------------------
 # Access Policy (DB-first, read-only)
 # ------------------------------------------------------------------
+
 
 @router.get("/{tenant}/access-policy/rules")
 def list_access_policy_rules(
@@ -644,6 +684,7 @@ def export_access_policy_csv(
 # Config Snapshots (ZPA)
 # ------------------------------------------------------------------
 
+
 @router.get("/{tenant}/snapshots/{snapshot_id}/diff")
 def get_zpa_snapshot_diff(
     tenant: str,
@@ -659,9 +700,11 @@ def get_zpa_snapshot_diff(
     t = _get_db_context(tenant, user)
 
     with get_session() as session:
-        snap = session.query(RestorePoint).filter_by(
-            id=snapshot_id, tenant_id=t.id, product="ZPA"
-        ).first()
+        snap = (
+            session.query(RestorePoint)
+            .filter_by(id=snapshot_id, tenant_id=t.id, product="ZPA")
+            .first()
+        )
         if not snap:
             raise HTTPException(status_code=404, detail="Snapshot not found")
         snap_resources = snap.snapshot["resources"]
@@ -677,34 +720,40 @@ def get_zpa_snapshot_diff(
         rtype = rd.resource_type
         # removed = in snapshot but not current → action: create
         for item in rd.removed:
-            items.append({
-                "action": "create",
-                "resource_type": rtype,
-                "name": item.get("name") or item["id"],
-                "id": item["id"],
-                "supported": rtype in CAN_CREATE,
-            })
+            items.append(
+                {
+                    "action": "create",
+                    "resource_type": rtype,
+                    "name": item.get("name") or item["id"],
+                    "id": item["id"],
+                    "supported": rtype in CAN_CREATE,
+                }
+            )
         # added = in current but not snapshot → action: delete
         for item in rd.added:
-            items.append({
-                "action": "delete",
-                "resource_type": rtype,
-                "name": item.get("name") or item["id"],
-                "id": item["id"],
-                "supported": rtype in CAN_DELETE,
-            })
+            items.append(
+                {
+                    "action": "delete",
+                    "resource_type": rtype,
+                    "name": item.get("name") or item["id"],
+                    "id": item["id"],
+                    "supported": rtype in CAN_DELETE,
+                }
+            )
         # modified = in both but different → action: update
         for item in rd.modified:
             field_names = {fc.field for fc in item["field_changes"]}
             enabled_only = field_names == {"enabled"}
-            items.append({
-                "action": "update",
-                "resource_type": rtype,
-                "name": item.get("name") or item["id"],
-                "id": item["id"],
-                "enabled_only": enabled_only,
-                "supported": rtype in CAN_UPDATE,
-            })
+            items.append(
+                {
+                    "action": "update",
+                    "resource_type": rtype,
+                    "name": item.get("name") or item["id"],
+                    "id": item["id"],
+                    "enabled_only": enabled_only,
+                    "supported": rtype in CAN_UPDATE,
+                }
+            )
 
     creates = sum(1 for i in items if i["action"] == "create")
     updates = sum(1 for i in items if i["action"] == "update")
@@ -738,9 +787,11 @@ def restore_zpa_snapshot(
     svc = _get_service(tenant, user)
 
     with get_session() as session:
-        snap = session.query(RestorePoint).filter_by(
-            id=snapshot_id, tenant_id=svc.tenant_id, product="ZPA"
-        ).first()
+        snap = (
+            session.query(RestorePoint)
+            .filter_by(id=snapshot_id, tenant_id=svc.tenant_id, product="ZPA")
+            .first()
+        )
         if not snap:
             raise HTTPException(status_code=404, detail="Snapshot not found")
         snap_resources = snap.snapshot["resources"]
@@ -751,11 +802,18 @@ def restore_zpa_snapshot(
 
     def run():
         def on_progress(event: Dict[str, Any]) -> None:
-            store.append(job_id, {
-                "type": "progress", "phase": "restore",
-                "action": event["action"], "resource_type": event["resource_type"],
-                "name": event["name"], "done": event["done"], "total": event["total"],
-            })
+            store.append(
+                job_id,
+                {
+                    "type": "progress",
+                    "phase": "restore",
+                    "action": event["action"],
+                    "resource_type": event["resource_type"],
+                    "name": event["name"],
+                    "done": event["done"],
+                    "total": event["total"],
+                },
+            )
 
         records = push.push_classified(
             plan,
@@ -765,16 +823,20 @@ def restore_zpa_snapshot(
         )
 
         if push.affected_types(plan):
-            store.append(job_id, {"type": "progress", "phase": "sync",
-                                  "message": "Syncing local DB..."})
+            store.append(
+                job_id, {"type": "progress", "phase": "sync", "message": "Syncing local DB..."}
+            )
             push.sync_after_push(plan)
 
-        store.complete(job_id, {
-            "applied": sum(1 for r in records if r.is_applied),
-            "skipped": sum(1 for r in records if r.is_manual),
-            "failed":  sum(1 for r in records if r.is_failed),
-            "items":   [r.to_item() for r in records],
-        })
+        store.complete(
+            job_id,
+            {
+                "applied": sum(1 for r in records if r.is_applied),
+                "skipped": sum(1 for r in records if r.is_manual),
+                "failed": sum(1 for r in records if r.is_failed),
+                "items": [r.to_item() for r in records],
+            },
+        )
 
     threading.Thread(target=run, daemon=True).start()
     return {"job_id": job_id}
@@ -794,9 +856,11 @@ def preview_zpa_snapshot_restore(
     svc = _get_service(tenant, user)
 
     with get_session() as session:
-        snap = session.query(RestorePoint).filter_by(
-            id=snapshot_id, tenant_id=svc.tenant_id, product="ZPA"
-        ).first()
+        snap = (
+            session.query(RestorePoint)
+            .filter_by(id=snapshot_id, tenant_id=svc.tenant_id, product="ZPA")
+            .first()
+        )
         if not snap:
             raise HTTPException(status_code=404, detail="Snapshot not found")
         snap_resources = snap.snapshot["resources"]
@@ -814,8 +878,12 @@ def preview_zpa_snapshot_restore(
         "updates": [{"resource_type": t, "name": n} for t, n in updates],
         "deletes": [{"resource_type": t, "name": n} for t, n in deletes],
         "skipped": [
-            {"resource_type": e.resource_type, "name": e.name,
-             "action": e.action, "reason": e.skip_reason}
+            {
+                "resource_type": e.resource_type,
+                "name": e.name,
+                "action": e.action,
+                "reason": e.skip_reason,
+            }
             for e in plan.skipped
         ],
     }
@@ -825,14 +893,19 @@ def preview_zpa_snapshot_restore(
 # Identity (DB-first, read-only)
 # ------------------------------------------------------------------
 
+
 @router.get("/{tenant}/saml-attributes")
-def list_saml_attributes(tenant: str, q: Optional[str] = None, user: AuthUser = Depends(require_auth)):
+def list_saml_attributes(
+    tenant: str, q: Optional[str] = None, user: AuthUser = Depends(require_auth)
+):
     """List SAML attributes (DB-first)."""
     return _get_db_service(tenant, user).list_saml_attributes_from_db(q=q)
 
 
 @router.get("/{tenant}/scim-attributes")
-def list_scim_attributes(tenant: str, q: Optional[str] = None, user: AuthUser = Depends(require_auth)):
+def list_scim_attributes(
+    tenant: str, q: Optional[str] = None, user: AuthUser = Depends(require_auth)
+):
     """List SCIM user attributes (DB-first)."""
     return _get_db_service(tenant, user).list_scim_attributes_from_db(q=q)
 

@@ -91,11 +91,7 @@ def _to_camel_dict(obj) -> dict:
     contaminates resp.get_body() with non-serialisable SDK model instances.
     """
     if hasattr(obj, "request_format"):
-        return {
-            k: _to_camel_dict(v)
-            for k, v in obj.request_format().items()
-            if v is not None
-        }
+        return {k: _to_camel_dict(v) for k, v in obj.request_format().items() if v is not None}
     if isinstance(obj, dict):
         return {k: _to_camel_dict(v) for k, v in obj.items() if v is not None}
     if isinstance(obj, list):
@@ -272,7 +268,9 @@ class ZCCClient:
         if os_types:
             params["os_types"] = [_OS_TYPE_SDK.get(t, str(t)) for t in os_types]
         if registration_types:
-            params["registration_types"] = [_REG_STATE_SDK.get(t, str(t)) for t in registration_types]
+            params["registration_types"] = [
+                _REG_STATE_SDK.get(t, str(t)) for t in registration_types
+            ]
         result, resp, err = self._sdk.zcc.devices.download_devices(
             query_params=params, filename=filename
         )
@@ -288,7 +286,9 @@ class ZCCClient:
         if os_types:
             params["os_types"] = [_OS_TYPE_SDK.get(t, str(t)) for t in os_types]
         if registration_types:
-            params["registration_types"] = [_REG_STATE_SDK.get(t, str(t)) for t in registration_types]
+            params["registration_types"] = [
+                _REG_STATE_SDK.get(t, str(t)) for t in registration_types
+            ]
         result, resp, err = self._sdk.zcc.devices.download_service_status(
             query_params=params, filename=filename
         )
@@ -445,13 +445,11 @@ class ZCCClient:
         all_policies: List[Dict] = []
         for dt_int, dt_str in _DESKTOP_TYPES.items():
             try:
-                data = self._direct_get(
-                    "web/policy/listByCompany", params={"deviceType": dt_int}
-                )
+                data = self._direct_get("web/policy/listByCompany", params={"deviceType": dt_int})
             except Exception:
                 continue
             items = data if isinstance(data, list) else data.get("list", [])
-            for item in (items or []):
+            for item in items or []:
                 if not isinstance(item, dict):
                     continue
                 pid = item.get("id")
@@ -525,7 +523,11 @@ class ZCCClient:
 
     def list_application_profiles(self) -> List[Dict]:
         data = self._direct_get("application-profiles")
-        return data if isinstance(data, list) else (data.get("list", []) if isinstance(data, dict) else [])
+        return (
+            data
+            if isinstance(data, list)
+            else (data.get("list", []) if isinstance(data, dict) else [])
+        )
 
     def update_application_profile(self, profile_id: str, **kwargs) -> Dict:
         return self._direct_patch(f"application-profiles/{profile_id}", json=kwargs)
@@ -573,15 +575,27 @@ class ZCCClient:
 
     def list_ip_apps_predefined(self) -> List[Dict]:
         data = self._direct_get("predefined-ip-based-apps")
-        return data if isinstance(data, list) else (data.get("list", []) if isinstance(data, dict) else [])
+        return (
+            data
+            if isinstance(data, list)
+            else (data.get("list", []) if isinstance(data, dict) else [])
+        )
 
     def list_ip_apps_custom(self) -> List[Dict]:
         data = self._direct_get("custom-ip-based-apps")
-        return data if isinstance(data, list) else (data.get("list", []) if isinstance(data, dict) else [])
+        return (
+            data
+            if isinstance(data, list)
+            else (data.get("list", []) if isinstance(data, dict) else [])
+        )
 
     def list_process_apps(self) -> List[Dict]:
         data = self._direct_get("process-based-apps")
-        return data if isinstance(data, list) else (data.get("list", []) if isinstance(data, dict) else [])
+        return (
+            data
+            if isinstance(data, list)
+            else (data.get("list", []) if isinstance(data, dict) else [])
+        )
 
     def edit_web_policy(self, **kwargs) -> Dict:
         result, resp, err = self._sdk.zcc.web_policy.web_policy_edit(**kwargs)
@@ -597,4 +611,3 @@ class ZCCClient:
         _, _, err = self._sdk.zcc.web_policy.delete_web_policy(policy_id)
         if err:
             raise Exception(str(err))
-

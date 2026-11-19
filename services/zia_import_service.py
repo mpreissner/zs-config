@@ -27,75 +27,96 @@ from services import audit_service
 @dataclass
 class ResourceDef:
     """Describes one ZIA resource type to import."""
-    resource_type: str          # key stored in zia_resources.resource_type
-    list_method: str            # name of ZIAClient method that returns a list
-    id_field: str = "id"        # JSON field containing the ZIA resource ID
-    name_field: str = "name"    # JSON field containing a human-readable name
+
+    resource_type: str  # key stored in zia_resources.resource_type
+    list_method: str  # name of ZIAClient method that returns a list
+    id_field: str = "id"  # JSON field containing the ZIA resource ID
+    name_field: str = "name"  # JSON field containing a human-readable name
     list_args: dict = field(default_factory=dict)
 
 
 # All resource types we import.  Order doesn't matter.
 RESOURCE_DEFINITIONS: List[ResourceDef] = [
-    ResourceDef("url_category",          "list_url_categories",  name_field="configured_name"),
-    ResourceDef("url_filtering_rule",    "list_url_filtering_rules"),
-    ResourceDef("firewall_rule",         "list_firewall_rules"),
-    ResourceDef("firewall_dns_rule",     "list_firewall_dns_rules"),
-    ResourceDef("firewall_ips_rule",     "list_firewall_ips_rules"),
-    ResourceDef("ssl_inspection_rule",   "list_ssl_inspection_rules"),
-    ResourceDef("forwarding_rule",       "list_forwarding_rules"),
-    ResourceDef("ip_destination_group",  "list_ip_destination_groups"),
-    ResourceDef("ip_source_group",       "list_ip_source_groups"),
-    ResourceDef("network_service",       "list_network_services"),
-    ResourceDef("network_svc_group",     "list_network_svc_groups"),
-    ResourceDef("rule_label",            "list_rule_labels"),
-    ResourceDef("time_interval",         "list_time_intervals"),
-    ResourceDef("location",              "list_locations"),
-    ResourceDef("location_lite",         "list_locations_lite"),
-    ResourceDef("location_group",        "list_location_groups"),
-    ResourceDef("device_group",          "list_device_groups"),
-    ResourceDef("admin_user",            "list_admin_users"),
-    ResourceDef("admin_role",            "list_admin_roles"),
-    ResourceDef("department",            "list_departments"),
-    ResourceDef("group",                 "list_groups"),
-    ResourceDef("user",                  "list_users"),
-    ResourceDef("dlp_engine",            "list_dlp_engines"),
-    ResourceDef("dlp_dictionary",        "list_dlp_dictionaries"),
-    ResourceDef("cloud_app_policy",      "list_cloud_app_policy",     id_field="app",  name_field="app_name"),
-    ResourceDef("cloud_app_ssl_policy",  "list_cloud_app_ssl_policy", id_field="app",  name_field="app_name"),
-    ResourceDef("cloud_app_control_rule","list_all_cloud_app_rules",  id_field="id",   name_field="name"),
-    ResourceDef("allowlist",             "list_allowlist",      id_field="id", name_field="name"),
-    ResourceDef("denylist",             "list_denylist",       id_field="id", name_field="name"),
-    ResourceDef("dlp_web_rule",          "list_dlp_web_rules"),
-    ResourceDef("nat_control_rule",      "list_nat_control_rules"),
-    ResourceDef("bandwidth_class",       "list_bandwidth_classes"),
-    ResourceDef("bandwidth_control_rule","list_bandwidth_control_rules"),
-    ResourceDef("traffic_capture_rule",  "list_traffic_capture_rules"),
-    ResourceDef("workload_group",        "list_workload_groups"),
-    ResourceDef("network_app",           "list_network_apps"),
-    ResourceDef("network_app_group",     "list_network_app_groups"),
-    ResourceDef("url_filter_cloud_app_settings", "list_url_filter_cloud_app_settings",
-                id_field="id", name_field="name"),
-    ResourceDef("advanced_settings",             "list_advanced_settings",
-                id_field="id", name_field="name"),
-    ResourceDef("browser_control_settings",      "list_browser_control_settings",
-                id_field="id", name_field="name"),
-    ResourceDef("tenancy_restriction_profile",   "list_tenancy_restriction_profiles"),
-    ResourceDef("sandbox_rule",                  "list_sandbox_rules"),
-    ResourceDef("cloud_app_instance",            "list_cloud_app_instances",
-                id_field="instance_id", name_field="instance_name"),
+    ResourceDef("url_category", "list_url_categories", name_field="configured_name"),
+    ResourceDef("url_filtering_rule", "list_url_filtering_rules"),
+    ResourceDef("firewall_rule", "list_firewall_rules"),
+    ResourceDef("firewall_dns_rule", "list_firewall_dns_rules"),
+    ResourceDef("firewall_ips_rule", "list_firewall_ips_rules"),
+    ResourceDef("ssl_inspection_rule", "list_ssl_inspection_rules"),
+    ResourceDef("forwarding_rule", "list_forwarding_rules"),
+    ResourceDef("ip_destination_group", "list_ip_destination_groups"),
+    ResourceDef("ip_source_group", "list_ip_source_groups"),
+    ResourceDef("network_service", "list_network_services"),
+    ResourceDef("network_svc_group", "list_network_svc_groups"),
+    ResourceDef("rule_label", "list_rule_labels"),
+    ResourceDef("time_interval", "list_time_intervals"),
+    ResourceDef("location", "list_locations"),
+    ResourceDef("location_lite", "list_locations_lite"),
+    ResourceDef("location_group", "list_location_groups"),
+    ResourceDef("device_group", "list_device_groups"),
+    ResourceDef("admin_user", "list_admin_users"),
+    ResourceDef("admin_role", "list_admin_roles"),
+    ResourceDef("department", "list_departments"),
+    ResourceDef("group", "list_groups"),
+    ResourceDef("user", "list_users"),
+    ResourceDef("dlp_engine", "list_dlp_engines"),
+    ResourceDef("dlp_dictionary", "list_dlp_dictionaries"),
+    ResourceDef("cloud_app_policy", "list_cloud_app_policy", id_field="app", name_field="app_name"),
+    ResourceDef(
+        "cloud_app_ssl_policy", "list_cloud_app_ssl_policy", id_field="app", name_field="app_name"
+    ),
+    ResourceDef(
+        "cloud_app_control_rule", "list_all_cloud_app_rules", id_field="id", name_field="name"
+    ),
+    ResourceDef("allowlist", "list_allowlist", id_field="id", name_field="name"),
+    ResourceDef("denylist", "list_denylist", id_field="id", name_field="name"),
+    ResourceDef("dlp_web_rule", "list_dlp_web_rules"),
+    ResourceDef("nat_control_rule", "list_nat_control_rules"),
+    ResourceDef("bandwidth_class", "list_bandwidth_classes"),
+    ResourceDef("bandwidth_control_rule", "list_bandwidth_control_rules"),
+    ResourceDef("traffic_capture_rule", "list_traffic_capture_rules"),
+    ResourceDef("workload_group", "list_workload_groups"),
+    ResourceDef("network_app", "list_network_apps"),
+    ResourceDef("network_app_group", "list_network_app_groups"),
+    ResourceDef(
+        "url_filter_cloud_app_settings",
+        "list_url_filter_cloud_app_settings",
+        id_field="id",
+        name_field="name",
+    ),
+    ResourceDef("advanced_settings", "list_advanced_settings", id_field="id", name_field="name"),
+    ResourceDef(
+        "browser_control_settings",
+        "list_browser_control_settings",
+        id_field="id",
+        name_field="name",
+    ),
+    ResourceDef("tenancy_restriction_profile", "list_tenancy_restriction_profiles"),
+    ResourceDef("sandbox_rule", "list_sandbox_rules"),
+    ResourceDef(
+        "cloud_app_instance",
+        "list_cloud_app_instances",
+        id_field="instance_id",
+        name_field="instance_name",
+    ),
     # Full Clone types — imported for DB storage and Full Clone push path.
     # NOT in PUSH_ORDER or SKIP_TYPES; not touched by baseline push.
-    ResourceDef("static_ip",      "list_static_ips",      id_field="id"),
+    ResourceDef("static_ip", "list_static_ips", id_field="id"),
     ResourceDef("vpn_credential", "list_vpn_credentials", id_field="id"),
-    ResourceDef("gre_tunnel",     "list_gre_tunnels",     id_field="id"),
-    ResourceDef("sublocation",    "list_sublocations",    id_field="id"),
+    ResourceDef("gre_tunnel", "list_gre_tunnels", id_field="id"),
+    ResourceDef("sublocation", "list_sublocations", id_field="id"),
     # Third-party proxy chaining — the forwarding-rule -> proxyGateway ->
     # proxy -> cert chain.  root_certificate is undocumented and has no SDK
     # method; ZIAClient reaches it over direct HTTP, so it stores camelCase.
-    ResourceDef("proxy",            "list_proxies",           id_field="id", name_field="name"),
-    ResourceDef("proxy_gateway",    "list_proxy_gateways",    id_field="id", name_field="name"),
-    ResourceDef("root_certificate", "list_root_certificates", id_field="id", name_field="displayName",
-                list_args={"include_cert": True}),
+    ResourceDef("proxy", "list_proxies", id_field="id", name_field="name"),
+    ResourceDef("proxy_gateway", "list_proxy_gateways", id_field="id", name_field="name"),
+    ResourceDef(
+        "root_certificate",
+        "list_root_certificates",
+        id_field="id",
+        name_field="displayName",
+        list_args={"include_cert": True},
+    ),
     # Traffic Forwarding — subclouds imported for PAC file generator.
     ResourceDef("sub_cloud", "list_sub_clouds", id_field="id", name_field="name"),
     # PAC Files — metadata plus the deployed version's pac_content, so PAC
@@ -116,11 +137,13 @@ RESOURCE_DEFINITIONS: List[ResourceDef] = [
 # anyone means to make.  A template can therefore carry a subset of the keys,
 # and ZIAPushService merges that subset over the target's live settings instead
 # of PUTting it whole.
-SETTINGS_SINGLETONS: frozenset = frozenset({
-    "url_filter_cloud_app_settings",
-    "advanced_settings",
-    "browser_control_settings",
-})
+SETTINGS_SINGLETONS: frozenset = frozenset(
+    {
+        "url_filter_cloud_app_settings",
+        "advanced_settings",
+        "browser_control_settings",
+    }
+)
 
 # Wrapper fields added by the client so a singleton stores like a resource.  They
 # are not settings, and are never offered for selection or diffed as one.
@@ -169,8 +192,11 @@ class ZIAImportService:
         Returns:
             The completed SyncLog ORM object.
         """
-        all_defs = [d for d in RESOURCE_DEFINITIONS
-                    if resource_types is None or d.resource_type in resource_types]
+        all_defs = [
+            d
+            for d in RESOURCE_DEFINITIONS
+            if resource_types is None or d.resource_type in resource_types
+        ]
         total = len(all_defs)
 
         disabled_types = set(self._get_disabled_resource_types())
@@ -232,9 +258,17 @@ class ZIAImportService:
         deleted = self._mark_deleted(resource_types, run_start, skip_types=failed_types)
 
         all_skipped = sorted(disabled_types)
-        attempted = total - len([d for d in all_defs if d.resource_type in disabled_types and d.resource_type not in newly_disabled])
-        final_status = "FAILED" if (errors and len(errors) == attempted) else (
-            "PARTIAL" if errors else "SUCCESS"
+        attempted = total - len(
+            [
+                d
+                for d in all_defs
+                if d.resource_type in disabled_types and d.resource_type not in newly_disabled
+            ]
+        )
+        final_status = (
+            "FAILED"
+            if (errors and len(errors) == attempted)
+            else ("PARTIAL" if errors else "SUCCESS")
         )
 
         with get_session() as session:
@@ -333,20 +367,26 @@ class ZIAImportService:
                 )
 
                 if existing is None:
-                    session.add(ZIAResource(
-                        tenant_id=self.tenant_id,
-                        resource_type=defn.resource_type,
-                        zia_id=zia_id,
-                        name=name,
-                        raw_config=record,
-                        config_hash=new_hash,
-                        synced_at=run_start,
-                        is_deleted=False,
-                    ))
-                    pending_audit.append(dict(
-                        action="CREATE", resource_type=defn.resource_type,
-                        resource_id=zia_id, resource_name=name,
-                    ))
+                    session.add(
+                        ZIAResource(
+                            tenant_id=self.tenant_id,
+                            resource_type=defn.resource_type,
+                            zia_id=zia_id,
+                            name=name,
+                            raw_config=record,
+                            config_hash=new_hash,
+                            synced_at=run_start,
+                            is_deleted=False,
+                        )
+                    )
+                    pending_audit.append(
+                        dict(
+                            action="CREATE",
+                            resource_type=defn.resource_type,
+                            resource_id=zia_id,
+                            resource_name=name,
+                        )
+                    )
                     synced += 1
                 else:
                     existing.synced_at = run_start
@@ -355,10 +395,14 @@ class ZIAImportService:
                         existing.name = name
                         existing.raw_config = record
                         existing.config_hash = new_hash
-                        pending_audit.append(dict(
-                            action="UPDATE", resource_type=defn.resource_type,
-                            resource_id=zia_id, resource_name=name,
-                        ))
+                        pending_audit.append(
+                            dict(
+                                action="UPDATE",
+                                resource_type=defn.resource_type,
+                                resource_id=zia_id,
+                                resource_name=name,
+                            )
+                        )
                         updated += 1
                     synced += 1
 
@@ -389,11 +433,11 @@ class ZIAImportService:
                 Signature: callback(resource_type: str, done: int, total: int)
         """
         _CLONE_TYPES = [
-            ("static_ip",      "list_static_ips"),
+            ("static_ip", "list_static_ips"),
             ("vpn_credential", "list_vpn_credentials"),
-            ("gre_tunnel",     "list_gre_tunnels"),
-            ("location",       "list_locations"),
-            ("sublocation",    "list_sublocations"),
+            ("gre_tunnel", "list_gre_tunnels"),
+            ("location", "list_locations"),
+            ("sublocation", "list_sublocations"),
         ]
         total = len(_CLONE_TYPES)
         result: dict = {}
@@ -404,7 +448,8 @@ class ZIAImportService:
                 records = method() or []
                 result[rtype] = [
                     {"id": str(r.get("id", "")), "name": r.get("name", ""), "raw_config": r}
-                    for r in records if isinstance(r, dict)
+                    for r in records
+                    if isinstance(r, dict)
                 ]
             except Exception:
                 result[rtype] = []
@@ -432,7 +477,8 @@ class ZIAImportService:
         """
         deleted = 0
         type_filter = [
-            t for t in (resource_types or [d.resource_type for d in RESOURCE_DEFINITIONS])
+            t
+            for t in (resource_types or [d.resource_type for d in RESOURCE_DEFINITIONS])
             if t not in skip_types
         ]
         pending_audit: list = []
@@ -451,11 +497,13 @@ class ZIAImportService:
             )
             for row in stale:
                 row.is_deleted = True
-                pending_audit.append(dict(
-                    resource_type=row.resource_type,
-                    resource_id=row.zia_id,
-                    resource_name=row.name,
-                ))
+                pending_audit.append(
+                    dict(
+                        resource_type=row.resource_type,
+                        resource_id=row.zia_id,
+                        resource_name=row.name,
+                    )
+                )
                 deleted += 1
 
         for evt in pending_audit:

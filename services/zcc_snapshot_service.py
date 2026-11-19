@@ -12,19 +12,22 @@ from services import audit_service
 logger = logging.getLogger(__name__)
 
 _PASSWORD_FIELDS = {
-    "exitPassword", "zdxDisablePassword", "zdDisablePassword",
-    "zpaDisablePassword", "zdpDisablePassword",
+    "exitPassword",
+    "zdxDisablePassword",
+    "zdDisablePassword",
+    "zpaDisablePassword",
+    "zdpDisablePassword",
 }
 
 _RESTORE_STRATEGIES = {
-    "trusted_network":    "full_crud",
+    "trusted_network": "full_crud",
     "forwarding_profile": "update_only",
-    "web_policy":         "update_only",
-    "fail_open_policy":   "update_by_id",
-    "web_privacy":        "singleton",
-    "device_cleanup":     "singleton",
-    "entitlement_zpa":    "singleton",
-    "entitlement_zdx":    "singleton",
+    "web_policy": "update_only",
+    "fail_open_policy": "update_by_id",
+    "web_privacy": "singleton",
+    "device_cleanup": "singleton",
+    "entitlement_zpa": "singleton",
+    "entitlement_zdx": "singleton",
 }
 
 _SKIP_TYPES = {
@@ -151,11 +154,7 @@ class ZCCSnapshotService:
             if not snapshot or snapshot.tenant_id != self.tenant_id:
                 raise ValueError("snapshot not found")
 
-            snap_items = (
-                session.query(ZCCSnapshotItem)
-                .filter_by(snapshot_id=snapshot_id)
-                .all()
-            )
+            snap_items = session.query(ZCCSnapshotItem).filter_by(snapshot_id=snapshot_id).all()
             live_rows = (
                 session.query(ZCCResource)
                 .filter_by(tenant_id=self.tenant_id, is_deleted=False)
@@ -189,14 +188,16 @@ class ZCCSnapshotService:
                 changed_since = sum(1 for zid in both if snap_map[zid] != live_map[zid])
                 unchanged = sum(1 for zid in both if snap_map[zid] == live_map[zid])
 
-                results.append({
-                    "resource_type": rtype,
-                    "added_since": added_since,
-                    "removed_since": removed_since,
-                    "changed_since": changed_since,
-                    "unchanged": unchanged,
-                    "restorable": rtype in _RESTORABLE_TYPES,
-                })
+                results.append(
+                    {
+                        "resource_type": rtype,
+                        "added_since": added_since,
+                        "removed_since": removed_since,
+                        "changed_since": changed_since,
+                        "unchanged": unchanged,
+                        "restorable": rtype in _RESTORABLE_TYPES,
+                    }
+                )
 
         return results
 
@@ -216,18 +217,16 @@ class ZCCSnapshotService:
             if not snapshot or snapshot.tenant_id != self.tenant_id:
                 raise ValueError("snapshot not found")
 
-            snap_items = (
-                session.query(ZCCSnapshotItem)
-                .filter_by(snapshot_id=snapshot_id)
-                .all()
-            )
+            snap_items = session.query(ZCCSnapshotItem).filter_by(snapshot_id=snapshot_id).all()
             items_by_type: Dict[str, List] = {}
             for item in snap_items:
-                items_by_type.setdefault(item.resource_type, []).append({
-                    "zcc_id": item.zcc_id,
-                    "name": item.name,
-                    "raw_config": dict(item.raw_config) if item.raw_config else {},
-                })
+                items_by_type.setdefault(item.resource_type, []).append(
+                    {
+                        "zcc_id": item.zcc_id,
+                        "name": item.name,
+                        "raw_config": dict(item.raw_config) if item.raw_config else {},
+                    }
+                )
 
         results: List[dict] = []
 
@@ -258,38 +257,38 @@ class ZCCSnapshotService:
                     rtype, snap_list, effective_client, cross_tenant, dry_run, results
                 )
             elif strategy == "singleton":
-                self._restore_singleton(
-                    rtype, snap_list, effective_client, dry_run, results
-                )
+                self._restore_singleton(rtype, snap_list, effective_client, dry_run, results)
 
         summary = {
-            "created":      sum(1 for r in results if r["action"] == "created"      and r["success"]),
-            "updated":      sum(1 for r in results if r["action"] == "updated"      and r["success"]),
-            "deleted":      sum(1 for r in results if r["action"] == "deleted"      and r["success"]),
-            "skipped":      sum(1 for r in results if r["action"] == "skipped"),
-            "failed":       sum(1 for r in results if not r["success"] and r["action"] != "unrestorable"),
+            "created": sum(1 for r in results if r["action"] == "created" and r["success"]),
+            "updated": sum(1 for r in results if r["action"] == "updated" and r["success"]),
+            "deleted": sum(1 for r in results if r["action"] == "deleted" and r["success"]),
+            "skipped": sum(1 for r in results if r["action"] == "skipped"),
+            "failed": sum(1 for r in results if not r["success"] and r["action"] != "unrestorable"),
             "unrestorable": sum(1 for r in results if r["action"] == "unrestorable"),
         }
 
         pending_audit = []
         for r in results:
-            pending_audit.append({
-                "product": "ZCC",
-                "operation": "zcc_restore",
-                "action": r["action"].upper(),
-                "status": "SUCCESS" if r["success"] else "FAILURE",
-                "tenant_id": self.tenant_id,
-                "resource_type": r["resource_type"],
-                "resource_id": r["zcc_id"],
-                "resource_name": r["name"],
-                "details": {
-                    "snapshot_id": snapshot_id,
-                    "dry_run": dry_run,
-                    "target_tenant_id": target_tenant_id,
-                    "reason": r["reason"],
-                },
-                "error_message": r["reason"] if not r["success"] else None,
-            })
+            pending_audit.append(
+                {
+                    "product": "ZCC",
+                    "operation": "zcc_restore",
+                    "action": r["action"].upper(),
+                    "status": "SUCCESS" if r["success"] else "FAILURE",
+                    "tenant_id": self.tenant_id,
+                    "resource_type": r["resource_type"],
+                    "resource_id": r["zcc_id"],
+                    "resource_name": r["name"],
+                    "details": {
+                        "snapshot_id": snapshot_id,
+                        "dry_run": dry_run,
+                        "target_tenant_id": target_tenant_id,
+                        "reason": r["reason"],
+                    },
+                    "error_message": r["reason"] if not r["success"] else None,
+                }
+            )
 
         if pending_audit:
             audit_service.log_many(pending_audit)
@@ -305,14 +304,16 @@ class ZCCSnapshotService:
             live_list = client.list_trusted_networks()
         except Exception as exc:
             for item in snap_list:
-                results.append({
-                    "resource_type": rtype,
-                    "action": "failed",
-                    "name": item["name"],
-                    "zcc_id": item["zcc_id"],
-                    "success": False,
-                    "reason": f"failed to load live state: {exc}",
-                })
+                results.append(
+                    {
+                        "resource_type": rtype,
+                        "action": "failed",
+                        "name": item["name"],
+                        "zcc_id": item["zcc_id"],
+                        "success": False,
+                        "reason": f"failed to load live state: {exc}",
+                    }
+                )
             return
 
         def _get_name(cfg):
@@ -340,105 +341,123 @@ class ZCCSnapshotService:
                 payload["id"] = live_match.get("id")
 
                 if dry_run:
-                    results.append({
-                        "resource_type": rtype,
-                        "action": "updated",
-                        "name": name,
-                        "zcc_id": zcc_id,
-                        "success": True,
-                        "reason": None,
-                    })
-                else:
-                    try:
-                        client.update_trusted_network(**payload)
-                        results.append({
+                    results.append(
+                        {
                             "resource_type": rtype,
                             "action": "updated",
                             "name": name,
                             "zcc_id": zcc_id,
                             "success": True,
                             "reason": None,
-                        })
+                        }
+                    )
+                else:
+                    try:
+                        client.update_trusted_network(**payload)
+                        results.append(
+                            {
+                                "resource_type": rtype,
+                                "action": "updated",
+                                "name": name,
+                                "zcc_id": zcc_id,
+                                "success": True,
+                                "reason": None,
+                            }
+                        )
                     except Exception as exc:
                         logger.debug("trusted_network update failed", exc_info=True)
-                        results.append({
-                            "resource_type": rtype,
-                            "action": "updated",
-                            "name": name,
-                            "zcc_id": zcc_id,
-                            "success": False,
-                            "reason": str(exc),
-                        })
+                        results.append(
+                            {
+                                "resource_type": rtype,
+                                "action": "updated",
+                                "name": name,
+                                "zcc_id": zcc_id,
+                                "success": False,
+                                "reason": str(exc),
+                            }
+                        )
             else:
                 payload = dict(cfg)
                 for fld in ("id", "active", "companyId", "tenantId"):
                     payload.pop(fld, None)
 
                 if dry_run:
-                    results.append({
-                        "resource_type": rtype,
-                        "action": "created",
-                        "name": name,
-                        "zcc_id": zcc_id,
-                        "success": True,
-                        "reason": None,
-                    })
-                else:
-                    try:
-                        client.create_trusted_network(**payload)
-                        results.append({
+                    results.append(
+                        {
                             "resource_type": rtype,
                             "action": "created",
                             "name": name,
                             "zcc_id": zcc_id,
                             "success": True,
                             "reason": None,
-                        })
+                        }
+                    )
+                else:
+                    try:
+                        client.create_trusted_network(**payload)
+                        results.append(
+                            {
+                                "resource_type": rtype,
+                                "action": "created",
+                                "name": name,
+                                "zcc_id": zcc_id,
+                                "success": True,
+                                "reason": None,
+                            }
+                        )
                     except Exception as exc:
                         logger.debug("trusted_network create failed", exc_info=True)
-                        results.append({
-                            "resource_type": rtype,
-                            "action": "created",
-                            "name": name,
-                            "zcc_id": zcc_id,
-                            "success": False,
-                            "reason": str(exc),
-                        })
+                        results.append(
+                            {
+                                "resource_type": rtype,
+                                "action": "created",
+                                "name": name,
+                                "zcc_id": zcc_id,
+                                "success": False,
+                                "reason": str(exc),
+                            }
+                        )
 
         for live_item in live_list:
             live_name = _get_name(live_item)
             if live_name and live_name not in snap_names:
                 live_id = live_item.get("id")
                 if dry_run:
-                    results.append({
-                        "resource_type": rtype,
-                        "action": "deleted",
-                        "name": live_name,
-                        "zcc_id": str(live_id) if live_id else None,
-                        "success": True,
-                        "reason": None,
-                    })
-                else:
-                    try:
-                        client.delete_trusted_network(live_id)
-                        results.append({
+                    results.append(
+                        {
                             "resource_type": rtype,
                             "action": "deleted",
                             "name": live_name,
                             "zcc_id": str(live_id) if live_id else None,
                             "success": True,
                             "reason": None,
-                        })
+                        }
+                    )
+                else:
+                    try:
+                        client.delete_trusted_network(live_id)
+                        results.append(
+                            {
+                                "resource_type": rtype,
+                                "action": "deleted",
+                                "name": live_name,
+                                "zcc_id": str(live_id) if live_id else None,
+                                "success": True,
+                                "reason": None,
+                            }
+                        )
                     except Exception as exc:
                         logger.debug("trusted_network delete failed", exc_info=True)
-                        results.append({
-                            "resource_type": rtype,
-                            "action": "deleted",
-                            "name": live_name,
-                            "zcc_id": str(live_id) if live_id else None,
-                            "success": False,
-                            "reason": str(exc),
-                        })
+                        results.append(
+                            {
+                                "resource_type": rtype,
+                                "action": "deleted",
+                                "name": live_name,
+                                "zcc_id": str(live_id) if live_id else None,
+                                "success": False,
+                                "reason": str(exc),
+                            }
+                        )
 
     def _restore_update_only(self, rtype, snap_list, client, cross_tenant, dry_run, results):
         try:
@@ -448,14 +467,16 @@ class ZCCSnapshotService:
                 live_list = client.list_web_policies()
         except Exception as exc:
             for item in snap_list:
-                results.append({
-                    "resource_type": rtype,
-                    "action": "failed",
-                    "name": item["name"],
-                    "zcc_id": item["zcc_id"],
-                    "success": False,
-                    "reason": f"failed to load live state: {exc}",
-                })
+                results.append(
+                    {
+                        "resource_type": rtype,
+                        "action": "failed",
+                        "name": item["name"],
+                        "zcc_id": item["zcc_id"],
+                        "success": False,
+                        "reason": f"failed to load live state: {exc}",
+                    }
+                )
             return
 
         live_by_id = {str(r.get("id", "")): r for r in live_list if r.get("id")}
@@ -476,28 +497,32 @@ class ZCCSnapshotService:
                 live_match = live_by_name.get(name)
 
             if live_match is None:
-                results.append({
-                    "resource_type": rtype,
-                    "action": "unrestorable",
-                    "name": name,
-                    "zcc_id": zcc_id,
-                    "success": False,
-                    "reason": "no create API available",
-                })
+                results.append(
+                    {
+                        "resource_type": rtype,
+                        "action": "unrestorable",
+                        "name": name,
+                        "zcc_id": zcc_id,
+                        "success": False,
+                        "reason": "no create API available",
+                    }
+                )
                 continue
 
             payload = dict(cfg)
             payload["id"] = live_match.get("id")
 
             if dry_run:
-                results.append({
-                    "resource_type": rtype,
-                    "action": "updated",
-                    "name": name,
-                    "zcc_id": zcc_id,
-                    "success": True,
-                    "reason": None,
-                })
+                results.append(
+                    {
+                        "resource_type": rtype,
+                        "action": "updated",
+                        "name": name,
+                        "zcc_id": zcc_id,
+                        "success": True,
+                        "reason": None,
+                    }
+                )
                 continue
 
             try:
@@ -505,38 +530,44 @@ class ZCCSnapshotService:
                     client.update_forwarding_profile(**payload)
                 else:
                     client.edit_web_policy(**payload)
-                results.append({
-                    "resource_type": rtype,
-                    "action": "updated",
-                    "name": name,
-                    "zcc_id": zcc_id,
-                    "success": True,
-                    "reason": None,
-                })
+                results.append(
+                    {
+                        "resource_type": rtype,
+                        "action": "updated",
+                        "name": name,
+                        "zcc_id": zcc_id,
+                        "success": True,
+                        "reason": None,
+                    }
+                )
             except Exception as exc:
                 logger.debug("%s update failed", rtype, exc_info=True)
-                results.append({
-                    "resource_type": rtype,
-                    "action": "updated",
-                    "name": name,
-                    "zcc_id": zcc_id,
-                    "success": False,
-                    "reason": str(exc),
-                })
+                results.append(
+                    {
+                        "resource_type": rtype,
+                        "action": "updated",
+                        "name": name,
+                        "zcc_id": zcc_id,
+                        "success": False,
+                        "reason": str(exc),
+                    }
+                )
 
     def _restore_update_by_id(self, rtype, snap_list, client, cross_tenant, dry_run, results):
         try:
             live_list = client.list_fail_open_policies()
         except Exception as exc:
             for item in snap_list:
-                results.append({
-                    "resource_type": rtype,
-                    "action": "failed",
-                    "name": item["name"],
-                    "zcc_id": item["zcc_id"],
-                    "success": False,
-                    "reason": f"failed to load live state: {exc}",
-                })
+                results.append(
+                    {
+                        "resource_type": rtype,
+                        "action": "failed",
+                        "name": item["name"],
+                        "zcc_id": item["zcc_id"],
+                        "success": False,
+                        "reason": f"failed to load live state: {exc}",
+                    }
+                )
             return
 
         live_by_id = {str(r.get("id", "")): r for r in live_list if r.get("id")}
@@ -558,50 +589,58 @@ class ZCCSnapshotService:
                 live_match = live_by_device_type.get(_device_type(cfg))
 
             if live_match is None:
-                results.append({
-                    "resource_type": rtype,
-                    "action": "unrestorable",
-                    "name": name,
-                    "zcc_id": zcc_id,
-                    "success": False,
-                    "reason": "no match by id/device_type in target tenant",
-                })
+                results.append(
+                    {
+                        "resource_type": rtype,
+                        "action": "unrestorable",
+                        "name": name,
+                        "zcc_id": zcc_id,
+                        "success": False,
+                        "reason": "no match by id/device_type in target tenant",
+                    }
+                )
                 continue
 
             payload = dict(cfg)
             payload["id"] = live_match.get("id")
 
             if dry_run:
-                results.append({
-                    "resource_type": rtype,
-                    "action": "updated",
-                    "name": name,
-                    "zcc_id": zcc_id,
-                    "success": True,
-                    "reason": None,
-                })
+                results.append(
+                    {
+                        "resource_type": rtype,
+                        "action": "updated",
+                        "name": name,
+                        "zcc_id": zcc_id,
+                        "success": True,
+                        "reason": None,
+                    }
+                )
                 continue
 
             try:
                 client.update_fail_open_policy(**payload)
-                results.append({
-                    "resource_type": rtype,
-                    "action": "updated",
-                    "name": name,
-                    "zcc_id": zcc_id,
-                    "success": True,
-                    "reason": None,
-                })
+                results.append(
+                    {
+                        "resource_type": rtype,
+                        "action": "updated",
+                        "name": name,
+                        "zcc_id": zcc_id,
+                        "success": True,
+                        "reason": None,
+                    }
+                )
             except Exception as exc:
                 logger.debug("fail_open_policy update failed", exc_info=True)
-                results.append({
-                    "resource_type": rtype,
-                    "action": "updated",
-                    "name": name,
-                    "zcc_id": zcc_id,
-                    "success": False,
-                    "reason": str(exc),
-                })
+                results.append(
+                    {
+                        "resource_type": rtype,
+                        "action": "updated",
+                        "name": name,
+                        "zcc_id": zcc_id,
+                        "success": False,
+                        "reason": str(exc),
+                    }
+                )
 
     def _restore_singleton(self, rtype, snap_list, client, dry_run, results):
         if not snap_list:
@@ -614,14 +653,16 @@ class ZCCSnapshotService:
         zcc_id = item["zcc_id"]
 
         if dry_run:
-            results.append({
-                "resource_type": rtype,
-                "action": "updated",
-                "name": name,
-                "zcc_id": zcc_id,
-                "success": True,
-                "reason": None,
-            })
+            results.append(
+                {
+                    "resource_type": rtype,
+                    "action": "updated",
+                    "name": name,
+                    "zcc_id": zcc_id,
+                    "success": True,
+                    "reason": None,
+                }
+            )
             return
 
         try:
@@ -633,21 +674,25 @@ class ZCCSnapshotService:
                 client.update_zpa_entitlements(cfg)
             elif rtype == "entitlement_zdx":
                 client.update_zdx_entitlements(cfg)
-            results.append({
-                "resource_type": rtype,
-                "action": "updated",
-                "name": name,
-                "zcc_id": zcc_id,
-                "success": True,
-                "reason": None,
-            })
+            results.append(
+                {
+                    "resource_type": rtype,
+                    "action": "updated",
+                    "name": name,
+                    "zcc_id": zcc_id,
+                    "success": True,
+                    "reason": None,
+                }
+            )
         except Exception as exc:
             logger.debug("%s singleton update failed", rtype, exc_info=True)
-            results.append({
-                "resource_type": rtype,
-                "action": "updated",
-                "name": name,
-                "zcc_id": zcc_id,
-                "success": False,
-                "reason": str(exc),
-            })
+            results.append(
+                {
+                    "resource_type": rtype,
+                    "action": "updated",
+                    "name": name,
+                    "zcc_id": zcc_id,
+                    "success": False,
+                    "reason": str(exc),
+                }
+            )

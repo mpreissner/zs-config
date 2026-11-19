@@ -80,32 +80,31 @@ PORTABLE_LOCATIONS: frozenset = frozenset({"LOC_DEFAULT", "Cloud Browser"})
 
 # Human-readable reasons for type-level strips (shown in the preview UI).
 _STRIP_REASONS: Dict[str, str] = {
-    "location":                 "Encodes public IP addresses and VPN credential references",
-    "sublocation":              "Child of a location; IP-topology-specific",
-    "vpn_credential":           "Contains FQDN + pre-shared key unique to source network",
-    "static_ip":                "Public IP registered with ZIA; unique to source network",
-    "gre_tunnel":               "References source public IPs; entirely topology-specific",
-    "pac_file":                 "May reference internal hostnames or proxy IPs",
-    "location_lite":            "Reference-only — imported for ID remapping, not pushable",
-    "location_group":           "Reference-only — read-only in SDK",
-    "device_group":             "Reference-only — predefined OS/platform groups",
-    "user":                     "Identity data, not portable across tenants",
-    "group":                    "Identity data, not portable across tenants",
-    "department":               "Identity data, not portable across tenants",
-    "admin_user":               "Admin accounts are tenant-specific",
-    "admin_role":               "Admin roles are tenant-specific",
+    "location": "Encodes public IP addresses and VPN credential references",
+    "sublocation": "Child of a location; IP-topology-specific",
+    "vpn_credential": "Contains FQDN + pre-shared key unique to source network",
+    "static_ip": "Public IP registered with ZIA; unique to source network",
+    "gre_tunnel": "References source public IPs; entirely topology-specific",
+    "pac_file": "May reference internal hostnames or proxy IPs",
+    "location_lite": "Reference-only — imported for ID remapping, not pushable",
+    "location_group": "Reference-only — read-only in SDK",
+    "device_group": "Reference-only — predefined OS/platform groups",
+    "user": "Identity data, not portable across tenants",
+    "group": "Identity data, not portable across tenants",
+    "department": "Identity data, not portable across tenants",
+    "admin_user": "Admin accounts are tenant-specific",
+    "admin_role": "Admin roles are tenant-specific",
     "tenancy_restriction_profile": "Tenant-specific; references tenant-specific IDs",
 }
 
-_ENTRY_STRIP_REASON = "Some entries stripped (tenant-specific scope, system rules, or non-portable references)"
+_ENTRY_STRIP_REASON = (
+    "Some entries stripped (tenant-specific scope, system rules, or non-portable references)"
+)
 
 
 def _has_tenant_location(rc: dict) -> bool:
     """Return True if raw_config references any non-portable (physical) location."""
-    return any(
-        loc.get("name") not in PORTABLE_LOCATIONS
-        for loc in rc.get("locations", [])
-    )
+    return any(loc.get("name") not in PORTABLE_LOCATIONS for loc in rc.get("locations", []))
 
 
 def _has_zpa_ref(rc: dict) -> bool:
@@ -137,9 +136,13 @@ def _should_strip_entry(rtype: str, entry: dict) -> bool:
     rc = entry.get("raw_config", {})
 
     if rtype in (
-        "dlp_dictionary", "dlp_engine",
-        "network_app", "network_app_group",
-        "cloud_app_policy", "cloud_app_ssl_policy", "cloud_app_instance",
+        "dlp_dictionary",
+        "dlp_engine",
+        "network_app",
+        "network_app_group",
+        "cloud_app_policy",
+        "cloud_app_ssl_policy",
+        "cloud_app_instance",
         "url_category",
     ):
         # Keep ALL entries — built-ins are needed so classify_baseline can register
@@ -205,6 +208,7 @@ def _renumber_orders(entries: List[dict], group_field: Optional[str] = None) -> 
 
     if group_field:
         from collections import defaultdict
+
         groups: Dict[str, List[dict]] = defaultdict(list)
         for e in entries:
             key = e.get("raw_config", {}).get(group_field, "")
@@ -295,42 +299,42 @@ def _strip_snapshot(
 # every tenant, and the identity/location/ZPA fields belong to types a template
 # never carries at all (an entry referencing one is stripped outright).
 _REF_FIELDS: Dict[str, str] = {
-    "labels":                 "rule_label",
-    "nw_services":            "network_service",
-    "nwServices":             "network_service",
-    "nw_service_groups":      "network_svc_group",
-    "nwServiceGroups":        "network_svc_group",
-    "nw_application_groups":  "network_app_group",
-    "nwApplicationGroups":    "network_app_group",
-    "src_ip_groups":          "ip_source_group",
-    "srcIpGroups":            "ip_source_group",
-    "source_ip_groups":       "ip_source_group",
-    "sourceIpGroups":         "ip_source_group",
-    "dest_ip_groups":         "ip_destination_group",
-    "destIpGroups":           "ip_destination_group",
-    "dlp_engines":            "dlp_engine",
-    "dlpEngines":             "dlp_engine",
-    "dlp_dictionaries":       "dlp_dictionary",
-    "sub_dictionaries":       "dlp_dictionary",
-    "subDictionaries":        "dlp_dictionary",
-    "time_windows":           "time_interval",
-    "timeWindows":            "time_interval",
-    "workload_groups":        "workload_group",
-    "workloadGroups":         "workload_group",
-    "bandwidth_classes":      "bandwidth_class",
-    "bandwidthClasses":       "bandwidth_class",
-    "proxy_gateways":         "proxy_gateway",
-    "proxyGateways":          "proxy_gateway",
-    "proxy_gateway":          "proxy_gateway",
-    "proxyGateway":           "proxy_gateway",
-    "primary_proxy":          "proxy",
-    "primaryProxy":           "proxy",
-    "secondary_proxy":        "proxy",
-    "secondaryProxy":         "proxy",
-    "cert":                   "root_certificate",
-    "url_categories":         "url_category",
-    "urlCategories":          "url_category",
-    "tenancy_profile_ids":    "tenancy_restriction_profile",
+    "labels": "rule_label",
+    "nw_services": "network_service",
+    "nwServices": "network_service",
+    "nw_service_groups": "network_svc_group",
+    "nwServiceGroups": "network_svc_group",
+    "nw_application_groups": "network_app_group",
+    "nwApplicationGroups": "network_app_group",
+    "src_ip_groups": "ip_source_group",
+    "srcIpGroups": "ip_source_group",
+    "source_ip_groups": "ip_source_group",
+    "sourceIpGroups": "ip_source_group",
+    "dest_ip_groups": "ip_destination_group",
+    "destIpGroups": "ip_destination_group",
+    "dlp_engines": "dlp_engine",
+    "dlpEngines": "dlp_engine",
+    "dlp_dictionaries": "dlp_dictionary",
+    "sub_dictionaries": "dlp_dictionary",
+    "subDictionaries": "dlp_dictionary",
+    "time_windows": "time_interval",
+    "timeWindows": "time_interval",
+    "workload_groups": "workload_group",
+    "workloadGroups": "workload_group",
+    "bandwidth_classes": "bandwidth_class",
+    "bandwidthClasses": "bandwidth_class",
+    "proxy_gateways": "proxy_gateway",
+    "proxyGateways": "proxy_gateway",
+    "proxy_gateway": "proxy_gateway",
+    "proxyGateway": "proxy_gateway",
+    "primary_proxy": "proxy",
+    "primaryProxy": "proxy",
+    "secondary_proxy": "proxy",
+    "secondaryProxy": "proxy",
+    "cert": "root_certificate",
+    "url_categories": "url_category",
+    "urlCategories": "url_category",
+    "tenancy_profile_ids": "tenancy_restriction_profile",
 }
 
 #: Types whose entries are identified by a string rather than a numeric ID.
@@ -361,6 +365,7 @@ def _iter_refs(raw_config: dict) -> Iterator[Tuple[str, str]]:
     _REF_FIELDS are followed, so an unknown embedded object is ignored rather
     than guessed at.
     """
+
     def walk(node):
         if isinstance(node, dict):
             for key, value in node.items():
@@ -400,10 +405,7 @@ def _iter_refs(raw_config: dict) -> Iterator[Tuple[str, str]]:
 
 def _index(resources: Dict[str, List[dict]]) -> Dict[str, Dict[str, dict]]:
     """resource_type → {entry id (as str) → entry}."""
-    return {
-        rtype: {str(e.get("id")): e for e in entries}
-        for rtype, entries in resources.items()
-    }
+    return {rtype: {str(e.get("id")): e for e in entries} for rtype, entries in resources.items()}
 
 
 def resolve_dependencies(
@@ -433,9 +435,7 @@ def resolve_dependencies(
     closed: Dict[str, Set[str]] = {
         rtype: {str(i) for i in ids} for rtype, ids in selection.items() if ids
     }
-    chosen: Set[Tuple[str, str]] = {
-        (rtype, eid) for rtype, ids in closed.items() for eid in ids
-    }
+    chosen: Set[Tuple[str, str]] = {(rtype, eid) for rtype, ids in closed.items() for eid in ids}
 
     additions: List[dict] = []
     warnings: List[str] = []
@@ -459,9 +459,11 @@ def resolve_dependencies(
             if target is None:
                 if key not in warned and not _resolves_without_travelling(ref_type, ref_id):
                     warned.add(key)
-                    why = ("is not portable and was stripped from the template"
-                           if ref_type in TEMPLATE_STRIP_TYPES
-                           else "is not present in the snapshot")
+                    why = (
+                        "is not portable and was stripped from the template"
+                        if ref_type in TEMPLATE_STRIP_TYPES
+                        else "is not present in the snapshot"
+                    )
                     # Capped: an ID reaches the UI verbatim, and raw_config holds
                     # values far longer than a name.
                     shown = ref_id if len(ref_id) <= 60 else ref_id[:60] + "…"
@@ -475,13 +477,15 @@ def resolve_dependencies(
             worklist.append(key)
             closed.setdefault(ref_type, set()).add(ref_id)
             rc = target.get("raw_config") or {}
-            additions.append({
-                "resource_type": ref_type,
-                "id": ref_id,
-                "name": _entry_name(ref_type, target),
-                "predefined": _is_predefined(ref_type, rc),
-                "required_by": entry.get("name") or eid,
-            })
+            additions.append(
+                {
+                    "resource_type": ref_type,
+                    "id": ref_id,
+                    "name": _entry_name(ref_type, target),
+                    "predefined": _is_predefined(ref_type, rc),
+                    "required_by": entry.get("name") or eid,
+                }
+            )
 
     return {rtype: sorted(ids) for rtype, ids in closed.items()}, additions, warnings
 
@@ -489,6 +493,7 @@ def resolve_dependencies(
 # ---------------------------------------------------------------------------
 # Per-entry preview
 # ---------------------------------------------------------------------------
+
 
 def _is_predefined(rtype: str, rc: dict) -> bool:
     """Whether an entry already exists in every tenant and is matched, not created."""
@@ -500,8 +505,13 @@ def _is_predefined(rtype: str, rc: dict) -> bool:
         return rc.get("type") in ("PREDEFINED", "STANDARD")
     if rtype == "dlp_engine":
         return rc.get("custom_dlp_engine") is False
-    for flag in ("is_name_l10n_tag", "isNameL10nTag", "name_l10n_tag",
-                 "default_rule", "defaultRule"):
+    for flag in (
+        "is_name_l10n_tag",
+        "isNameL10nTag",
+        "name_l10n_tag",
+        "default_rule",
+        "defaultRule",
+    ):
         if rc.get(flag) is True:
             return True
     return False
@@ -519,8 +529,14 @@ def _entry_name(rtype: str, entry: dict) -> str:
     if name:
         return name
     rc = entry.get("raw_config") or {}
-    for field in ("configured_name", "configuredName", "predefined_engine_name",
-                  "predefinedEngineName", "display_name", "displayName"):
+    for field in (
+        "configured_name",
+        "configuredName",
+        "predefined_engine_name",
+        "predefinedEngineName",
+        "display_name",
+        "displayName",
+    ):
         candidate = (rc.get(field) or "").strip()
         if candidate:
             return candidate
@@ -574,11 +590,28 @@ def _summarize(rtype: str, rc: dict) -> str:
 # the settings singletons — this is a readability pass on a picker label, not a
 # general-purpose humanizer.
 _LABEL_WORDS = {
-    "ai": "AI", "api": "API", "dlp": "DLP", "dns": "DNS", "ftp": "FTP",
-    "gpt": "GPT", "http": "HTTP", "https": "HTTPS", "id": "ID", "ip": "IP",
-    "ipv6": "IPv6", "ips": "IPS", "nss": "NSS", "ocr": "OCR", "pac": "PAC",
-    "poe": "POE", "saml": "SAML", "ssl": "SSL", "ui": "UI", "url": "URL",
-    "zia": "ZIA", "zpa": "ZPA",
+    "ai": "AI",
+    "api": "API",
+    "dlp": "DLP",
+    "dns": "DNS",
+    "ftp": "FTP",
+    "gpt": "GPT",
+    "http": "HTTP",
+    "https": "HTTPS",
+    "id": "ID",
+    "ip": "IP",
+    "ipv6": "IPv6",
+    "ips": "IPS",
+    "nss": "NSS",
+    "ocr": "OCR",
+    "pac": "PAC",
+    "poe": "POE",
+    "saml": "SAML",
+    "ssl": "SSL",
+    "ui": "UI",
+    "url": "URL",
+    "zia": "ZIA",
+    "zpa": "ZPA",
 }
 
 # Product names the split breaks in two.
@@ -593,15 +626,12 @@ _LABEL_PHRASES = {
 
 
 def _field_label(key: str) -> str:
-    """"enableChatGptPrompt" → "Enable ChatGPT Prompt"."""
+    """ "enableChatGptPrompt" → "Enable ChatGPT Prompt"."""
     spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", key.replace("_", " "))
     # Second pass for runs of capitals: "SSLBypass" splits before the last one,
     # which the lower→upper rule above cannot see.
     spaced = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", " ", spaced)
-    label = " ".join(
-        _LABEL_WORDS.get(w.lower(), w[0].upper() + w[1:])
-        for w in spaced.split() if w
-    )
+    label = " ".join(_LABEL_WORDS.get(w.lower(), w[0].upper() + w[1:]) for w in spaced.split() if w)
     for wrong, right in _LABEL_PHRASES.items():
         label = label.replace(wrong, right)
     return label
@@ -773,13 +803,14 @@ def _apply_field_selection(
                     f"{', '.join(sorted(missing))} "
                     f"{'are' if len(missing) != 1 else 'is'} no longer in the snapshot"
                 )
-            narrowed.append({
-                **entry,
-                "raw_config": {
-                    k: v for k, v in rc.items()
-                    if k in wanted or k in SETTINGS_METADATA_FIELDS
-                },
-            })
+            narrowed.append(
+                {
+                    **entry,
+                    "raw_config": {
+                        k: v for k, v in rc.items() if k in wanted or k in SETTINGS_METADATA_FIELDS
+                    },
+                }
+            )
         result[rtype] = narrowed
 
 
@@ -789,9 +820,11 @@ def _load_snapshot(
     session: Session,
 ) -> RestorePoint:
     """Load and validate a ZIA RestorePoint."""
-    snap = session.query(RestorePoint).filter_by(
-        id=snapshot_id, tenant_id=source_tenant_id, product="ZIA"
-    ).first()
+    snap = (
+        session.query(RestorePoint)
+        .filter_by(id=snapshot_id, tenant_id=source_tenant_id, product="ZIA")
+        .first()
+    )
     if snap is None:
         raise LookupError(f"ZIA snapshot {snapshot_id} not found for tenant {source_tenant_id}")
     return snap
@@ -815,10 +848,7 @@ def preview_template_from_snapshot(
     resources = snap.snapshot.get("resources", {})
     kept, stripped_types, included_types, stripped_entry_counts = _strip_snapshot(resources)
 
-    included = [
-        {"resource_type": rt, "count": len(kept[rt])}
-        for rt in included_types
-    ]
+    included = [{"resource_type": rt, "count": len(kept[rt])} for rt in included_types]
     stripped = [
         {
             "resource_type": rt,
@@ -832,7 +862,11 @@ def preview_template_from_snapshot(
         for rt, n in sorted(stripped_entry_counts.items())
     ]
 
-    return {"included": included, "stripped": stripped, "stripped_rule_entries": stripped_rule_entries}
+    return {
+        "included": included,
+        "stripped": stripped,
+        "stripped_rule_entries": stripped_rule_entries,
+    }
 
 
 def create_template_from_snapshot(
@@ -879,9 +913,7 @@ def create_template_from_snapshot(
     if existing is not None:
         owner = existing.owner_username
         suffix = f" (owned by {owner})" if owner else ""
-        raise ValueError(
-            f'duplicate_name:A template named "{name}" already exists{suffix}'
-        )
+        raise ValueError(f'duplicate_name:A template named "{name}" already exists{suffix}')
 
     snap = _load_snapshot(snapshot_id, source_tenant_id, session)
     resources = snap.snapshot.get("resources", {})
@@ -899,21 +931,16 @@ def create_template_from_snapshot(
             "warnings": warnings,
         }
         if field_selection:
-            selection_meta["fields"] = {
-                k: sorted(v) for k, v in field_selection.items() if v
-            }
+            selection_meta["fields"] = {k: sorted(v) for k, v in field_selection.items() if v}
     elif field_selection:
         raise ValueError(
-            "invalid_selection:Individual settings can only be chosen for a "
-            "scoped template"
+            "invalid_selection:Individual settings can only be chosen for a scoped template"
         )
 
     resource_count = sum(len(v) for v in kept.values())
     if resource_count == 0:
         if selection:
-            raise ValueError(
-                "invalid_selection:No resources were selected"
-            )
+            raise ValueError("invalid_selection:No resources were selected")
         stripped_summary = ", ".join(stripped_types) if stripped_types else "all types"
         raise ValueError(
             f"no_portable_resources:Snapshot has no portable resources after stripping "

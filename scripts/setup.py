@@ -28,7 +28,8 @@ console = Console()
 def main():
     parser = argparse.ArgumentParser(description="Zscaler OneAPI configuration setup")
     parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         default=None,
         help=f"Output path for conf file (default: {DEFAULT_CONF_PATH})",
     )
@@ -74,10 +75,13 @@ def main():
     ).ask()
 
     # --- Output path ---
-    conf_path = args.output or questionary.path(
-        "Configuration file path:",
-        default=DEFAULT_CONF_PATH,
-    ).ask()
+    conf_path = (
+        args.output
+        or questionary.path(
+            "Configuration file path:",
+            default=DEFAULT_CONF_PATH,
+        ).ask()
+    )
     if not conf_path:
         console.print("[yellow]Cancelled.[/yellow]")
         return

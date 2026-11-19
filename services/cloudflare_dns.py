@@ -3,6 +3,7 @@
 Kept deliberately small: verify a token, find the zone that owns a hostname,
 and add/remove TXT records. Nothing here ever logs or returns the API token.
 """
+
 import requests
 
 API_BASE = "https://api.cloudflare.com/client/v4"
@@ -39,15 +40,11 @@ def _call(method: str, path: str, token: str, **kwargs):
     try:
         body = resp.json()
     except ValueError:
-        raise CloudflareError(
-            f"Cloudflare returned a non-JSON response (HTTP {resp.status_code})."
-        )
+        raise CloudflareError(f"Cloudflare returned a non-JSON response (HTTP {resp.status_code}).")
 
     if not body.get("success"):
         errors = body.get("errors") or []
-        detail = "; ".join(
-            str(e.get("message") or e) for e in errors
-        ) or f"HTTP {resp.status_code}"
+        detail = "; ".join(str(e.get("message") or e) for e in errors) or f"HTTP {resp.status_code}"
         raise CloudflareError(f"Cloudflare API error: {detail}")
 
     return body.get("result")
@@ -87,19 +84,29 @@ def find_zone(token: str, fqdn: str) -> tuple:
 
 def find_txt_records(token: str, zone_id: str, name: str) -> list:
     """Return the IDs of existing TXT records at ``name``."""
-    records = _call(
-        "GET", f"/zones/{zone_id}/dns_records", token,
-        params={"type": "TXT", "name": name},
-    ) or []
+    records = (
+        _call(
+            "GET",
+            f"/zones/{zone_id}/dns_records",
+            token,
+            params={"type": "TXT", "name": name},
+        )
+        or []
+    )
     return [r["id"] for r in records]
 
 
 def create_txt(token: str, zone_id: str, name: str, value: str) -> str:
     """Create a TXT record and return its ID."""
-    record = _call(
-        "POST", f"/zones/{zone_id}/dns_records", token,
-        json={"type": "TXT", "name": name, "content": value, "ttl": CHALLENGE_TTL},
-    ) or {}
+    record = (
+        _call(
+            "POST",
+            f"/zones/{zone_id}/dns_records",
+            token,
+            json={"type": "TXT", "name": name, "content": value, "ttl": CHALLENGE_TTL},
+        )
+        or {}
+    )
     record_id = record.get("id")
     if not record_id:
         raise CloudflareError("Cloudflare accepted the TXT record but returned no ID.")

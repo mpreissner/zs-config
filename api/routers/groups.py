@@ -17,8 +17,11 @@ from services.group_service import GroupError
 router = APIRouter(prefix="/api/v1/admin/groups", tags=["Groups"])
 
 
-def _audit(operation: str, action: str, name: Optional[str], details: Optional[dict] = None) -> None:
+def _audit(
+    operation: str, action: str, name: Optional[str], details: Optional[dict] = None
+) -> None:
     from services import audit_service
+
     audit_service.log(
         product=None,
         operation=operation,

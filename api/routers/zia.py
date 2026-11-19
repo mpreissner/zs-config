@@ -38,6 +38,7 @@ def _get_service(tenant_name: str, user: AuthUser):
 # Activation
 # ------------------------------------------------------------------
 
+
 @router.get("/{tenant}/activation/status")
 def get_activation_status(tenant: str, user: AuthUser = Depends(require_auth)):
     """Get the current ZIA activation status."""
@@ -56,6 +57,7 @@ def activate(tenant: str, user: AuthUser = Depends(require_auth)):
 # ------------------------------------------------------------------
 # URL Categories
 # ------------------------------------------------------------------
+
 
 @router.get("/{tenant}/url-categories")
 def list_url_categories(tenant: str, user: AuthUser = Depends(require_auth)):
@@ -76,6 +78,7 @@ def url_lookup(tenant: str, req: UrlLookupRequest, user: AuthUser = Depends(requ
 # URL Filtering Rules
 # ------------------------------------------------------------------
 
+
 @router.get("/{tenant}/url-filtering-rules")
 def list_url_filtering_rules(tenant: str, user: AuthUser = Depends(require_auth)):
     """List all URL filtering rules."""
@@ -95,6 +98,7 @@ def get_url_filtering_rule(tenant: str, rule_id: str, user: AuthUser = Depends(r
 # ------------------------------------------------------------------
 # Users / Locations / Departments / Groups
 # ------------------------------------------------------------------
+
 
 @router.get("/{tenant}/users")
 def list_users(tenant: str, name: str = None, user: AuthUser = Depends(require_auth)):
@@ -124,6 +128,7 @@ def list_groups(tenant: str, user: AuthUser = Depends(require_auth)):
 # Allow / Deny Lists
 # ------------------------------------------------------------------
 
+
 @router.get("/{tenant}/allowlist")
 def get_allowlist(tenant: str, user: AuthUser = Depends(require_auth)):
     """Get the ZIA allowlist (whitelist URLs)."""
@@ -145,7 +150,9 @@ class DenylistUpdateRequest(BaseModel):
 
 
 @router.put("/{tenant}/allowlist")
-def update_allowlist(tenant: str, body: AllowlistUpdateRequest, user: AuthUser = Depends(require_auth)):
+def update_allowlist(
+    tenant: str, body: AllowlistUpdateRequest, user: AuthUser = Depends(require_auth)
+):
     """Replace the ZIA allowlist."""
     try:
         return _get_service(tenant, user).update_allowlist(body.whitelistUrls)
@@ -154,7 +161,9 @@ def update_allowlist(tenant: str, body: AllowlistUpdateRequest, user: AuthUser =
 
 
 @router.put("/{tenant}/denylist")
-def update_denylist(tenant: str, body: DenylistUpdateRequest, user: AuthUser = Depends(require_auth)):
+def update_denylist(
+    tenant: str, body: DenylistUpdateRequest, user: AuthUser = Depends(require_auth)
+):
     """Replace the ZIA denylist."""
     try:
         return _get_service(tenant, user).update_denylist(body.blacklistUrls)
@@ -165,6 +174,7 @@ def update_denylist(tenant: str, body: DenylistUpdateRequest, user: AuthUser = D
 # ------------------------------------------------------------------
 # URL Categories — CRUD
 # ------------------------------------------------------------------
+
 
 @router.get("/{tenant}/url-categories/{category_id}")
 def get_url_category(tenant: str, category_id: str, user: AuthUser = Depends(require_auth)):
@@ -185,7 +195,9 @@ def create_url_category(tenant: str, body: Dict[str, Any], user: AuthUser = Depe
 
 
 @router.put("/{tenant}/url-categories/{category_id}")
-def update_url_category(tenant: str, category_id: str, body: Dict[str, Any], user: AuthUser = Depends(require_auth)):
+def update_url_category(
+    tenant: str, category_id: str, body: Dict[str, Any], user: AuthUser = Depends(require_auth)
+):
     """Update a custom URL category."""
     try:
         return _get_service(tenant, user).update_url_category(category_id, body)
@@ -198,7 +210,9 @@ class CategoryUrlsRequest(BaseModel):
 
 
 @router.post("/{tenant}/url-categories/{category_id}/urls")
-def add_urls_to_category(tenant: str, category_id: str, body: CategoryUrlsRequest, user: AuthUser = Depends(require_auth)):
+def add_urls_to_category(
+    tenant: str, category_id: str, body: CategoryUrlsRequest, user: AuthUser = Depends(require_auth)
+):
     """Add URLs to a custom URL category."""
     try:
         return _get_service(tenant, user).add_urls_to_category(category_id, body.urls)
@@ -207,7 +221,9 @@ def add_urls_to_category(tenant: str, category_id: str, body: CategoryUrlsReques
 
 
 @router.delete("/{tenant}/url-categories/{category_id}/urls")
-def remove_urls_from_category(tenant: str, category_id: str, body: CategoryUrlsRequest, user: AuthUser = Depends(require_auth)):
+def remove_urls_from_category(
+    tenant: str, category_id: str, body: CategoryUrlsRequest, user: AuthUser = Depends(require_auth)
+):
     """Remove URLs from a custom URL category."""
     try:
         return _get_service(tenant, user).remove_urls_from_category(category_id, body.urls)
@@ -229,8 +245,11 @@ def delete_url_category(tenant: str, category_id: str, user: AuthUser = Depends(
 # URL Filtering Rules — CRUD + state toggle
 # ------------------------------------------------------------------
 
+
 @router.post("/{tenant}/url-filtering-rules")
-def create_url_filtering_rule(tenant: str, body: Dict[str, Any], user: AuthUser = Depends(require_auth)):
+def create_url_filtering_rule(
+    tenant: str, body: Dict[str, Any], user: AuthUser = Depends(require_auth)
+):
     """Create a URL filtering rule."""
     try:
         return _get_service(tenant, user).create_url_filtering_rule(body)
@@ -239,7 +258,9 @@ def create_url_filtering_rule(tenant: str, body: Dict[str, Any], user: AuthUser 
 
 
 @router.put("/{tenant}/url-filtering-rules/{rule_id}")
-def update_url_filtering_rule(tenant: str, rule_id: str, body: Dict[str, Any], user: AuthUser = Depends(require_auth)):
+def update_url_filtering_rule(
+    tenant: str, rule_id: str, body: Dict[str, Any], user: AuthUser = Depends(require_auth)
+):
     """Update a URL filtering rule."""
     try:
         return _get_service(tenant, user).update_url_filtering_rule(rule_id, body)
@@ -279,6 +300,7 @@ def patch_url_filtering_rule_state(
 # ZIA Users — CRUD
 # ------------------------------------------------------------------
 
+
 @router.get("/{tenant}/users/{user_id}")
 def get_zia_user(tenant: str, user_id: str, user: AuthUser = Depends(require_auth)):
     """Get a single ZIA user by ID."""
@@ -298,7 +320,9 @@ def create_zia_user(tenant: str, body: Dict[str, Any], user: AuthUser = Depends(
 
 
 @router.put("/{tenant}/users/{user_id}")
-def update_zia_user(tenant: str, user_id: str, body: Dict[str, Any], user: AuthUser = Depends(require_auth)):
+def update_zia_user(
+    tenant: str, user_id: str, body: Dict[str, Any], user: AuthUser = Depends(require_auth)
+):
     """Update a ZIA user."""
     try:
         return _get_service(tenant, user).update_user(user_id, body)
@@ -319,6 +343,7 @@ def delete_zia_user(tenant: str, user_id: str, user: AuthUser = Depends(require_
 # ------------------------------------------------------------------
 # Firewall Policy
 # ------------------------------------------------------------------
+
 
 @router.get("/{tenant}/firewall-rules")
 def list_firewall_rules(tenant: str, user: AuthUser = Depends(require_auth)):
@@ -352,7 +377,7 @@ def export_firewall_rules_csv(tenant: str, user: AuthUser = Depends(require_auth
         return StreamingResponse(
             iter([content]),
             media_type="text/csv",
-            headers={"Content-Disposition": "attachment; filename=\"firewall_rules.csv\""},
+            headers={"Content-Disposition": 'attachment; filename="firewall_rules.csv"'},
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -400,6 +425,7 @@ def sync_firewall_rules_csv(
         result = sync_rules(client, t.id, classification)
 
         from services.zia_service import ZIAService
+
         ZIAService(client, tenant_id=t.id)._reimport(["firewall_rule"])
 
         return {
@@ -432,7 +458,9 @@ def create_firewall_rule(tenant: str, body: Dict[str, Any], user: AuthUser = Dep
 
 
 @router.put("/{tenant}/firewall-rules/{rule_id}")
-def update_firewall_rule(tenant: str, rule_id: str, body: Dict[str, Any], user: AuthUser = Depends(require_auth)):
+def update_firewall_rule(
+    tenant: str, rule_id: str, body: Dict[str, Any], user: AuthUser = Depends(require_auth)
+):
     try:
         return _get_service(tenant, user).update_firewall_rule(rule_id, body)
     except Exception as e:
@@ -462,6 +490,7 @@ def patch_firewall_rule_state(
 # SSL Inspection
 # ------------------------------------------------------------------
 
+
 @router.get("/{tenant}/ssl-inspection-rules")
 def list_ssl_inspection_rules(tenant: str, user: AuthUser = Depends(require_auth)):
     return _get_service(tenant, user).list_ssl_inspection_rules()
@@ -476,7 +505,9 @@ def get_ssl_inspection_rule(tenant: str, rule_id: str, user: AuthUser = Depends(
 
 
 @router.post("/{tenant}/ssl-inspection-rules")
-def create_ssl_inspection_rule(tenant: str, body: Dict[str, Any], user: AuthUser = Depends(require_auth)):
+def create_ssl_inspection_rule(
+    tenant: str, body: Dict[str, Any], user: AuthUser = Depends(require_auth)
+):
     try:
         return _get_service(tenant, user).create_ssl_inspection_rule(body)
     except Exception as e:
@@ -484,7 +515,9 @@ def create_ssl_inspection_rule(tenant: str, body: Dict[str, Any], user: AuthUser
 
 
 @router.put("/{tenant}/ssl-inspection-rules/{rule_id}")
-def update_ssl_inspection_rule(tenant: str, rule_id: str, body: Dict[str, Any], user: AuthUser = Depends(require_auth)):
+def update_ssl_inspection_rule(
+    tenant: str, rule_id: str, body: Dict[str, Any], user: AuthUser = Depends(require_auth)
+):
     try:
         return _get_service(tenant, user).update_ssl_inspection_rule(rule_id, body)
     except Exception as e:
@@ -514,6 +547,7 @@ def patch_ssl_inspection_rule_state(
 # Traffic Forwarding
 # ------------------------------------------------------------------
 
+
 @router.get("/{tenant}/forwarding-rules")
 def list_forwarding_rules(tenant: str, user: AuthUser = Depends(require_auth)):
     return _get_service(tenant, user).list_forwarding_rules()
@@ -528,7 +562,9 @@ def get_forwarding_rule(tenant: str, rule_id: str, user: AuthUser = Depends(requ
 
 
 @router.post("/{tenant}/forwarding-rules")
-def create_forwarding_rule(tenant: str, body: Dict[str, Any], user: AuthUser = Depends(require_auth)):
+def create_forwarding_rule(
+    tenant: str, body: Dict[str, Any], user: AuthUser = Depends(require_auth)
+):
     try:
         return _get_service(tenant, user).create_forwarding_rule(body)
     except Exception as e:
@@ -536,7 +572,9 @@ def create_forwarding_rule(tenant: str, body: Dict[str, Any], user: AuthUser = D
 
 
 @router.put("/{tenant}/forwarding-rules/{rule_id}")
-def update_forwarding_rule(tenant: str, rule_id: str, body: Dict[str, Any], user: AuthUser = Depends(require_auth)):
+def update_forwarding_rule(
+    tenant: str, rule_id: str, body: Dict[str, Any], user: AuthUser = Depends(require_auth)
+):
     try:
         return _get_service(tenant, user).update_forwarding_rule(rule_id, body)
     except Exception as e:
@@ -566,6 +604,7 @@ def patch_forwarding_rule_state(
 # Firewall DNS Filter Rules
 # ------------------------------------------------------------------
 
+
 @router.get("/{tenant}/firewall-dns-rules")
 def list_firewall_dns_rules(tenant: str, user: AuthUser = Depends(require_auth)):
     return _get_service(tenant, user).list_firewall_dns_rules()
@@ -584,6 +623,7 @@ def patch_firewall_dns_rule_state(
 # ------------------------------------------------------------------
 # Firewall IPS Rules
 # ------------------------------------------------------------------
+
 
 @router.get("/{tenant}/firewall-ips-rules")
 def list_firewall_ips_rules(tenant: str, user: AuthUser = Depends(require_auth)):
@@ -604,6 +644,7 @@ def patch_firewall_ips_rule_state(
 # DLP
 # ------------------------------------------------------------------
 
+
 @router.get("/{tenant}/dlp-web-rules/{rule_id}")
 def get_dlp_web_rule(tenant: str, rule_id: str, user: AuthUser = Depends(require_auth)):
     try:
@@ -621,7 +662,9 @@ def create_dlp_web_rule(tenant: str, body: Dict[str, Any], user: AuthUser = Depe
 
 
 @router.put("/{tenant}/dlp-web-rules/{rule_id}")
-def update_dlp_web_rule(tenant: str, rule_id: str, body: Dict[str, Any], user: AuthUser = Depends(require_auth)):
+def update_dlp_web_rule(
+    tenant: str, rule_id: str, body: Dict[str, Any], user: AuthUser = Depends(require_auth)
+):
     try:
         return _get_service(tenant, user).update_dlp_web_rule(rule_id, body)
     except Exception as e:
@@ -669,7 +712,9 @@ def create_dlp_engine(tenant: str, body: Dict[str, Any], user: AuthUser = Depend
 
 
 @router.put("/{tenant}/dlp-engines/{engine_id}")
-def update_dlp_engine(tenant: str, engine_id: str, body: Dict[str, Any], user: AuthUser = Depends(require_auth)):
+def update_dlp_engine(
+    tenant: str, engine_id: str, body: Dict[str, Any], user: AuthUser = Depends(require_auth)
+):
     try:
         return _get_service(tenant, user).update_dlp_engine(engine_id, body)
     except Exception as e:
@@ -691,10 +736,15 @@ class DlpDictionaryConfidenceRequest(BaseModel):
 
 @router.patch("/{tenant}/dlp-dictionaries/{dict_id}/confidence")
 def patch_dlp_dictionary_confidence(
-    tenant: str, dict_id: str, body: DlpDictionaryConfidenceRequest, user: AuthUser = Depends(require_auth)
+    tenant: str,
+    dict_id: str,
+    body: DlpDictionaryConfidenceRequest,
+    user: AuthUser = Depends(require_auth),
 ):
     try:
-        return _get_service(tenant, user).update_dlp_dictionary_confidence(dict_id, body.confidenceThreshold)
+        return _get_service(tenant, user).update_dlp_dictionary_confidence(
+            dict_id, body.confidenceThreshold
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -713,25 +763,31 @@ def list_dlp_web_rules(tenant: str, user: AuthUser = Depends(require_auth)):
 # Cloud App Controls
 # ------------------------------------------------------------------
 
+
 @router.get("/{tenant}/cloud-app-settings")
 def list_cloud_app_settings(tenant: str, user: AuthUser = Depends(require_auth)):
     return _get_service(tenant, user).list_cloud_app_settings()
+
 
 @router.get("/{tenant}/cloud-app-policies")
 def list_cloud_app_policies(tenant: str, user: AuthUser = Depends(require_auth)):
     return _get_service(tenant, user).list_cloud_app_policies()
 
+
 @router.get("/{tenant}/cloud-app-control-rules")
 def list_cloud_app_control_rules(tenant: str, user: AuthUser = Depends(require_auth)):
     return _get_service(tenant, user).list_cloud_app_control_rules()
+
 
 @router.get("/{tenant}/tenancy-restriction-profiles")
 def list_tenancy_restriction_profiles(tenant: str, user: AuthUser = Depends(require_auth)):
     return _get_service(tenant, user).list_tenancy_restriction_profiles()
 
+
 @router.get("/{tenant}/cloud-app-instances")
 def list_cloud_app_instances(tenant: str, user: AuthUser = Depends(require_auth)):
     return _get_service(tenant, user).list_cloud_app_instances()
+
 
 @router.patch("/{tenant}/cloud-app-control-rules/{rule_type}/{rule_id}/state")
 def patch_cloud_app_rule_state(
@@ -750,6 +806,7 @@ def patch_cloud_app_rule_state(
 # ------------------------------------------------------------------
 # Config Snapshots
 # ------------------------------------------------------------------
+
 
 @router.get("/{tenant}/snapshots")
 def list_snapshots(tenant: str, product: str = "ZIA", user: AuthUser = Depends(require_auth)):
@@ -815,9 +872,7 @@ def create_snapshot(
 
 
 @router.delete("/{tenant}/snapshots/{snapshot_id}", status_code=204)
-def delete_snapshot(
-    tenant: str, snapshot_id: int, user: AuthUser = Depends(require_auth)
-):
+def delete_snapshot(tenant: str, snapshot_id: int, user: AuthUser = Depends(require_auth)):
     from services.config_service import get_tenant
     from services.snapshot_service import delete_snapshot as _delete
     from db.database import get_session
@@ -846,15 +901,18 @@ def delete_snapshot(
 # Mirrors the TUI flow in cli/menus/snapshots_menu.py:216.
 # ------------------------------------------------------------------
 
+
 def _load_zia_snapshot(tenant_id: int, snapshot_id: int) -> dict:
     """Load a ZIA snapshot belonging to this tenant, or 404."""
     from db.database import get_session
     from db.models import RestorePoint
 
     with get_session() as session:
-        snap = session.query(RestorePoint).filter_by(
-            id=snapshot_id, tenant_id=tenant_id, product="ZIA"
-        ).first()
+        snap = (
+            session.query(RestorePoint)
+            .filter_by(id=snapshot_id, tenant_id=tenant_id, product="ZIA")
+            .first()
+        )
         if not snap:
             raise HTTPException(status_code=404, detail="Snapshot not found")
         return {
@@ -867,9 +925,7 @@ def _load_zia_snapshot(tenant_id: int, snapshot_id: int) -> dict:
 
 
 @router.post("/{tenant}/snapshots/{snapshot_id}/restore/preview", status_code=202)
-def preview_snapshot_restore(
-    tenant: str, snapshot_id: int, user: AuthUser = Depends(require_auth)
-):
+def preview_snapshot_restore(tenant: str, snapshot_id: int, user: AuthUser = Depends(require_auth)):
     """Classify a snapshot restore without writing. Returns a job_id.
 
     Backgrounded because classification runs a full live import first.
@@ -887,10 +943,16 @@ def preview_snapshot_restore(
             service = ZIAPushService(svc.client, tenant_id=svc.tenant_id)
 
             def on_import_progress(resource_type: str, done: int, total: int):
-                store.append(job_id, {
-                    "type": "progress", "phase": "import",
-                    "resource_type": resource_type, "done": done, "total": total,
-                })
+                store.append(
+                    job_id,
+                    {
+                        "type": "progress",
+                        "phase": "import",
+                        "resource_type": resource_type,
+                        "done": done,
+                        "total": total,
+                    },
+                )
 
             dry_run = service.classify_baseline(
                 {"product": "ZIA", "resources": snap["resources"]},
@@ -901,22 +963,30 @@ def preview_snapshot_restore(
             delete_candidates = service.classify_snapshot_deletes(snap["resources"])
 
             creates, updates, _ = dry_run.changes_by_action()
-            store.complete(job_id, {
-                "snapshot_name": snap["name"],
-                "snapshot_comment": snap["comment"],
-                "snapshot_created": snap["created_at"],
-                "snapshot_resource_count": snap["resource_count"],
-                "creates": dry_run.create_count,
-                "updates": dry_run.update_count,
-                "deletes": len(delete_candidates),
-                "skips": dry_run.skip_count,
-                "items": (
-                    [{"action": "create", "resource_type": rt, "name": n} for rt, n in creates]
-                    + [{"action": "update", "resource_type": rt, "name": n} for rt, n in updates]
-                    + [{"action": "delete", "resource_type": r.resource_type, "name": r.name}
-                       for r in delete_candidates]
-                ),
-            })
+            store.complete(
+                job_id,
+                {
+                    "snapshot_name": snap["name"],
+                    "snapshot_comment": snap["comment"],
+                    "snapshot_created": snap["created_at"],
+                    "snapshot_resource_count": snap["resource_count"],
+                    "creates": dry_run.create_count,
+                    "updates": dry_run.update_count,
+                    "deletes": len(delete_candidates),
+                    "skips": dry_run.skip_count,
+                    "items": (
+                        [{"action": "create", "resource_type": rt, "name": n} for rt, n in creates]
+                        + [
+                            {"action": "update", "resource_type": rt, "name": n}
+                            for rt, n in updates
+                        ]
+                        + [
+                            {"action": "delete", "resource_type": r.resource_type, "name": r.name}
+                            for r in delete_candidates
+                        ]
+                    ),
+                },
+            )
         except Exception as exc:
             store.fail(job_id, str(exc))
 
@@ -925,9 +995,9 @@ def preview_snapshot_restore(
 
 
 class SnapshotRestoreRequest(BaseModel):
-    delete_extras: bool = True   # remove resources absent from the snapshot
-    remediate: bool = True       # re-push anything the verify pass finds missing
-    activate: bool = False       # activate remaining changes when the restore finishes
+    delete_extras: bool = True  # remove resources absent from the snapshot
+    remediate: bool = True  # re-push anything the verify pass finds missing
+    activate: bool = False  # activate remaining changes when the restore finishes
 
 
 @router.post("/{tenant}/snapshots/{snapshot_id}/restore", status_code=202)
@@ -959,28 +1029,47 @@ def restore_snapshot(
         counters: Dict[str, int] = {}
 
         def on_import_progress(resource_type: str, done: int, total: int, phase: str = "import"):
-            store.append(job_id, {
-                "type": "progress", "phase": phase,
-                "resource_type": resource_type, "done": done, "total": total,
-            })
+            store.append(
+                job_id,
+                {
+                    "type": "progress",
+                    "phase": phase,
+                    "resource_type": resource_type,
+                    "done": done,
+                    "total": total,
+                },
+            )
 
         def push_progress(phase: str):
             def cb(_pass_num, resource_type, record):
                 counters[phase] = counters.get(phase, 0) + 1
-                store.append(job_id, {
-                    "type": "progress", "phase": phase,
-                    "resource_type": resource_type, "name": record.name,
-                    "status": record.status, "done": counters[phase],
-                })
+                store.append(
+                    job_id,
+                    {
+                        "type": "progress",
+                        "phase": phase,
+                        "resource_type": resource_type,
+                        "name": record.name,
+                        "status": record.status,
+                        "done": counters[phase],
+                    },
+                )
+
             return cb
 
         def delete_progress(_pass_num, resource_type, record):
             counters["delete"] = counters.get("delete", 0) + 1
-            store.append(job_id, {
-                "type": "progress", "phase": "delete",
-                "resource_type": resource_type, "name": record.name,
-                "status": record.status, "done": counters["delete"],
-            })
+            store.append(
+                job_id,
+                {
+                    "type": "progress",
+                    "phase": "delete",
+                    "resource_type": resource_type,
+                    "name": record.name,
+                    "status": record.status,
+                    "done": counters["delete"],
+                },
+            )
 
         stop_fn = lambda: store.is_cancel_requested(job_id)
 
@@ -989,8 +1078,7 @@ def restore_snapshot(
                 baseline, import_progress_callback=on_import_progress
             )
             delete_candidates = (
-                service.classify_snapshot_deletes(snap["resources"])
-                if body.delete_extras else []
+                service.classify_snapshot_deletes(snap["resources"]) if body.delete_extras else []
             )
 
             push_records: List[Any] = []
@@ -1001,16 +1089,20 @@ def restore_snapshot(
                     )
             except _PushCancelled as exc:
                 rollback = service.rollback_pushed(exc.pushed_records)
-                store.complete(job_id, {
-                    "cancelled": True,
-                    "rolled_back": sum(
-                        1 for r in rollback
-                        if r.status in ("rollback_deleted", "rollback_restored")
-                    ),
-                    "rollback_failed": sum(
-                        1 for r in rollback if r.status.startswith("rollback_failed")
-                    ),
-                })
+                store.complete(
+                    job_id,
+                    {
+                        "cancelled": True,
+                        "rolled_back": sum(
+                            1
+                            for r in rollback
+                            if r.status in ("rollback_deleted", "rollback_restored")
+                        ),
+                        "rollback_failed": sum(
+                            1 for r in rollback if r.status.startswith("rollback_failed")
+                        ),
+                    },
+                )
                 return
 
             # Verify pass 1 — creates and updates.
@@ -1020,11 +1112,13 @@ def restore_snapshot(
                     verify1 = service.verify_push(
                         baseline,
                         import_progress_callback=lambda rt, d, t: on_import_progress(
-                            rt, d, t, phase="verify"),
+                            rt, d, t, phase="verify"
+                        ),
                     )
                 except Exception as exc:
-                    store.append(job_id, {"type": "warning",
-                                          "message": f"Verify pass 1 failed: {exc}"})
+                    store.append(
+                        job_id, {"type": "warning", "message": f"Verify pass 1 failed: {exc}"}
+                    )
                     verify1 = None
 
                 if verify1 is not None:
@@ -1034,12 +1128,18 @@ def restore_snapshot(
                     pending = {(r.resource_type, r.name) for r in delete_candidates}
                     v_deletes = [(rt, n) for rt, n in v_deletes if (rt, n) not in pending]
                     discrepancies = (
-                        [{"issue": "not_created", "resource_type": rt, "name": n}
-                         for rt, n in v_creates]
-                        + [{"issue": "config_mismatch", "resource_type": rt, "name": n}
-                           for rt, n in v_updates]
-                        + [{"issue": "not_deleted", "resource_type": rt, "name": n}
-                           for rt, n in v_deletes]
+                        [
+                            {"issue": "not_created", "resource_type": rt, "name": n}
+                            for rt, n in v_creates
+                        ]
+                        + [
+                            {"issue": "config_mismatch", "resource_type": rt, "name": n}
+                            for rt, n in v_updates
+                        ]
+                        + [
+                            {"issue": "not_deleted", "resource_type": rt, "name": n}
+                            for rt, n in v_deletes
+                        ]
                     )
                     if discrepancies and body.remediate:
                         push_records += service.push_classified(
@@ -1058,15 +1158,24 @@ def restore_snapshot(
                 # Deletes are not live until activated, and verify pass 2 reads
                 # live state — without this it reports every delete as failed.
                 if deleted:
-                    store.append(job_id, {"type": "progress", "phase": "activate",
-                                          "message": "Activating deletions..."})
+                    store.append(
+                        job_id,
+                        {
+                            "type": "progress",
+                            "phase": "activate",
+                            "message": "Activating deletions...",
+                        },
+                    )
                     try:
                         svc.client.activate()
                     except Exception as exc:
-                        store.append(job_id, {
-                            "type": "warning",
-                            "message": f"Activation after deletes failed: {exc}",
-                        })
+                        store.append(
+                            job_id,
+                            {
+                                "type": "warning",
+                                "message": f"Activation after deletes failed: {exc}",
+                            },
+                        )
 
             # Verify pass 2 — deletions.
             still_present: List[dict] = []
@@ -1075,19 +1184,23 @@ def restore_snapshot(
                     still = service.verify_deleted(
                         delete_candidates,
                         import_progress_callback=lambda rt, d, t: on_import_progress(
-                            rt, d, t, phase="verify"),
+                            rt, d, t, phase="verify"
+                        ),
                     )
-                    still_present = [{"resource_type": r.resource_type, "name": r.name}
-                                     for r in still]
+                    still_present = [
+                        {"resource_type": r.resource_type, "name": r.name} for r in still
+                    ]
                 except Exception as exc:
-                    store.append(job_id, {"type": "warning",
-                                          "message": f"Verify pass 2 failed: {exc}"})
+                    store.append(
+                        job_id, {"type": "warning", "message": f"Verify pass 2 failed: {exc}"}
+                    )
 
             created = sum(1 for r in push_records if r.is_created)
             updated = sum(1 for r in push_records if r.is_updated)
             failed_items = [
                 {"resource_type": r.resource_type, "name": r.name, "reason": r.failure_reason}
-                for r in push_records + delete_records if r.is_failed
+                for r in push_records + delete_records
+                if r.is_failed
             ]
             status = "SUCCESS" if not failed_items and not still_present else "PARTIAL"
 
@@ -1097,37 +1210,55 @@ def restore_snapshot(
                     svc.client.activate()
                     activated = True
                 except Exception as exc:
-                    store.append(job_id, {"type": "warning",
-                                          "message": f"Activation failed: {exc}"})
+                    store.append(
+                        job_id, {"type": "warning", "message": f"Activation failed: {exc}"}
+                    )
 
             audit_service.log(
-                product="ZIA", operation="restore_snapshot", action="UPDATE",
-                status=status, tenant_id=svc.tenant_id,
-                resource_type="snapshot", resource_id=str(snapshot_id),
+                product="ZIA",
+                operation="restore_snapshot",
+                action="UPDATE",
+                status=status,
+                tenant_id=svc.tenant_id,
+                resource_type="snapshot",
+                resource_id=str(snapshot_id),
                 resource_name=snap["name"],
-                details={"created": created, "updated": updated, "deleted": deleted,
-                         "failed": len(failed_items), "delete_extras": body.delete_extras},
+                details={
+                    "created": created,
+                    "updated": updated,
+                    "deleted": deleted,
+                    "failed": len(failed_items),
+                    "delete_extras": body.delete_extras,
+                },
             )
 
-            store.complete(job_id, {
-                "status": status,
-                "snapshot_name": snap["name"],
-                "created": created,
-                "updated": updated,
-                "deleted": deleted,
-                "failed": len(failed_items),
-                "failed_items": failed_items,
-                "discrepancies": discrepancies,
-                "still_present": still_present,
-                "activated": activated,
-            })
+            store.complete(
+                job_id,
+                {
+                    "status": status,
+                    "snapshot_name": snap["name"],
+                    "created": created,
+                    "updated": updated,
+                    "deleted": deleted,
+                    "failed": len(failed_items),
+                    "failed_items": failed_items,
+                    "discrepancies": discrepancies,
+                    "still_present": still_present,
+                    "activated": activated,
+                },
+            )
         except Exception as exc:
             store.fail(job_id, str(exc))
             audit_service.log(
-                product="ZIA", operation="restore_snapshot", action="UPDATE",
-                status="FAILURE", tenant_id=svc.tenant_id,
-                resource_type="snapshot", resource_id=str(snapshot_id),
-                resource_name=snap["name"], error_message=str(exc),
+                product="ZIA",
+                operation="restore_snapshot",
+                action="UPDATE",
+                status="FAILURE",
+                tenant_id=svc.tenant_id,
+                resource_type="snapshot",
+                resource_id=str(snapshot_id),
+                resource_name=snap["name"],
+                error_message=str(exc),
             )
 
     threading.Thread(target=run, daemon=True).start()
@@ -1138,11 +1269,13 @@ def restore_snapshot(
 # Organization
 # ------------------------------------------------------------------
 
+
 @router.get("/{tenant}/sub-clouds")
 def get_sub_clouds(tenant: str, user: AuthUser = Depends(require_auth)):
     """Return subclouds and detected ZIA cloud name; reads from local DB when available."""
     from services.config_service import get_tenant
     from api.dependencies import check_tenant_access
+
     t = get_tenant(tenant)
     if not t:
         raise HTTPException(status_code=404, detail=f"Tenant '{tenant}' not found")
@@ -1166,6 +1299,7 @@ def get_org_domains(tenant: str, user: AuthUser = Depends(require_auth)):
 # ------------------------------------------------------------------
 # PAC Files
 # ------------------------------------------------------------------
+
 
 class PacFileCreateRequest(BaseModel):
     name: str
@@ -1206,9 +1340,12 @@ def get_pac_file_versions(tenant: str, pac_id: int, user: AuthUser = Depends(req
 
 
 @router.post("/{tenant}/pac-files/validate")
-def validate_pac_file(tenant: str, body: PacFileValidateRequest, user: AuthUser = Depends(require_auth)):
+def validate_pac_file(
+    tenant: str, body: PacFileValidateRequest, user: AuthUser = Depends(require_auth)
+):
     """Validate PAC file content syntax. Does not write to DB or require activation."""
     import logging as _logging
+
     try:
         return _get_service(tenant, user).validate_pac_file_content(body.pac_content)
     except Exception as e:
@@ -1217,7 +1354,9 @@ def validate_pac_file(tenant: str, body: PacFileValidateRequest, user: AuthUser 
 
 
 @router.post("/{tenant}/pac-files")
-def create_pac_file(tenant: str, body: PacFileCreateRequest, user: AuthUser = Depends(require_auth)):
+def create_pac_file(
+    tenant: str, body: PacFileCreateRequest, user: AuthUser = Depends(require_auth)
+):
     """Create a new PAC file."""
     try:
         config = body.model_dump(exclude_none=True)
@@ -1227,7 +1366,9 @@ def create_pac_file(tenant: str, body: PacFileCreateRequest, user: AuthUser = De
 
 
 @router.put("/{tenant}/pac-files/{pac_id}")
-def update_pac_file(tenant: str, pac_id: int, body: PacFileUpdateRequest, user: AuthUser = Depends(require_auth)):
+def update_pac_file(
+    tenant: str, pac_id: int, body: PacFileUpdateRequest, user: AuthUser = Depends(require_auth)
+):
     """Push a new version of a PAC file (clone operation).
 
     Resolves the current deployed version number automatically before calling

@@ -16,17 +16,30 @@ from sqlalchemy.orm import Session
 from db.models import RestorePoint, ZIAResource, ZPAResource
 
 # Fields that carry no meaningful configuration signal — excluded from diffs.
-IGNORED_FIELDS = frozenset({
-    "modifiedBy", "modifiedTime", "creationTime", "modifiedAt",
-    "createdAt", "lastModifiedTime", "modifiedByUser", "createdByUser",
-    # snake_case equivalents from ZPA API
-    "modified_by", "modified_time", "creation_time", "modified_at", "created_at",
-})
+IGNORED_FIELDS = frozenset(
+    {
+        "modifiedBy",
+        "modifiedTime",
+        "creationTime",
+        "modifiedAt",
+        "createdAt",
+        "lastModifiedTime",
+        "modifiedByUser",
+        "createdByUser",
+        # snake_case equivalents from ZPA API
+        "modified_by",
+        "modified_time",
+        "creation_time",
+        "modified_at",
+        "created_at",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
 # Dataclasses
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class FieldChange:
@@ -38,9 +51,11 @@ class FieldChange:
 @dataclass
 class ResourceDiff:
     resource_type: str
-    added: List[dict] = field(default_factory=list)    # {"id", "name", "raw_config"}
+    added: List[dict] = field(default_factory=list)  # {"id", "name", "raw_config"}
     removed: List[dict] = field(default_factory=list)
-    modified: List[dict] = field(default_factory=list) # {"id","name","field_changes","old_config","new_config"}
+    modified: List[dict] = field(
+        default_factory=list
+    )  # {"id","name","field_changes","old_config","new_config"}
 
 
 @dataclass
@@ -68,7 +83,10 @@ class DiffResult:
 # DB helpers
 # ---------------------------------------------------------------------------
 
-def get_snapshot_data_current(tenant_id: int, product: str, session: Session) -> Dict[str, List[dict]]:
+
+def get_snapshot_data_current(
+    tenant_id: int, product: str, session: Session
+) -> Dict[str, List[dict]]:
     """Return the current (non-deleted) resource inventory for a tenant+product.
 
     Result shape: {"resource_type": [{"id": <api_id>, "name": ..., "raw_config": {...}}, ...]}
@@ -151,6 +169,7 @@ def delete_snapshot(snapshot_id: int, session: Session) -> None:
 # Diff computation
 # ---------------------------------------------------------------------------
 
+
 def _compute_field_changes(old_config: dict, new_config: dict) -> List[FieldChange]:
     """Return field-level changes between two raw_config dicts, skipping IGNORED_FIELDS."""
     changes = []
@@ -180,7 +199,7 @@ def compute_diff(snapshot_a: dict, snapshot_b: dict) -> DiffResult:
         a_by_id = {item["id"]: item for item in snapshot_a.get(rtype, [])}
         b_by_id = {item["id"]: item for item in snapshot_b.get(rtype, [])}
 
-        added   = [b_by_id[id_] for id_ in b_by_id if id_ not in a_by_id]
+        added = [b_by_id[id_] for id_ in b_by_id if id_ not in a_by_id]
         removed = [a_by_id[id_] for id_ in a_by_id if id_ not in b_by_id]
 
         modified = []
@@ -193,20 +212,24 @@ def compute_diff(snapshot_a: dict, snapshot_b: dict) -> DiffResult:
                     b_item.get("raw_config") or {},
                 )
                 if changes:
-                    modified.append({
-                        "id": id_,
-                        "name": b_item.get("name") or a_item.get("name"),
-                        "field_changes": changes,
-                        "old_config": a_item.get("raw_config") or {},
-                        "new_config": b_item.get("raw_config") or {},
-                    })
+                    modified.append(
+                        {
+                            "id": id_,
+                            "name": b_item.get("name") or a_item.get("name"),
+                            "field_changes": changes,
+                            "old_config": a_item.get("raw_config") or {},
+                            "new_config": b_item.get("raw_config") or {},
+                        }
+                    )
 
         if added or removed or modified:
-            diffs.append(ResourceDiff(
-                resource_type=rtype,
-                added=added,
-                removed=removed,
-                modified=modified,
-            ))
+            diffs.append(
+                ResourceDiff(
+                    resource_type=rtype,
+                    added=added,
+                    removed=removed,
+                    modified=modified,
+                )
+            )
 
     return DiffResult(resource_diffs=diffs)

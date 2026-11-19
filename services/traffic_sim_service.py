@@ -36,12 +36,13 @@ from db.models import ZCCResource, ZIAResource, ZPAResource
 # Result types
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class PolicyCheck:
-    engine: str                     # "ZIA Firewall", "ZIA DNS", "ZIA URL Filter", "ZPA"
+    engine: str  # "ZIA Firewall", "ZIA DNS", "ZIA URL Filter", "ZPA"
     matched: bool = False
     rule_name: Optional[str] = None
-    action: Optional[str] = None    # ALLOW, BLOCK, BLOCK_DROP, REDIRECT, etc.
+    action: Optional[str] = None  # ALLOW, BLOCK, BLOCK_DROP, REDIRECT, etc.
     reason: str = ""
     category: Optional[str] = None  # URL category for URL filter checks
     caveats: List[str] = field(default_factory=list)
@@ -60,13 +61,14 @@ class SimulationResult:
     zia_ssl: PolicyCheck
     zia_cloud_app: PolicyCheck
     zia_exceptions: PolicyCheck
-    verdict: str          # precedence: ZCC_BYPASS > ZPA > ZIA_BLOCK_DNS > ZIA_BLOCK_FIREWALL > ZIA_BLOCK_CLOUDAPP > ZIA_BLOCK_URL > ZIA_ALLOW (also ZCC_INACTIVE)
-    verdict_label: str    # human-readable
+    verdict: str  # precedence: ZCC_BYPASS > ZPA > ZIA_BLOCK_DNS > ZIA_BLOCK_FIREWALL > ZIA_BLOCK_CLOUDAPP > ZIA_BLOCK_URL > ZIA_ALLOW (also ZCC_INACTIVE)
+    verdict_label: str  # human-readable
 
 
 # ---------------------------------------------------------------------------
 # IP / hostname helpers
 # ---------------------------------------------------------------------------
+
 
 def _is_ip(s: str) -> bool:
     try:
@@ -159,16 +161,22 @@ def _dest_in_ip_groups(dest: str, refs: List[Dict], ip_groups: Dict[int, List[st
     """True if dest matches any referenced destination group (IP or domain type)."""
     for grp in refs or []:
         gid = grp.get("id") if isinstance(grp, dict) else None
-        if gid is not None and int(gid) in ip_groups and _dest_in_addresses(dest, ip_groups[int(gid)]):
+        if (
+            gid is not None
+            and int(gid) in ip_groups
+            and _dest_in_addresses(dest, ip_groups[int(gid)])
+        ):
             return True
     return False
 
 
 def _resolve_zpa_segment_domains(tenant_id: int, s) -> Dict[str, List[str]]:
     """Return {segment_id: [domain/IP, ...]} for enabled ZPA application segments."""
-    rows = s.query(ZPAResource).filter_by(
-        tenant_id=tenant_id, resource_type="application", is_deleted=False
-    ).all()
+    rows = (
+        s.query(ZPAResource)
+        .filter_by(tenant_id=tenant_id, resource_type="application", is_deleted=False)
+        .all()
+    )
     result: Dict[str, List[str]] = {}
     for row in rows:
         cfg = row.raw_config or {}
@@ -192,6 +200,7 @@ def _dest_in_zpa_segments(dest: str, refs: List[Dict], segments: Dict[str, List[
 # ZPA evaluation
 # ---------------------------------------------------------------------------
 
+
 def _eval_zpa(tenant_id: int, dest: str, port: int, protocol: str) -> PolicyCheck:
     check = PolicyCheck(engine="ZPA")
     hostname = _strip_url(dest)
@@ -206,7 +215,7 @@ def _eval_zpa(tenant_id: int, dest: str, port: int, protocol: str) -> PolicyChec
     def _domain_specificity(app) -> int:
         """Higher = more specific. Exact hostname > wildcard > IP."""
         cfg = app.raw_config or {}
-        domains = (cfg.get("domainNames") or cfg.get("domain_names") or [])
+        domains = cfg.get("domainNames") or cfg.get("domain_names") or []
         if hostname in domains or dest in domains:
             return 2  # exact match
         if any(d.startswith("*.") for d in domains):
@@ -223,7 +232,7 @@ def _eval_zpa(tenant_id: int, dest: str, port: int, protocol: str) -> PolicyChec
     matched_app = None
     for app in sorted_apps:
         cfg = app.raw_config or {}
-        domain_names: List[str] = (cfg.get("domainNames") or cfg.get("domain_names") or [])
+        domain_names: List[str] = cfg.get("domainNames") or cfg.get("domain_names") or []
         tcp_ranges: List[Dict] = cfg.get("tcpPortRange", cfg.get("tcp_port_range", []))
         udp_ranges: List[Dict] = cfg.get("udpPortRange", cfg.get("udp_port_range", []))
 
@@ -256,25 +265,43 @@ def _eval_zpa(tenant_id: int, dest: str, port: int, protocol: str) -> PolicyChec
 
         # Find access policies that reference this segment and extract requirements
         with get_session() as s:
-            access_policies = s.query(ZPAResource).filter_by(
-                tenant_id=tenant_id, resource_type="policy_access", is_deleted=False
-            ).all()
-            scim_groups = s.query(ZPAResource).filter_by(
-                tenant_id=tenant_id, resource_type="scim_group", is_deleted=False
-            ).all()
-            saml_attrs = s.query(ZPAResource).filter_by(
-                tenant_id=tenant_id, resource_type="saml_attribute", is_deleted=False
-            ).all()
+            access_policies = (
+                s.query(ZPAResource)
+                .filter_by(tenant_id=tenant_id, resource_type="policy_access", is_deleted=False)
+                .all()
+            )
+            scim_groups = (
+                s.query(ZPAResource)
+                .filter_by(tenant_id=tenant_id, resource_type="scim_group", is_deleted=False)
+                .all()
+            )
+            saml_attrs = (
+                s.query(ZPAResource)
+                .filter_by(tenant_id=tenant_id, resource_type="saml_attribute", is_deleted=False)
+                .all()
+            )
 
-        scim_group_map = {str((r.raw_config or {}).get("id", "")): (r.raw_config or {}).get("name", "") for r in scim_groups}
-        saml_attr_map = {str((r.raw_config or {}).get("id", "")): (r.raw_config or {}).get("name", "") for r in saml_attrs}
+        scim_group_map = {
+            str((r.raw_config or {}).get("id", "")): (r.raw_config or {}).get("name", "")
+            for r in scim_groups
+        }
+        saml_attr_map = {
+            str((r.raw_config or {}).get("id", "")): (r.raw_config or {}).get("name", "")
+            for r in saml_attrs
+        }
 
         _OBJ_LABEL = {
-            "APP": "App", "APP_GROUP": "Segment Group",
-            "SAML": "Identity", "SCIM": "SCIM User", "SCIM_GROUP": "SCIM Group",
-            "CLIENT_TYPE": "Client Type", "POSTURE": "Device Posture",
-            "PLATFORM": "Platform", "TRUSTED_NETWORK": "Trusted Network",
-            "IDP": "IdP", "COUNTRY_CODE": "Country",
+            "APP": "App",
+            "APP_GROUP": "Segment Group",
+            "SAML": "Identity",
+            "SCIM": "SCIM User",
+            "SCIM_GROUP": "SCIM Group",
+            "CLIENT_TYPE": "Client Type",
+            "POSTURE": "Device Posture",
+            "PLATFORM": "Platform",
+            "TRUSTED_NETWORK": "Trusted Network",
+            "IDP": "IdP",
+            "COUNTRY_CODE": "Country",
         }
 
         policy_summaries = []
@@ -286,7 +313,8 @@ def _eval_zpa(tenant_id: int, dest: str, port: int, protocol: str) -> PolicyChec
             # Check if this policy references our segment
             refs_segment = any(
                 op.get("object_type") == "APP" and op.get("rhs") == seg_id
-                for cond in conditions for op in cond.get("operands", [])
+                for cond in conditions
+                for op in cond.get("operands", [])
             )
             if not refs_segment:
                 continue
@@ -310,13 +338,15 @@ def _eval_zpa(tenant_id: int, dest: str, port: int, protocol: str) -> PolicyChec
                     if name:
                         reqs.append(f"{label}: {name}")
             summary = f'Policy "{pcfg.get("name", "?")}": '
-            summary += (", ".join(reqs) if reqs else "No user/group restrictions")
+            summary += ", ".join(reqs) if reqs else "No user/group restrictions"
             policy_summaries.append(summary)
 
         if policy_summaries:
             check.caveats = [f"ZPA access requirements — {s}" for s in policy_summaries]
         else:
-            check.caveats = ["No ZPA access policies found for this segment — access may be unrestricted"]
+            check.caveats = [
+                "No ZPA access policies found for this segment — access may be unrestricted"
+            ]
     else:
         check.reason = "No ZPA application segment matches this destination / port"
 
@@ -327,9 +357,14 @@ def _eval_zpa(tenant_id: int, dest: str, port: int, protocol: str) -> PolicyChec
 # ZIA Firewall evaluation
 # ---------------------------------------------------------------------------
 
+
 def _resolve_ip_dest_groups(tenant_id: int, s) -> Dict[int, List[str]]:
     """Return {group_id: [address, ...]} for all IP destination groups."""
-    rows = s.query(ZIAResource).filter_by(tenant_id=tenant_id, resource_type="ip_destination_group", is_deleted=False).all()
+    rows = (
+        s.query(ZIAResource)
+        .filter_by(tenant_id=tenant_id, resource_type="ip_destination_group", is_deleted=False)
+        .all()
+    )
     result: Dict[int, List[str]] = {}
     for row in rows:
         cfg = row.raw_config or {}
@@ -343,7 +378,11 @@ def _resolve_ip_dest_groups(tenant_id: int, s) -> Dict[int, List[str]]:
 
 def _resolve_network_services(tenant_id: int, s) -> Dict[int, Dict]:
     """Return {svc_id: raw_config} for all network services."""
-    rows = s.query(ZIAResource).filter_by(tenant_id=tenant_id, resource_type="network_service", is_deleted=False).all()
+    rows = (
+        s.query(ZIAResource)
+        .filter_by(tenant_id=tenant_id, resource_type="network_service", is_deleted=False)
+        .all()
+    )
     result: Dict[int, Dict] = {}
     for row in rows:
         cfg = row.raw_config or {}
@@ -355,20 +394,30 @@ def _resolve_network_services(tenant_id: int, s) -> Dict[int, Dict]:
 
 def _resolve_network_service_groups(tenant_id: int, s) -> Dict[int, List[int]]:
     """Return {group_id: [service_id, ...]} for all network service groups."""
-    rows = s.query(ZIAResource).filter_by(tenant_id=tenant_id, resource_type="network_svc_group", is_deleted=False).all()
+    rows = (
+        s.query(ZIAResource)
+        .filter_by(tenant_id=tenant_id, resource_type="network_svc_group", is_deleted=False)
+        .all()
+    )
     result: Dict[int, List[int]] = {}
     for row in rows:
         cfg = row.raw_config or {}
         gid = cfg.get("id")
         if gid is not None:
-            svc_ids = [int(svc["id"]) for svc in cfg.get("services", []) if svc.get("id") is not None]
+            svc_ids = [
+                int(svc["id"]) for svc in cfg.get("services", []) if svc.get("id") is not None
+            ]
             result[int(gid)] = svc_ids
     return result
 
 
 def _resolve_src_ip_groups(tenant_id: int, s) -> Dict[int, List[str]]:
     """Return {group_id: [address, ...]} for all IP source groups."""
-    rows = s.query(ZIAResource).filter_by(tenant_id=tenant_id, resource_type="ip_source_group", is_deleted=False).all()
+    rows = (
+        s.query(ZIAResource)
+        .filter_by(tenant_id=tenant_id, resource_type="ip_source_group", is_deleted=False)
+        .all()
+    )
     result: Dict[int, List[str]] = {}
     for row in rows:
         cfg = row.raw_config or {}
@@ -381,7 +430,11 @@ def _resolve_src_ip_groups(tenant_id: int, s) -> Dict[int, List[str]]:
 
 def _resolve_nw_application_groups(tenant_id: int, s) -> Dict[int, List[str]]:
     """Return {group_id: [app_name, ...]} for all network application groups."""
-    rows = s.query(ZIAResource).filter_by(tenant_id=tenant_id, resource_type="nw_application_group", is_deleted=False).all()
+    rows = (
+        s.query(ZIAResource)
+        .filter_by(tenant_id=tenant_id, resource_type="nw_application_group", is_deleted=False)
+        .all()
+    )
     result: Dict[int, List[str]] = {}
     for row in rows:
         cfg = row.raw_config or {}
@@ -396,9 +449,7 @@ def _name_in_list(name: str, ref_list: List[Dict]) -> bool:
     """True if name matches any {id, name} ref in a list (case-insensitive)."""
     name_upper = name.upper()
     return any(
-        (ref.get("name") or "").upper() == name_upper
-        for ref in ref_list
-        if isinstance(ref, dict)
+        (ref.get("name") or "").upper() == name_upper for ref in ref_list if isinstance(ref, dict)
     )
 
 
@@ -421,15 +472,21 @@ def _location_in_list(location_name: str, ref_list: List[Dict]) -> bool:
 
 
 def _blank_scopes(
-    user_name: Optional[str], dept_name: Optional[str],
-    group_name: Optional[str], location_name: Optional[str],
+    user_name: Optional[str],
+    dept_name: Optional[str],
+    group_name: Optional[str],
+    location_name: Optional[str],
 ) -> List[str]:
     """Rule scope fields whose simulation input was left blank (evaluated permissively)."""
     return [
-        f for f, v in (
-            ("users", user_name), ("departments", dept_name),
-            ("groups", group_name), ("locations", location_name),
-        ) if not v
+        f
+        for f, v in (
+            ("users", user_name),
+            ("departments", dept_name),
+            ("groups", group_name),
+            ("locations", location_name),
+        )
+        if not v
     ]
 
 
@@ -437,7 +494,19 @@ def _svc_matches_port(svc_cfg: Dict, port: int, protocol: str) -> bool:
     """True if a network service config matches the given port + protocol."""
     proto = protocol.upper()
     use_udp = proto in ("UDP", "DNS")
-    use_tcp = proto in ("TCP", "HTTP", "HTTPS", "FTP", "SMTP", "POP3", "IMAP", "SSH", "TELNET", "LDAP", "LDAPS")
+    use_tcp = proto in (
+        "TCP",
+        "HTTP",
+        "HTTPS",
+        "FTP",
+        "SMTP",
+        "POP3",
+        "IMAP",
+        "SSH",
+        "TELNET",
+        "LDAP",
+        "LDAPS",
+    )
 
     tcp_dest = svc_cfg.get("dest_tcp_ports", [])
     udp_dest = svc_cfg.get("dest_udp_ports", [])
@@ -457,7 +526,10 @@ def _svc_matches_port(svc_cfg: Dict, port: int, protocol: str) -> bool:
 
 
 def _fw_rule_matches(
-    cfg: Dict, dest: str, port: int, protocol: str,
+    cfg: Dict,
+    dest: str,
+    port: int,
+    protocol: str,
     ip_dest_groups: Dict[int, List[str]],
     nw_services: Dict[int, Dict],
     nw_svc_groups: Dict[int, List[int]] = None,
@@ -493,9 +565,8 @@ def _fw_rule_matches(
     has_unresolvable_dest = bool(dest_ip_cats or dest_countries)
 
     if has_resolvable_dest:
-        dest_matched = (
-            _dest_in_addresses(dest, dest_addrs)
-            or _dest_in_ip_groups(dest, dest_ip_grp_refs, ip_dest_groups)
+        dest_matched = _dest_in_addresses(dest, dest_addrs) or _dest_in_ip_groups(
+            dest, dest_ip_grp_refs, ip_dest_groups
         )
         if not dest_matched:
             return False
@@ -614,7 +685,10 @@ def _fw_rule_matches(
 
 
 def _eval_zia_firewall(
-    tenant_id: int, dest: str, port: int, protocol: str,
+    tenant_id: int,
+    dest: str,
+    port: int,
+    protocol: str,
     nw_application: Optional[str] = None,
     app_service_group: Optional[str] = None,
     src_ip: Optional[str] = None,
@@ -655,17 +729,32 @@ def _eval_zia_firewall(
             check.reason = f'Matched default firewall rule "{check.rule_name}" (catch-all)'
             break
         if _fw_rule_matches(
-            cfg, dest, port, protocol,
-            ip_dest_groups, nw_services, nw_svc_groups,
-            nw_application, app_service_group,
-            src_ip, ip_src_groups, nw_app_groups,
-            user_name, dept_name, group_name, location_name,
-            zpa_segments, skip_src_scoped, road_warrior,
+            cfg,
+            dest,
+            port,
+            protocol,
+            ip_dest_groups,
+            nw_services,
+            nw_svc_groups,
+            nw_application,
+            app_service_group,
+            src_ip,
+            ip_src_groups,
+            nw_app_groups,
+            user_name,
+            dept_name,
+            group_name,
+            location_name,
+            zpa_segments,
+            skip_src_scoped,
+            road_warrior,
         ):
             check.matched = True
             check.rule_name = cfg.get("name", "Unknown Rule")
             check.action = cfg.get("action", "ALLOW")
-            check.reason = f'Matched firewall rule "{check.rule_name}" (order {cfg.get("order", "?")})'
+            check.reason = (
+                f'Matched firewall rule "{check.rule_name}" (order {cfg.get("order", "?")})'
+            )
             break
 
     if not check.matched:
@@ -675,8 +764,11 @@ def _eval_zia_firewall(
     app_only_rules = [
         (r.raw_config or {}).get("name", "?")
         for r in non_default
-        if ((r.raw_config or {}).get("nw_applications") or (r.raw_config or {}).get("app_service_groups")
-            or (r.raw_config or {}).get("nw_application_groups"))
+        if (
+            (r.raw_config or {}).get("nw_applications")
+            or (r.raw_config or {}).get("app_service_groups")
+            or (r.raw_config or {}).get("nw_application_groups")
+        )
         and not (r.raw_config or {}).get("nw_services")
         and not (r.raw_config or {}).get("nw_service_groups")
     ]
@@ -684,13 +776,14 @@ def _eval_zia_firewall(
         check.caveats.append(
             "Rules using application-layer matching were skipped (specify Network Application or App Service Group to evaluate): "
             + ", ".join(f'"{n}"' for n in app_only_rules[:5])
-            + (f" +{len(app_only_rules)-5} more" if len(app_only_rules) > 5 else "")
+            + (f" +{len(app_only_rules) - 5} more" if len(app_only_rules) > 5 else "")
         )
 
     ip_cat_rules = [
         (r.raw_config or {}).get("name", "?")
         for r in non_default
-        if (r.raw_config or {}).get("dest_ip_categories") or (r.raw_config or {}).get("dest_countries")
+        if (r.raw_config or {}).get("dest_ip_categories")
+        or (r.raw_config or {}).get("dest_countries")
         and not (r.raw_config or {}).get("dest_addresses")
         and not (r.raw_config or {}).get("dest_ip_groups")
     ]
@@ -698,7 +791,7 @@ def _eval_zia_firewall(
         check.caveats.append(
             "Rules using predefined IP categories or country constraints cannot be evaluated offline and were skipped: "
             + ", ".join(f'"{n}"' for n in ip_cat_rules[:5])
-            + (f" +{len(ip_cat_rules)-5} more" if len(ip_cat_rules) > 5 else "")
+            + (f" +{len(ip_cat_rules) - 5} more" if len(ip_cat_rules) > 5 else "")
         )
 
     blank_scopes = _blank_scopes(user_name, dept_name, group_name, location_name)
@@ -711,7 +804,7 @@ def _eval_zia_firewall(
         check.caveats.append(
             f"Rules scoped to {'/'.join(blank_scopes)} were evaluated permissively (specify identity context for precise results): "
             + ", ".join(f'"{n}"' for n in scoped_rules[:5])
-            + (f" +{len(scoped_rules)-5} more" if len(scoped_rules) > 5 else "")
+            + (f" +{len(scoped_rules) - 5} more" if len(scoped_rules) > 5 else "")
         )
 
     if not _is_ip(dest):
@@ -725,6 +818,7 @@ def _eval_zia_firewall(
 # ---------------------------------------------------------------------------
 # ZIA DNS Filtering evaluation
 # ---------------------------------------------------------------------------
+
 
 def _zia_url_lookup(tenant_id: int, dest: str) -> Tuple[Optional[List[str]], Optional[str]]:
     """Call ZIA urlLookup for dest.
@@ -743,8 +837,11 @@ def _zia_url_lookup(tenant_id: int, dest: str) -> Tuple[Optional[List[str]], Opt
         if not t:
             return None, "tenant not found"
         creds = (
-            t.zidentity_base_url, t.client_id, t.client_secret_enc,
-            bool(t.govcloud), t.oneapi_base_url,
+            t.zidentity_base_url,
+            t.client_id,
+            t.client_secret_enc,
+            bool(t.govcloud),
+            t.oneapi_base_url,
         )
 
     zidentity_url, client_id, secret_enc, govcloud, oneapi_url = creds
@@ -763,7 +860,10 @@ def _zia_url_lookup(tenant_id: int, dest: str) -> Tuple[Optional[List[str]], Opt
 
 
 def _eval_zia_dns(
-    tenant_id: int, dest: str, port: int, protocol: str,
+    tenant_id: int,
+    dest: str,
+    port: int,
+    protocol: str,
     live_cats: Optional[List[str]] = None,
     location_name: Optional[str] = None,
     road_warrior: bool = False,
@@ -813,7 +913,9 @@ def _eval_zia_dns(
         dest_ip_cats: List[str] = cfg.get("dest_ip_categories", [])
         res_cats: List[str] = cfg.get("res_categories", [])
         applications: List[str] = cfg.get("applications", [])
-        has_dest = bool(dest_addrs or dest_ip_groups_ref or dest_ip_cats or res_cats or applications)
+        has_dest = bool(
+            dest_addrs or dest_ip_groups_ref or dest_ip_cats or res_cats or applications
+        )
 
         if has_dest:
             if dest_ip_cats or res_cats or applications:
@@ -834,12 +936,14 @@ def _eval_zia_dns(
                             # applications still need to be skipped with caveat
                     else:
                         skip_reason_parts.append(
-                            f'categories ({", ".join(all_url_cats[:5])}{"..." if len(all_url_cats) > 5 else ""})'
+                            f"categories ({', '.join(all_url_cats[:5])}{'...' if len(all_url_cats) > 5 else ''})"
                         )
 
                 # applications require traffic inspection — always skip
                 if applications:
-                    skip_reason_parts.append(f'applications ({", ".join(applications[:5])}{"..." if len(applications) > 5 else ""})')
+                    skip_reason_parts.append(
+                        f"applications ({', '.join(applications[:5])}{'...' if len(applications) > 5 else ''})"
+                    )
 
                 if skip_reason_parts:
                     check.caveats.append(
@@ -850,7 +954,8 @@ def _eval_zia_dns(
 
             # Category match via live lookup counts as destination match
             cat_matched = bool(
-                (dest_ip_cats or res_cats) and live_cats is not None
+                (dest_ip_cats or res_cats)
+                and live_cats is not None
                 and any(c in live_cats for c in set(dest_ip_cats + res_cats))
             )
             dest_matched = (
@@ -877,9 +982,14 @@ def _eval_zia_dns(
 # ZIA URL Filtering evaluation
 # ---------------------------------------------------------------------------
 
+
 def _resolve_url_categories(tenant_id: int, s) -> Dict[str, Dict]:
     """Return {category_id: raw_config} for all URL categories."""
-    rows = s.query(ZIAResource).filter_by(tenant_id=tenant_id, resource_type="url_category", is_deleted=False).all()
+    rows = (
+        s.query(ZIAResource)
+        .filter_by(tenant_id=tenant_id, resource_type="url_category", is_deleted=False)
+        .all()
+    )
     result: Dict[str, Dict] = {}
     for row in rows:
         cfg = row.raw_config or {}
@@ -891,7 +1001,11 @@ def _resolve_url_categories(tenant_id: int, s) -> Dict[str, Dict]:
 
 def _url_in_category(hostname: str, cat_cfg: Dict) -> bool:
     """True if hostname is listed in a URL category (custom or predefined)."""
-    for url_list in (cat_cfg.get("custom_urls", []), cat_cfg.get("urls", []), cat_cfg.get("db_categorized_urls", [])):
+    for url_list in (
+        cat_cfg.get("custom_urls", []),
+        cat_cfg.get("urls", []),
+        cat_cfg.get("db_categorized_urls", []),
+    ):
         for raw_url in url_list:
             url = _strip_url(raw_url) if raw_url else ""
             if not url:
@@ -902,7 +1016,10 @@ def _url_in_category(hostname: str, cat_cfg: Dict) -> bool:
 
 
 def _eval_zia_url(
-    tenant_id: int, dest: str, port: int, protocol: str,
+    tenant_id: int,
+    dest: str,
+    port: int,
+    protocol: str,
     user_name: Optional[str] = None,
     dept_name: Optional[str] = None,
     group_name: Optional[str] = None,
@@ -930,8 +1047,10 @@ def _eval_zia_url(
     enabled = [r for r in rules if (r.raw_config or {}).get("state") == "ENABLED"]
     enabled.sort(key=lambda r: (r.raw_config or {}).get("order", 9999))
 
-    predefined_rules: List[str] = []   # rules skipped because they use predefined categories (no live lookup)
-    scoped_rules: List[str] = []       # rules carrying user/dept/group/location scope
+    predefined_rules: List[
+        str
+    ] = []  # rules skipped because they use predefined categories (no live lookup)
+    scoped_rules: List[str] = []  # rules carrying user/dept/group/location scope
     blank_scopes = _blank_scopes(user_name, dept_name, group_name, location_name)
     # Live-resolved URL classifications (from ZIA url_lookup) let us match predefined
     # categories offline-plus-one-call, just like the DNS engine.
@@ -1007,7 +1126,9 @@ def _eval_zia_url(
             predefined_rules.append(cfg.get("name", "Unknown Rule"))
 
     def _fmt(names: List[str]) -> str:
-        return ", ".join(f'"{n}"' for n in names[:5]) + (f" +{len(names)-5} more" if len(names) > 5 else "")
+        return ", ".join(f'"{n}"' for n in names[:5]) + (
+            f" +{len(names) - 5} more" if len(names) > 5 else ""
+        )
 
     # Predefined-category rules that couldn't be resolved offline — surface even on a match,
     # since one of them could be the real winner ahead of the matched rule.
@@ -1019,7 +1140,8 @@ def _eval_zia_url(
             )
         else:
             check.caveats.append(
-                "Rules using predefined URL categories cannot be evaluated offline: " + _fmt(predefined_rules)
+                "Rules using predefined URL categories cannot be evaluated offline: "
+                + _fmt(predefined_rules)
             )
 
     # Scoped rules evaluated permissively because no identity context was supplied.
@@ -1032,7 +1154,8 @@ def _eval_zia_url(
 
     if not check.matched:
         check.reason = (
-            "No custom URL category matched this hostname" if predefined_rules
+            "No custom URL category matched this hostname"
+            if predefined_rules
             else "No URL filter rule matched this hostname"
         )
 
@@ -1043,8 +1166,11 @@ def _eval_zia_url(
 # ZIA SSL Inspection evaluation
 # ---------------------------------------------------------------------------
 
+
 def _eval_ssl_inspection(
-    tenant_id: int, dest: str, protocol: str,
+    tenant_id: int,
+    dest: str,
+    protocol: str,
     cloud_app: Optional[str] = None,
     user_name: Optional[str] = None,
     dept_name: Optional[str] = None,
@@ -1064,9 +1190,11 @@ def _eval_ssl_inspection(
     hostname = _strip_url(dest)
 
     with get_session() as s:
-        rules = s.query(ZIAResource).filter_by(
-            tenant_id=tenant_id, resource_type="ssl_inspection_rule", is_deleted=False
-        ).all()
+        rules = (
+            s.query(ZIAResource)
+            .filter_by(tenant_id=tenant_id, resource_type="ssl_inspection_rule", is_deleted=False)
+            .all()
+        )
         url_categories = _resolve_url_categories(tenant_id, s)
         ip_dest_groups = _resolve_ip_dest_groups(tenant_id, s)
         ip_src_groups = _resolve_src_ip_groups(tenant_id, s)
@@ -1090,13 +1218,21 @@ def _eval_ssl_inspection(
         locs: List[Dict] = cfg.get("locations", [])
 
         # Destination / ZPA segment / source constraints (AND with the rest)
-        if cfg.get("dest_ip_groups") and not _dest_in_ip_groups(dest, cfg["dest_ip_groups"], ip_dest_groups):
+        if cfg.get("dest_ip_groups") and not _dest_in_ip_groups(
+            dest, cfg["dest_ip_groups"], ip_dest_groups
+        ):
             continue
         if cfg.get("zpa_app_segments") and road_warrior:
             continue
-        if cfg.get("zpa_app_segments") and not _dest_in_zpa_segments(dest, cfg["zpa_app_segments"], zpa_segments):
+        if cfg.get("zpa_app_segments") and not _dest_in_zpa_segments(
+            dest, cfg["zpa_app_segments"], zpa_segments
+        ):
             continue
-        if cfg.get("source_ip_groups") and src_ip and not _dest_in_ip_groups(src_ip, cfg["source_ip_groups"], ip_src_groups):
+        if (
+            cfg.get("source_ip_groups")
+            and src_ip
+            and not _dest_in_ip_groups(src_ip, cfg["source_ip_groups"], ip_src_groups)
+        ):
             continue
         if cfg.get("source_ip_groups") and not src_ip and skip_src_scoped:
             continue
@@ -1139,11 +1275,15 @@ def _eval_ssl_inspection(
             continue
 
         action_cfg = cfg.get("action", {})
-        action_type = action_cfg.get("type", "DECRYPT") if isinstance(action_cfg, dict) else str(action_cfg)
+        action_type = (
+            action_cfg.get("type", "DECRYPT") if isinstance(action_cfg, dict) else str(action_cfg)
+        )
         check.matched = True
         check.rule_name = cfg.get("name", "Unknown Rule")
         check.action = action_type
-        check.reason = f'Matched SSL rule "{check.rule_name}" (order {cfg.get("order", "?")}) → {action_type}'
+        check.reason = (
+            f'Matched SSL rule "{check.rule_name}" (order {cfg.get("order", "?")}) → {action_type}'
+        )
         break
 
     if not check.matched:
@@ -1153,7 +1293,7 @@ def _eval_ssl_inspection(
             check.caveats.append(
                 "Rules using predefined URL categories cannot be evaluated offline: "
                 + ", ".join(f'"{n}"' for n in predefined_skipped[:5])
-                + (f" +{len(predefined_skipped)-5} more" if len(predefined_skipped) > 5 else "")
+                + (f" +{len(predefined_skipped) - 5} more" if len(predefined_skipped) > 5 else "")
             )
 
     return check
@@ -1162,6 +1302,7 @@ def _eval_ssl_inspection(
 # ---------------------------------------------------------------------------
 # ZIA Cloud App Control evaluation
 # ---------------------------------------------------------------------------
+
 
 def _eval_cloud_app_control(
     tenant_id: int,
@@ -1178,9 +1319,13 @@ def _eval_cloud_app_control(
         return check
 
     with get_session() as s:
-        rules = s.query(ZIAResource).filter_by(
-            tenant_id=tenant_id, resource_type="cloud_app_control_rule", is_deleted=False
-        ).all()
+        rules = (
+            s.query(ZIAResource)
+            .filter_by(
+                tenant_id=tenant_id, resource_type="cloud_app_control_rule", is_deleted=False
+            )
+            .all()
+        )
 
     enabled = [r for r in rules if (r.raw_config or {}).get("state") == "ENABLED"]
     enabled.sort(key=lambda r: (r.raw_config or {}).get("order", 9999))
@@ -1216,7 +1361,7 @@ def _eval_cloud_app_control(
         check.action = action
         check.reason = (
             f'Matched cloud app control rule "{check.rule_name}" '
-            f'(type: {cfg.get("type", "?")}) → {action}'
+            f"(type: {cfg.get('type', '?')}) → {action}"
         )
         break
 
@@ -1230,14 +1375,17 @@ def _eval_cloud_app_control(
 # ZIA Security Exceptions evaluation
 # ---------------------------------------------------------------------------
 
+
 def _eval_security_exceptions(tenant_id: int, dest: str) -> PolicyCheck:
     check = PolicyCheck(engine="ZIA Security Exceptions")
     hostname = _strip_url(dest)
 
     with get_session() as s:
-        rows = s.query(ZIAResource).filter_by(
-            tenant_id=tenant_id, resource_type="allowlist", is_deleted=False
-        ).all()
+        rows = (
+            s.query(ZIAResource)
+            .filter_by(tenant_id=tenant_id, resource_type="allowlist", is_deleted=False)
+            .all()
+        )
 
     for row in rows:
         cfg = row.raw_config or {}
@@ -1245,7 +1393,9 @@ def _eval_security_exceptions(tenant_id: int, dest: str) -> PolicyCheck:
             if url and _hostname_matches(hostname, url.strip()):
                 check.matched = True
                 check.action = "ALLOW"
-                check.reason = "Destination is in security exceptions allowlist — bypasses URL filtering"
+                check.reason = (
+                    "Destination is in security exceptions allowlist — bypasses URL filtering"
+                )
                 return check
         for url in cfg.get("blacklist_urls", []):
             if url and _hostname_matches(hostname, url.strip()):
@@ -1356,22 +1506,24 @@ def _pac_direct_match(
                 continue
             test_re = re.compile(rf"\b{re.escape(varname)}\.test\s*\(")
             near_direct = any(
-                "DIRECT" in content_nc[tm.start(): min(len(content_nc), tm.end() + 400)]
+                "DIRECT" in content_nc[tm.start() : min(len(content_nc), tm.end() + 400)]
                 for tm in test_re.finditer(content_nc)
             )
             if not near_direct:
                 continue
             for pat, cidr in _PAC_RFC1918_MAP.items():
                 if pat in regex_body and _ip_in_cidr(dest, cidr):
-                    return {"rule": f"RFC1918 private IP ({cidr})",
-                            "detail": "PAC private-IP regex → DIRECT"}
+                    return {
+                        "rule": f"RFC1918 private IP ({cidr})",
+                        "detail": "PAC private-IP regex → DIRECT",
+                    }
 
     # ── 2. isInNet(x, "ip", "mask") → DIRECT ─────────────────────────────────
     if dest_is_ip:
         innet_re = re.compile(r'isInNet\s*\([^,)]+,\s*"([0-9.]+)"\s*,\s*"([0-9.]+)"\s*\)')
         for m in innet_re.finditer(content_nc):
             ip, mask = m.group(1), m.group(2)
-            ctx = content_nc[m.start(): min(len(content_nc), m.end() + 300)]
+            ctx = content_nc[m.start() : min(len(content_nc), m.end() + 300)]
             if "DIRECT" not in ctx:
                 continue
             cidr = f"{ip}/{_mask_to_prefix(mask)}"
@@ -1382,7 +1534,7 @@ def _pac_direct_match(
     host_eq_re = re.compile(r'host\s*==\s*"([^"]+)"')
     for m in host_eq_re.finditer(content_nc):
         h = _strip_url(m.group(1))
-        ctx = content_nc[m.start(): min(len(content_nc), m.end() + 200)]
+        ctx = content_nc[m.start() : min(len(content_nc), m.end() + 200)]
         if "DIRECT" in ctx and hostname == h:
             return {"rule": f'host == "{m.group(1)}"', "detail": "PAC host match → DIRECT"}
 
@@ -1392,7 +1544,7 @@ def _pac_direct_match(
         pattern = m.group(1)
         if "example" in pattern.lower():
             continue
-        ctx = content_nc[m.start(): min(len(content_nc), m.end() + 200)]
+        ctx = content_nc[m.start() : min(len(content_nc), m.end() + 200)]
         if "DIRECT" in ctx and _hostname_matches(hostname, pattern):
             return {"rule": f'shExpMatch "{pattern}"', "detail": "PAC shExpMatch → DIRECT"}
 
@@ -1401,31 +1553,37 @@ def _pac_direct_match(
     #   for (i...) if (shExpMatch(h, bypassAllHosts[i])) return "DIRECT";
     # Resolve the looped array (through [].concat) to its patterns and test each.
     literal_arrays, resolved_arrays = _collect_pac_arrays(content_nc)
-    loop_re = re.compile(r'shExpMatch\s*\([^,]+,\s*(\w+)\s*\[')
+    loop_re = re.compile(r"shExpMatch\s*\([^,]+,\s*(\w+)\s*\[")
     for m in loop_re.finditer(content_nc):
         arrvar = m.group(1)
-        ctx = content_nc[m.start(): min(len(content_nc), m.end() + 300)]
+        ctx = content_nc[m.start() : min(len(content_nc), m.end() + 300)]
         if "DIRECT" not in ctx:
             continue
         for pat in resolved_arrays.get(arrvar, []):
             if _hostname_matches(hostname, pat):
                 src = next((n for n, pats in literal_arrays.items() if pat in pats), arrvar)
-                return {"rule": f'shExpMatch list "{pat}" ({src})',
-                        "detail": "PAC array bypass → DIRECT"}
+                return {
+                    "rule": f'shExpMatch list "{pat}" ({src})',
+                    "detail": "PAC array bypass → DIRECT",
+                }
 
     # ── 5. isPlainHostName → DIRECT ──────────────────────────────────────────
     if not dest_is_ip and "." not in hostname:
         for m in re.finditer(r"isPlainHostName\s*\(", content_nc):
-            ctx = content_nc[m.start(): min(len(content_nc), m.end() + 300)]
+            ctx = content_nc[m.start() : min(len(content_nc), m.end() + 300)]
             if "DIRECT" in ctx:
-                return {"rule": "Plain hostname (unqualified)",
-                        "detail": "PAC isPlainHostName → DIRECT"}
+                return {
+                    "rule": "Plain hostname (unqualified)",
+                    "detail": "PAC isPlainHostName → DIRECT",
+                }
 
     # ── 6. Non-HTTP/S protocols → DIRECT ──────────────────────────────────────
     if protocol.upper() not in ("HTTP", "HTTPS", "SSL", "TLS"):
         if re.search(r"url\.substring.*!=.*https?.*DIRECT", content_nc, re.DOTALL):
-            return {"rule": f"Non-HTTP/S protocol ({protocol})",
-                    "detail": "PAC protocol check → DIRECT"}
+            return {
+                "rule": f"Non-HTTP/S protocol ({protocol})",
+                "detail": "PAC protocol check → DIRECT",
+            }
 
     return None
 
@@ -1439,9 +1597,11 @@ def _cached_pac_content(tenant_id: int, pac_url: str, session) -> Optional[str]:
     """
     if not pac_url:
         return None
-    rows = session.query(ZIAResource).filter_by(
-        tenant_id=tenant_id, resource_type="pac_file", is_deleted=False
-    ).all()
+    rows = (
+        session.query(ZIAResource)
+        .filter_by(tenant_id=tenant_id, resource_type="pac_file", is_deleted=False)
+        .all()
+    )
     for r in rows:
         cfg = r.raw_config or {}
         if cfg.get("pacUrl") == pac_url and cfg.get("pacContent"):
@@ -1450,7 +1610,11 @@ def _cached_pac_content(tenant_id: int, pac_url: str, session) -> Optional[str]:
 
 
 def _eval_pac_bypass(
-    tenant_id: int, dest: str, port: int, protocol: str, zcc_profile: Optional[str],
+    tenant_id: int,
+    dest: str,
+    port: int,
+    protocol: str,
+    zcc_profile: Optional[str],
     network_context: Optional[str] = None,
 ) -> Optional[PolicyCheck]:
     """Check whether the destination is sent DIRECT by the active ZCC PAC file.
@@ -1469,9 +1633,11 @@ def _eval_pac_bypass(
         return None
 
     with get_session() as s:
-        policies = s.query(ZCCResource).filter_by(
-            tenant_id=tenant_id, resource_type="web_policy", is_deleted=False
-        ).all()
+        policies = (
+            s.query(ZCCResource)
+            .filter_by(tenant_id=tenant_id, resource_type="web_policy", is_deleted=False)
+            .all()
+        )
         raw_policy = None
         for p in policies:
             if (p.raw_config or {}).get("name") == zcc_profile:
@@ -1484,13 +1650,21 @@ def _eval_pac_bypass(
         app_pac_url = raw_policy.get("pac_url") or raw_policy.get("pacUrl") or None
         fp_pac_url = None
         if raw_fp:
-            actions = (raw_fp.get("forwardingProfileActions")
-                       or raw_fp.get("forwarding_profile_actions") or [])
+            actions = (
+                raw_fp.get("forwardingProfileActions")
+                or raw_fp.get("forwarding_profile_actions")
+                or []
+            )
             actions = [a for a in actions if isinstance(a, dict)]
             nc = _NC_INT.get(network_context or "")
-            act = next((a for a in actions
-                        if nc is not None and _action_int(a, "networkType", "network_type") == nc),
-                       actions[0] if actions else None)
+            act = next(
+                (
+                    a
+                    for a in actions
+                    if nc is not None and _action_int(a, "networkType", "network_type") == nc
+                ),
+                actions[0] if actions else None,
+            )
             if act is not None and nc is not None and _pure_zt2(act):
                 skipped = PolicyCheck(engine="ZCC Bypass")
                 skipped.caveats.append(
@@ -1499,10 +1673,8 @@ def _eval_pac_bypass(
                 )
                 return skipped
             if act is not None:
-                spd = (act.get("systemProxyData")
-                       or act.get("system_proxy_data") or {})
-                fp_pac_url = (spd.get("pacURL") or spd.get("pac_u_r_l")
-                              or spd.get("pac_url") or None)
+                spd = act.get("systemProxyData") or act.get("system_proxy_data") or {}
+                fp_pac_url = spd.get("pacURL") or spd.get("pac_u_r_l") or spd.get("pac_url") or None
 
         # (pac_url, label, cached_content) — resolve cache inside the session.
         sources = [
@@ -1522,8 +1694,8 @@ def _eval_pac_bypass(
             check.action = "BYPASS"
             check.rule_name = match["rule"]
             check.reason = (
-                f'Destination matches PAC DIRECT rule ({match["rule"]}) in the '
-                f'{label} PAC file — bypasses ZCC tunnel, goes direct to internet'
+                f"Destination matches PAC DIRECT rule ({match['rule']}) in the "
+                f"{label} PAC file — bypasses ZCC tunnel, goes direct to internet"
             )
             if not cached:
                 check.caveats.append(
@@ -1539,8 +1711,12 @@ def _eval_pac_bypass(
 # ZCC Bypass evaluation
 # ---------------------------------------------------------------------------
 
+
 def _eval_zcc_bypass(
-    tenant_id: int, dest: str, port: int, protocol: str,
+    tenant_id: int,
+    dest: str,
+    port: int,
+    protocol: str,
     zcc_profile: Optional[str] = None,
     network_context: Optional[str] = None,
 ) -> PolicyCheck:
@@ -1548,12 +1724,16 @@ def _eval_zcc_bypass(
     dest_is_ip = _is_ip(dest)
 
     with get_session() as s:
-        policies = s.query(ZCCResource).filter_by(
-            tenant_id=tenant_id, resource_type="web_policy", is_deleted=False
-        ).all()
-        app_services = s.query(ZCCResource).filter_by(
-            tenant_id=tenant_id, resource_type="web_app_service", is_deleted=False
-        ).all()
+        policies = (
+            s.query(ZCCResource)
+            .filter_by(tenant_id=tenant_id, resource_type="web_policy", is_deleted=False)
+            .all()
+        )
+        app_services = (
+            s.query(ZCCResource)
+            .filter_by(tenant_id=tenant_id, resource_type="web_app_service", is_deleted=False)
+            .all()
+        )
 
     if zcc_profile:
         policies = [r for r in policies if (r.raw_config or {}).get("name") == zcc_profile]
@@ -1612,9 +1792,17 @@ def _eval_zcc_bypass(
                 try:
                     blob = ast.literal_eval(blob_str) if isinstance(blob_str, str) else blob_str
                     blob_proto = str(blob.get("proto", "")).upper()
-                    blob_ports = [int(p) for p in str(blob.get("port", "")).split(",") if p.strip().isdigit()]
-                    blob_ips = [ip.strip() for ip in str(blob.get("ipaddr") or blob.get("ip_addr", "")).split(",") if ip.strip()]
-                    proto_match = not blob_proto or protocol.upper().startswith(blob_proto.rstrip("S"))
+                    blob_ports = [
+                        int(p) for p in str(blob.get("port", "")).split(",") if p.strip().isdigit()
+                    ]
+                    blob_ips = [
+                        ip.strip()
+                        for ip in str(blob.get("ipaddr") or blob.get("ip_addr", "")).split(",")
+                        if ip.strip()
+                    ]
+                    proto_match = not blob_proto or protocol.upper().startswith(
+                        blob_proto.rstrip("S")
+                    )
                     port_match = not blob_ports or port in blob_ports
                     ip_match = any(
                         (_ip_in_cidr(dest, cidr) if "/" in cidr else dest == cidr)
@@ -1664,8 +1852,9 @@ def _action_int(action: dict, camel: str, snake: str) -> Optional[int]:
 
 def _pure_zt2(action: dict) -> bool:
     """True for Z-Tunnel 2.0 without the Listening Proxy (the PAC is never consulted)."""
-    return (_action_int(action, "enablePacketTunnel", "enable_packet_tunnel") == 1
-            and not (action.get("redirectWebTraffic") or action.get("redirect_web_traffic")))
+    return _action_int(action, "enablePacketTunnel", "enable_packet_tunnel") == 1 and not (
+        action.get("redirectWebTraffic") or action.get("redirect_web_traffic")
+    )
 
 
 def _resolve_forwarding_profile(tenant_id: int, zcc_profile: str, session) -> Optional[dict]:
@@ -1677,9 +1866,11 @@ def _resolve_forwarding_profile(tenant_id: int, zcc_profile: str, session) -> Op
     3. Fall back to forwardingProfileId lookup in forwarding_profile records
     4. With no reference at all, use the Default forwarding profile (id 0)
     """
-    policy_row = session.query(ZCCResource).filter_by(
-        tenant_id=tenant_id, resource_type="web_policy", is_deleted=False
-    ).all()
+    policy_row = (
+        session.query(ZCCResource)
+        .filter_by(tenant_id=tenant_id, resource_type="web_policy", is_deleted=False)
+        .all()
+    )
 
     raw_policy = None
     for p in policy_row:
@@ -1695,22 +1886,30 @@ def _resolve_forwarding_profile(tenant_id: int, zcc_profile: str, session) -> Op
         return raw_fp
 
     # Fallback: look up forwarding_profile record by forwardingProfileId
-    fp_id = str(raw_policy.get("forwardingProfileId") or raw_policy.get("forwarding_profile_id") or "")
+    fp_id = str(
+        raw_policy.get("forwardingProfileId") or raw_policy.get("forwarding_profile_id") or ""
+    )
     if not fp_id:
         # No explicit reference (the built-in Default app profile): ZCC applies
         # the tenant's Default forwarding profile, which has id 0.
         fp_id = "0"
     fp_id_candidates = [fp_id, fp_id + ".0"] if not fp_id.endswith(".0") else [fp_id, fp_id[:-2]]
-    fp_row = session.query(ZCCResource).filter(
-        ZCCResource.tenant_id == tenant_id,
-        ZCCResource.resource_type == "forwarding_profile",
-        ZCCResource.zcc_id.in_(fp_id_candidates),
-        ZCCResource.is_deleted == False,  # noqa: E712
-    ).first()
+    fp_row = (
+        session.query(ZCCResource)
+        .filter(
+            ZCCResource.tenant_id == tenant_id,
+            ZCCResource.resource_type == "forwarding_profile",
+            ZCCResource.zcc_id.in_(fp_id_candidates),
+            ZCCResource.is_deleted == False,  # noqa: E712
+        )
+        .first()
+    )
     return fp_row.raw_config if fp_row else None
 
 
-def _eval_network_context(tenant_id: int, zcc_profile: Optional[str], network_context: str) -> Optional[PolicyCheck]:
+def _eval_network_context(
+    tenant_id: int, zcc_profile: Optional[str], network_context: str
+) -> Optional[PolicyCheck]:
     """Return a PolicyCheck if ZCC is inactive for this network context.
 
     Uses the same forwarding profile resolution as the ZCC traffic profile
@@ -1735,15 +1934,27 @@ def _eval_network_context(tenant_id: int, zcc_profile: Optional[str], network_co
         or []
     )
     for action in actions:
-        nt = action.get("network_type") if action.get("network_type") is not None else action.get("networkType")
-        at = action.get("action_type") if action.get("action_type") is not None else action.get("actionType")
+        nt = (
+            action.get("network_type")
+            if action.get("network_type") is not None
+            else action.get("networkType")
+        )
+        at = (
+            action.get("action_type")
+            if action.get("action_type") is not None
+            else action.get("actionType")
+        )
         if nt is None or at is None:
             continue
         if int(nt) == nc and int(at) == 3:
             check = PolicyCheck(engine="ZCC Network Context")
             check.matched = True
             check.action = "BYPASS"
-            ctx_label = {"on": "On Trusted Network", "vpn": "VPN Trusted Network", "off": "Off Trusted Network"}.get(network_context, network_context)
+            ctx_label = {
+                "on": "On Trusted Network",
+                "vpn": "VPN Trusted Network",
+                "off": "Off Trusted Network",
+            }.get(network_context, network_context)
             check.rule_name = fp_name
             check.reason = f'ZCC client is inactive on "{ctx_label}" per forwarding profile "{fp_name}" — traffic goes direct'
             return check
@@ -1751,7 +1962,10 @@ def _eval_network_context(tenant_id: int, zcc_profile: Optional[str], network_co
 
 
 def simulate(
-    tenant_id: int, destination: str, port: int, protocol: str,
+    tenant_id: int,
+    destination: str,
+    port: int,
+    protocol: str,
     nw_application: Optional[str] = None,
     app_service_group: Optional[str] = None,
     cloud_app: Optional[str] = None,
@@ -1770,15 +1984,25 @@ def simulate(
         nc_check = _eval_network_context(tenant_id, zcc_profile, network_context)
         if nc_check:
             return SimulationResult(
-                destination=dest, port=port, protocol=protocol,
+                destination=dest,
+                port=port,
+                protocol=protocol,
                 zcc_bypass=nc_check,
                 zpa=PolicyCheck(engine="ZPA", reason="ZCC inactive — ZPA not evaluated"),
-                zia_firewall=PolicyCheck(engine="ZIA Firewall", reason="ZCC inactive — ZIA not evaluated"),
+                zia_firewall=PolicyCheck(
+                    engine="ZIA Firewall", reason="ZCC inactive — ZIA not evaluated"
+                ),
                 zia_dns=PolicyCheck(engine="ZIA DNS", reason="ZCC inactive — ZIA not evaluated"),
-                zia_url=PolicyCheck(engine="ZIA URL Filter", reason="ZCC inactive — ZIA not evaluated"),
+                zia_url=PolicyCheck(
+                    engine="ZIA URL Filter", reason="ZCC inactive — ZIA not evaluated"
+                ),
                 zia_ssl=PolicyCheck(engine="ZIA SSL", reason="ZCC inactive — ZIA not evaluated"),
-                zia_cloud_app=PolicyCheck(engine="ZIA Cloud App", reason="ZCC inactive — ZIA not evaluated"),
-                zia_exceptions=PolicyCheck(engine="ZIA Exceptions", reason="ZCC inactive — ZIA not evaluated"),
+                zia_cloud_app=PolicyCheck(
+                    engine="ZIA Cloud App", reason="ZCC inactive — ZIA not evaluated"
+                ),
+                zia_exceptions=PolicyCheck(
+                    engine="ZIA Exceptions", reason="ZCC inactive — ZIA not evaluated"
+                ),
                 verdict="ZCC_INACTIVE",
                 verdict_label=nc_check.reason,
             )
@@ -1797,15 +2021,30 @@ def simulate(
     zcc_bypass = _eval_zcc_bypass(tenant_id, dest, port, protocol, zcc_profile, network_context)
     zpa = _eval_zpa(tenant_id, dest, port, protocol)
     zia_fw = _eval_zia_firewall(
-        tenant_id, dest, port, protocol,
-        nw_application, app_service_group,
-        src_ip, user_name, dept_name, group_name, location_name,
-        skip_src_scoped, road_warrior,
+        tenant_id,
+        dest,
+        port,
+        protocol,
+        nw_application,
+        app_service_group,
+        src_ip,
+        user_name,
+        dept_name,
+        group_name,
+        location_name,
+        skip_src_scoped,
+        road_warrior,
     )
     zia_dns = _eval_zia_dns(tenant_id, dest, port, protocol, live_cats, location_name, road_warrior)
     zia_url = _eval_zia_url(
-        tenant_id, dest, port, protocol,
-        user_name, dept_name, group_name, location_name,
+        tenant_id,
+        dest,
+        port,
+        protocol,
+        user_name,
+        dept_name,
+        group_name,
+        location_name,
         live_cats=live_cats,
     )
     if lookup_error:
@@ -1816,12 +2055,25 @@ def simulate(
         zia_dns.caveats.insert(0, lookup_caveat)
         zia_url.caveats.insert(0, lookup_caveat)
     zia_ssl = _eval_ssl_inspection(
-        tenant_id, dest, protocol,
-        cloud_app, user_name, dept_name, group_name, location_name,
-        src_ip, skip_src_scoped, road_warrior,
+        tenant_id,
+        dest,
+        protocol,
+        cloud_app,
+        user_name,
+        dept_name,
+        group_name,
+        location_name,
+        src_ip,
+        skip_src_scoped,
+        road_warrior,
     )
     zia_cloud_app = _eval_cloud_app_control(
-        tenant_id, cloud_app, user_name, dept_name, group_name, location_name,
+        tenant_id,
+        cloud_app,
+        user_name,
+        dept_name,
+        group_name,
+        location_name,
     )
     zia_exceptions = _eval_security_exceptions(tenant_id, dest)
 
@@ -1830,7 +2082,11 @@ def simulate(
             "No location given — assumed Road Warrior (ZCC tunnel to ZIA): location-scoped "
             "rules match only if they include Road Warrior, and ZPA-for-locations rules "
             "(ZPA redirect, ZPA app segment criteria) don't apply"
-            + ("; rules scoped to source IP groups were skipped (no source IP given)" if skip_src_scoped else "")
+            + (
+                "; rules scoped to source IP groups were skipped (no source IP given)"
+                if skip_src_scoped
+                else ""
+            )
         )
         for c in (zia_fw, zia_dns, zia_url, zia_ssl) + ((zia_cloud_app,) if cloud_app else ()):
             c.caveats.insert(0, rw_caveat)
@@ -1845,7 +2101,9 @@ def simulate(
     # reported block is the one ZIA would actually enforce first.
     if zcc_bypass.matched and zcc_bypass.action == "BYPASS":
         verdict = "ZCC_BYPASS"
-        verdict_label = f'Traffic bypasses ZCC tunnel — goes direct to internet via "{zcc_bypass.rule_name}"'
+        verdict_label = (
+            f'Traffic bypasses ZCC tunnel — goes direct to internet via "{zcc_bypass.rule_name}"'
+        )
     elif zpa.matched:
         verdict = "ZPA"
         verdict_label = f'Routed through ZPA → "{zpa.rule_name}"'
@@ -1858,7 +2116,11 @@ def simulate(
     elif zia_cloud_app.matched and (zia_cloud_app.action or "").upper() in _BLOCK_ACTIONS:
         verdict = "ZIA_BLOCK_CLOUDAPP"
         verdict_label = f'Blocked by ZIA Cloud App Control → "{zia_cloud_app.rule_name}"'
-    elif zia_url.matched and (zia_url.action or "").upper() in _BLOCK_ACTIONS and not (zia_exceptions.matched and zia_exceptions.action == "ALLOW"):
+    elif (
+        zia_url.matched
+        and (zia_url.action or "").upper() in _BLOCK_ACTIONS
+        and not (zia_exceptions.matched and zia_exceptions.action == "ALLOW")
+    ):
         verdict = "ZIA_BLOCK_URL"
         verdict_label = f'Blocked by ZIA URL Filter → "{zia_url.rule_name}"'
     else:

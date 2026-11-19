@@ -24,6 +24,7 @@ router = APIRouter(prefix="/api/v1/scheduled-tasks", tags=["Scheduled Tasks"])
 # Pydantic schemas
 # ---------------------------------------------------------------------------
 
+
 class SyncTaskCreate(BaseModel):
     task_type: Literal["sync"] = "sync"
     name: str
@@ -31,7 +32,7 @@ class SyncTaskCreate(BaseModel):
     target_tenant_id: Optional[int] = None
     target_tenant_ids: Optional[List[int]] = None
     resource_groups: Optional[List[str]] = None
-    schedule: str                    # interval preset or cron expression
+    schedule: str  # interval preset or cron expression
     sync_deletes: bool = False
     enabled: bool = True
     owner_email: Optional[str] = None
@@ -42,7 +43,7 @@ class SyncTaskCreate(BaseModel):
     @model_validator(mode="after")
     def _validate(self) -> "SyncTaskCreate":
         has_single = self.target_tenant_id is not None
-        has_multi  = self.target_tenant_ids is not None and len(self.target_tenant_ids) > 0
+        has_multi = self.target_tenant_ids is not None and len(self.target_tenant_ids) > 0
         if not has_single and not has_multi:
             raise ValueError("Provide target_tenant_id (single) or target_tenant_ids (multi).")
         if has_single and has_multi:
@@ -51,7 +52,9 @@ class SyncTaskCreate(BaseModel):
             raise ValueError("sync_mode must be 'resource_type' or 'label'.")
         if self.sync_mode == "resource_type":
             if not self.resource_groups:
-                raise ValueError("resource_groups must be non-empty when sync_mode is 'resource_type'.")
+                raise ValueError(
+                    "resource_groups must be non-empty when sync_mode is 'resource_type'."
+                )
             if self.label_name:
                 raise ValueError("label_name must be absent when sync_mode is 'resource_type'.")
         elif self.sync_mode == "label":
@@ -123,6 +126,7 @@ class ScheduledTaskUpdate(BaseModel):
 # Serialisation helpers
 # ---------------------------------------------------------------------------
 
+
 def _next_run(cron_expression: str) -> Optional[str]:
     """Compute the next fire time for a cron expression (UTC ISO string)."""
     try:
@@ -170,7 +174,7 @@ def _serialize_task(task, last_run=None) -> Dict[str, Any]:
         tgt_name = None
         tgt_names = None
         if task_type == "sync":
-            effective_tgt_id = (target_tenant_ids[0] if target_tenant_ids else task.target_tenant_id)
+            effective_tgt_id = target_tenant_ids[0] if target_tenant_ids else task.target_tenant_id
             if effective_tgt_id is not None:
                 tgt = session.get(TenantConfig, effective_tgt_id)
                 tgt_name = tgt.name if tgt else str(effective_tgt_id)
@@ -189,7 +193,9 @@ def _serialize_task(task, last_run=None) -> Dict[str, Any]:
         "cron_expression": task.cron_expression,
         "enabled": task.enabled,
         "owner_email": task.owner_email,
-        "last_run_at": last_run.started_at.isoformat() + "Z" if last_run and last_run.started_at else None,
+        "last_run_at": last_run.started_at.isoformat() + "Z"
+        if last_run and last_run.started_at
+        else None,
         "last_run_status": last_run.status if last_run else None,
         "next_run_at": _next_run(task.cron_expression) if task.enabled else None,
         "created_at": task.created_at.isoformat() + "Z" if task.created_at else None,
@@ -197,21 +203,25 @@ def _serialize_task(task, last_run=None) -> Dict[str, Any]:
     }
 
     if task_type == "sync":
-        result.update({
-            "target_tenant_id": task.target_tenant_id,
-            "target_tenant_name": tgt_name,
-            "target_tenant_ids": target_tenant_ids,
-            "target_tenant_names": tgt_names,
-            "resource_groups": task.resource_groups,
-            "sync_deletes": task.sync_deletes,
-            "sync_mode": task.sync_mode or "resource_type",
-            "label_name": task.label_name,
-            "label_resource_types": task.label_resource_types,
-        })
+        result.update(
+            {
+                "target_tenant_id": task.target_tenant_id,
+                "target_tenant_name": tgt_name,
+                "target_tenant_ids": target_tenant_ids,
+                "target_tenant_names": tgt_names,
+                "resource_groups": task.resource_groups,
+                "sync_deletes": task.sync_deletes,
+                "sync_mode": task.sync_mode or "resource_type",
+                "label_name": task.label_name,
+                "label_resource_types": task.label_resource_types,
+            }
+        )
     elif task_type == "import":
-        result.update({
-            "import_products": task.import_products,
-        })
+        result.update(
+            {
+                "import_products": task.import_products,
+            }
+        )
 
     return result
 
@@ -247,6 +257,7 @@ def _get_last_run(task_id: int):
 
 def _copy_run(run):
     from db.models import TaskRunHistory
+
     return TaskRunHistory(
         id=run.id,
         task_id=run.task_id,
@@ -288,6 +299,7 @@ def _serialize_run(run, include_errors: bool = False) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
 
 @router.get("")
 def list_tasks(user: AuthUser = Depends(require_auth)):
@@ -390,7 +402,9 @@ def update_task(task_id: int, body: ScheduledTaskUpdate, user: AuthUser = Depend
     eff_type = body.task_type if body.task_type is not None else (existing.task_type or "sync")
     if eff_type == "import":
         _reject_zcc_on_govcloud(
-            body.source_tenant_id if body.source_tenant_id is not None else existing.source_tenant_id,
+            body.source_tenant_id
+            if body.source_tenant_id is not None
+            else existing.source_tenant_id,
             body.import_products if body.import_products is not None else existing.import_products,
         )
 
@@ -495,12 +509,15 @@ def trigger_task(task_id: int, user: AuthUser = Depends(require_auth)):
             if run_result is None:
                 store.fail(job_id, "Task not found or disabled")
                 return
-            store.complete(job_id, {
-                "status": run_result.status,
-                "resources_synced": run_result.resources_synced,
-                "error_count": len(run_result.errors_json) if run_result.errors_json else 0,
-                "run_id": run_result.id,
-            })
+            store.complete(
+                job_id,
+                {
+                    "status": run_result.status,
+                    "resources_synced": run_result.resources_synced,
+                    "error_count": len(run_result.errors_json) if run_result.errors_json else 0,
+                    "run_id": run_result.id,
+                },
+            )
         except Exception as exc:
             store.fail(job_id, str(exc))
 

@@ -13,8 +13,15 @@ from api.dependencies import require_admin, AuthUser
 from api.auth_utils import hash_password
 from db.database import dispose_engine, get_session, get_setting, init_db, get_db_url
 from db.models import (
-    AuditLog, RestorePoint, ScimToken, SyncLog,
-    TenantConfig, User, UserTenantEntitlement, ZCCResource, ZIAResource,
+    AuditLog,
+    RestorePoint,
+    ScimToken,
+    SyncLog,
+    TenantConfig,
+    User,
+    UserTenantEntitlement,
+    ZCCResource,
+    ZIAResource,
     ZPAResource,
 )
 
@@ -37,6 +44,7 @@ def _assert_admin_remains(session) -> None:
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
+
 
 class UserOut(BaseModel):
     id: int
@@ -89,6 +97,7 @@ class EntitlementBulkCreate(BaseModel):
 
 
 # ── Users ─────────────────────────────────────────────────────────────────────
+
 
 def _user_out(u: User, available_roles: Optional[List[str]] = None) -> dict:
     return {
@@ -166,6 +175,7 @@ def update_user(user_id: int, body: UserUpdate, current: AuthUser = Depends(requ
             # admin has had the chance to reassign them by then.
             if user.is_active and not body.is_active:
                 from services import template_share_service as _shares
+
                 disowned = _shares.disown_templates(user.id, session)
             user.is_active = body.is_active
         if body.force_password_change is not None:
@@ -183,6 +193,7 @@ def update_user(user_id: int, body: UserUpdate, current: AuthUser = Depends(requ
 
     if disowned:
         from services import audit_service
+
         audit_service.log(
             product="SYSTEM",
             operation="disown_templates",
@@ -207,6 +218,7 @@ def delete_user(user_id: int, current: AuthUser = Depends(require_admin)):
         # SCIM side deactivates instead of deleting, and both paths have to
         # leave the same state behind.
         from services import template_share_service as _shares
+
         username = user.username
         disowned = _shares.disown_templates(user.id, session)
         session.delete(user)
@@ -215,6 +227,7 @@ def delete_user(user_id: int, current: AuthUser = Depends(require_admin)):
 
     if disowned:
         from services import audit_service
+
         audit_service.log(
             product="SYSTEM",
             operation="disown_templates",
@@ -227,6 +240,7 @@ def delete_user(user_id: int, current: AuthUser = Depends(require_admin)):
 
 
 # ── Entitlements ──────────────────────────────────────────────────────────────
+
 
 def _ent_out(e: UserTenantEntitlement) -> dict:
     return {
@@ -261,9 +275,11 @@ def create_entitlement(body: EntitlementCreate, _: AuthUser = Depends(require_ad
         tenant = session.query(TenantConfig).filter_by(id=body.tenant_id).first()
         if not tenant:
             raise HTTPException(status_code=404, detail="Tenant not found")
-        existing = session.query(UserTenantEntitlement).filter_by(
-            user_id=body.user_id, tenant_id=body.tenant_id
-        ).first()
+        existing = (
+            session.query(UserTenantEntitlement)
+            .filter_by(user_id=body.user_id, tenant_id=body.tenant_id)
+            .first()
+        )
         if existing:
             raise HTTPException(status_code=409, detail="Entitlement already exists")
         ent = UserTenantEntitlement(user_id=body.user_id, tenant_id=body.tenant_id)
@@ -274,9 +290,7 @@ def create_entitlement(body: EntitlementCreate, _: AuthUser = Depends(require_ad
 
 
 @router.post("/entitlements/bulk", status_code=201)
-def create_entitlements_bulk(
-    body: EntitlementBulkCreate, _: AuthUser = Depends(require_admin)
-):
+def create_entitlements_bulk(body: EntitlementBulkCreate, _: AuthUser = Depends(require_admin)):
     """Grant one user access to several tenants in a single transaction.
 
     The UI multi-select used to POST to /entitlements once per tenant, in
@@ -347,6 +361,7 @@ def delete_entitlement(entitlement_id: int, _: AuthUser = Depends(require_admin)
 
 # ── Clear Data ───────────────────────────────────────────────────────────────
 
+
 class ClearDataRequest(BaseModel):
     tenant_id: Optional[int] = None
 
@@ -360,24 +375,24 @@ def clear_data(body: ClearDataRequest, _: AuthUser = Depends(require_admin)):
                 raise HTTPException(status_code=404, detail="Tenant not found")
 
     with get_session() as session:
-        q_zia   = session.query(ZIAResource)
-        q_zpa   = session.query(ZPAResource)
-        q_zcc   = session.query(ZCCResource)
-        q_snap  = session.query(RestorePoint)
-        q_sync  = session.query(SyncLog)
+        q_zia = session.query(ZIAResource)
+        q_zpa = session.query(ZPAResource)
+        q_zcc = session.query(ZCCResource)
+        q_snap = session.query(RestorePoint)
+        q_sync = session.query(SyncLog)
         q_audit = session.query(AuditLog)
         if tenant_id is not None:
-            q_zia   = q_zia.filter_by(tenant_id=tenant_id)
-            q_zpa   = q_zpa.filter_by(tenant_id=tenant_id)
-            q_zcc   = q_zcc.filter_by(tenant_id=tenant_id)
-            q_snap  = q_snap.filter_by(tenant_id=tenant_id)
-            q_sync  = q_sync.filter_by(tenant_id=tenant_id)
+            q_zia = q_zia.filter_by(tenant_id=tenant_id)
+            q_zpa = q_zpa.filter_by(tenant_id=tenant_id)
+            q_zcc = q_zcc.filter_by(tenant_id=tenant_id)
+            q_snap = q_snap.filter_by(tenant_id=tenant_id)
+            q_sync = q_sync.filter_by(tenant_id=tenant_id)
             q_audit = q_audit.filter_by(tenant_id=tenant_id)
-        zia_count   = q_zia.delete()
-        zpa_count   = q_zpa.delete()
-        zcc_count   = q_zcc.delete()
-        snap_count  = q_snap.delete()
-        sync_count  = q_sync.delete()
+        zia_count = q_zia.delete()
+        zpa_count = q_zpa.delete()
+        zcc_count = q_zcc.delete()
+        snap_count = q_snap.delete()
+        sync_count = q_sync.delete()
         audit_count = q_audit.delete()
 
     return {
@@ -391,6 +406,7 @@ def clear_data(body: ClearDataRequest, _: AuthUser = Depends(require_admin)):
 
 
 # ── Key Rotation ─────────────────────────────────────────────────────────────
+
 
 class RotateKeyRequest(BaseModel):
     algorithm: Optional[str] = None
@@ -500,7 +516,10 @@ async def import_database(
     """
     db_path_str = os.environ.get("ZSCALER_DB_PATH")
     if not db_path_str:
-        raise HTTPException(status_code=400, detail="ZSCALER_DB_PATH is not set; cannot determine where to write the database")
+        raise HTTPException(
+            status_code=400,
+            detail="ZSCALER_DB_PATH is not set; cannot determine where to write the database",
+        )
 
     db_path = Path(db_path_str)
     key_dir = db_path.parent
@@ -518,7 +537,10 @@ async def import_database(
         # Fernet keys are 44 base64url chars; the raw-byte algorithms store
         # base64 of 32 bytes, which is also 44.
         if len(new_key) != 44:
-            raise HTTPException(status_code=422, detail="Key file does not look like a valid key (expected 44 characters)")
+            raise HTTPException(
+                status_code=422,
+                detail="Key file does not look like a valid key (expected 44 characters)",
+            )
 
     # The candidate is opened with the uploaded key when one was supplied,
     # otherwise with whatever this install already uses.
@@ -594,6 +616,7 @@ async def import_database(
 
     # Seed a default admin if the imported DB has no admin accounts (e.g. TUI export)
     from api.main import seed_admin_if_needed
+
     temp_password = seed_admin_if_needed()
 
     return {
@@ -604,8 +627,8 @@ async def import_database(
     }
 
 
-
 # ── SCIM provisioning ─────────────────────────────────────────────────────────
+
 
 class ScimTokenCreate(BaseModel):
     label: Optional[str] = None

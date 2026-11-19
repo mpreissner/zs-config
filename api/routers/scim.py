@@ -94,7 +94,9 @@ def require_scim_token(authorization: Optional[str] = Header(default=None)) -> i
 # ── Serialisation ─────────────────────────────────────────────────────────────
 
 
-def _meta(resource: str, obj_id: int, created: Optional[datetime], updated: Optional[datetime]) -> dict:
+def _meta(
+    resource: str, obj_id: int, created: Optional[datetime], updated: Optional[datetime]
+) -> dict:
     meta = {"resourceType": resource, "location": f"/scim/v2/{resource}s/{obj_id}"}
     if created:
         meta["created"] = created.isoformat() + "Z"
@@ -220,6 +222,7 @@ def _assert_admin_remains(session) -> None:
 
 def _default_role() -> str:
     from db.database import get_setting
+
     return get_setting("idp_default_role") or "user"
 
 
@@ -228,47 +231,78 @@ def _default_role() -> str:
 
 @router.get("/ServiceProviderConfig")
 def service_provider_config():
-    return _scim_json({
-        "schemas": ["urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"],
-        "documentationUri": "https://github.com/mpreissner/zs-config",
-        "patch": {"supported": True},
-        "bulk": {"supported": False, "maxOperations": 0, "maxPayloadSize": 0},
-        "filter": {"supported": True, "maxResults": 200},
-        "changePassword": {"supported": False},
-        "sort": {"supported": False},
-        "etag": {"supported": False},
-        "authenticationSchemes": [{
-            "type": "oauthbearertoken",
-            "name": "OAuth Bearer Token",
-            "description": "Long-lived bearer token issued from Admin Settings",
-            "primary": True,
-        }],
-        "meta": {"resourceType": "ServiceProviderConfig", "location": "/scim/v2/ServiceProviderConfig"},
-    })
+    return _scim_json(
+        {
+            "schemas": ["urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"],
+            "documentationUri": "https://github.com/mpreissner/zs-config",
+            "patch": {"supported": True},
+            "bulk": {"supported": False, "maxOperations": 0, "maxPayloadSize": 0},
+            "filter": {"supported": True, "maxResults": 200},
+            "changePassword": {"supported": False},
+            "sort": {"supported": False},
+            "etag": {"supported": False},
+            "authenticationSchemes": [
+                {
+                    "type": "oauthbearertoken",
+                    "name": "OAuth Bearer Token",
+                    "description": "Long-lived bearer token issued from Admin Settings",
+                    "primary": True,
+                }
+            ],
+            "meta": {
+                "resourceType": "ServiceProviderConfig",
+                "location": "/scim/v2/ServiceProviderConfig",
+            },
+        }
+    )
 
 
 @router.get("/ResourceTypes")
 def resource_types():
-    return _scim_json(_list_response([
-        {
-            "schemas": ["urn:ietf:params:scim:schemas:core:2.0:ResourceType"],
-            "id": "User", "name": "User", "endpoint": "/Users", "schema": USER_SCHEMA,
-            "meta": {"resourceType": "ResourceType", "location": "/scim/v2/ResourceTypes/User"},
-        },
-        {
-            "schemas": ["urn:ietf:params:scim:schemas:core:2.0:ResourceType"],
-            "id": "Group", "name": "Group", "endpoint": "/Groups", "schema": GROUP_SCHEMA,
-            "meta": {"resourceType": "ResourceType", "location": "/scim/v2/ResourceTypes/Group"},
-        },
-    ], 2, 1))
+    return _scim_json(
+        _list_response(
+            [
+                {
+                    "schemas": ["urn:ietf:params:scim:schemas:core:2.0:ResourceType"],
+                    "id": "User",
+                    "name": "User",
+                    "endpoint": "/Users",
+                    "schema": USER_SCHEMA,
+                    "meta": {
+                        "resourceType": "ResourceType",
+                        "location": "/scim/v2/ResourceTypes/User",
+                    },
+                },
+                {
+                    "schemas": ["urn:ietf:params:scim:schemas:core:2.0:ResourceType"],
+                    "id": "Group",
+                    "name": "Group",
+                    "endpoint": "/Groups",
+                    "schema": GROUP_SCHEMA,
+                    "meta": {
+                        "resourceType": "ResourceType",
+                        "location": "/scim/v2/ResourceTypes/Group",
+                    },
+                },
+            ],
+            2,
+            1,
+        )
+    )
 
 
 @router.get("/Schemas")
 def schemas():
-    return _scim_json(_list_response([
-        {"id": USER_SCHEMA, "name": "User", "description": "zs-config web user"},
-        {"id": GROUP_SCHEMA, "name": "Group", "description": "Role-mapping group"},
-    ], 2, 1))
+    return _scim_json(
+        _list_response(
+            [
+                {"id": USER_SCHEMA, "name": "User", "description": "zs-config web user"},
+                {"id": GROUP_SCHEMA, "name": "Group", "description": "Role-mapping group"},
+            ],
+            2,
+            1,
+        )
+    )
 
 
 # ── Users ─────────────────────────────────────────────────────────────────────
@@ -329,7 +363,9 @@ async def create_user(request: Request, _: int = Depends(require_scim_token)):
             session.flush()
             session.refresh(existing)
             body = user_to_scim(existing)
-            audit.append({"operation": "scim_reactivate_user", "action": "UPDATE", "name": username})
+            audit.append(
+                {"operation": "scim_reactivate_user", "action": "UPDATE", "name": username}
+            )
         else:
             name = payload.get("name") or {}
             user = User(
@@ -462,7 +498,9 @@ def _apply_user_field(u: User, path: str, value: Any, action: str) -> None:
         u.family_name = value.get("familyName", u.family_name)
 
 
-def _disown_if_deprovisioned(u: User, was_active: bool, session, audit: List[Dict[str, Any]]) -> None:
+def _disown_if_deprovisioned(
+    u: User, was_active: bool, session, audit: List[Dict[str, Any]]
+) -> None:
     """Cut a just-deactivated account loose from the templates it owns.
 
     Called on the net result of a request rather than per field, because a PATCH
@@ -479,11 +517,15 @@ def _disown_if_deprovisioned(u: User, was_active: bool, session, audit: List[Dic
 
     names = shares.disown_templates(u.id, session)
     if names:
-        audit.append({
-            "operation": "disown_templates", "action": "UPDATE", "name": u.username,
-            "resource_type": "zia_template",
-            "details": {"templates": names, "reason": "owner deprovisioned via SCIM"},
-        })
+        audit.append(
+            {
+                "operation": "disown_templates",
+                "action": "UPDATE",
+                "name": u.username,
+                "resource_type": "zia_template",
+                "details": {"templates": names, "reason": "owner deprovisioned via SCIM"},
+            }
+        )
 
 
 @router.delete("/Users/{user_id}", status_code=204)
@@ -573,8 +615,9 @@ async def create_group(request: Request, _: int = Depends(require_scim_token)):
             g.source = "scim"
             g.external_id = payload.get("externalId") or g.external_id
         else:
-            g = UserGroup(display_name=display, external_id=payload.get("externalId"),
-                          source="scim")
+            g = UserGroup(
+                display_name=display, external_id=payload.get("externalId"), source="scim"
+            )
             session.add(g)
         session.flush()
         _set_members(session, g.id, payload.get("members") or [])
@@ -605,7 +648,9 @@ async def replace_group(group_id: int, request: Request, _: int = Depends(requir
         _assert_admin_remains(session)
         session.refresh(g)
         body = group_to_scim(g, _members_of(session, g.id))
-        audit.append({"operation": "scim_replace_group", "action": "UPDATE", "name": g.display_name})
+        audit.append(
+            {"operation": "scim_replace_group", "action": "UPDATE", "name": g.display_name}
+        )
 
     _audit(audit)
     return _scim_json(body)
@@ -644,7 +689,9 @@ async def patch_group(group_id: int, request: Request, _: int = Depends(require_
                 if isinstance(value.get("displayName"), str):
                     g.display_name = value["displayName"].strip()
                 if "members" in value:
-                    _set_members(session, g.id, value["members"] or [], replace=(action == "replace"))
+                    _set_members(
+                        session, g.id, value["members"] or [], replace=(action == "replace")
+                    )
 
         session.flush()
         _assert_admin_remains(session)
@@ -744,6 +791,7 @@ def _audit(entries: List[Dict[str, Any]]) -> None:
     if not entries:
         return
     from services import audit_service
+
     for e in entries:
         audit_service.log(
             product=None,

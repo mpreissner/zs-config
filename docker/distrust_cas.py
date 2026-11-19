@@ -16,16 +16,12 @@ import sys
 
 # SHA-256 of the DER certificate, shared with distrust_cas_node.js. Covers the
 # October 2026 eMudhra key compromise, plus the Comodo root Debian removed for it.
-DISTRUSTED = json.loads(
-    pathlib.Path(__file__).with_name("distrusted_cas.json").read_text()
-)
+DISTRUSTED = json.loads(pathlib.Path(__file__).with_name("distrusted_cas.json").read_text())
 
 SOURCE_DIRS = ("/usr/share/ca-certificates", "/usr/local/share/ca-certificates")
 SYSTEM_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
 
-PEM_BLOCK = re.compile(
-    r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----", re.DOTALL
-)
+PEM_BLOCK = re.compile(r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----", re.DOTALL)
 
 
 def fingerprint(pem: str) -> str:

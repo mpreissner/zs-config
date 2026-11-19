@@ -41,7 +41,9 @@ def govcloud_oneapi_url(gov_tier: Optional[str] = None) -> str:
     return GOVCLOUD_ONEAPI_URLS[gov_tier or DEFAULT_GOV_TIER]
 
 
-def build_zidentity_url(subdomain: str, govcloud: bool = False, gov_tier: Optional[str] = None) -> str:
+def build_zidentity_url(
+    subdomain: str, govcloud: bool = False, gov_tier: Optional[str] = None
+) -> str:
     sub = subdomain.strip().lower()
     if govcloud:
         return f"https://{sub}.{GOVCLOUD_ZIDENTITY_DOMAINS[gov_tier or DEFAULT_GOV_TIER]}"

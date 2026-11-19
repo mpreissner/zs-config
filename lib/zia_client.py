@@ -15,7 +15,7 @@ def _to_dicts(items) -> list:
     if not items:
         return []
     return [
-        i if isinstance(i, dict) else (i.as_dict() if hasattr(i, 'as_dict') else vars(i))
+        i if isinstance(i, dict) else (i.as_dict() if hasattr(i, "as_dict") else vars(i))
         for i in items
     ]
 
@@ -25,7 +25,7 @@ def _to_dict(item) -> dict:
         return {}
     if isinstance(item, dict):
         return item
-    if hasattr(item, 'as_dict'):
+    if hasattr(item, "as_dict"):
         return item.as_dict()
     return vars(item)
 
@@ -74,6 +74,7 @@ class ZIAClient:
         except Exception:
             msg = f"{resp.status_code} Error: {resp.text[:200]}"
         import requests as _req
+
         raise _req.HTTPError(msg, response=resp)
 
     def _zia_request(self, method: str, path: str, json=None, params=None) -> "requests.Response":
@@ -84,6 +85,7 @@ class ZIAClient:
         """
         import requests
         import time
+
         url = f"{self._oneapi_base_url}{path}"
         max_attempts = 4
         resp = None
@@ -93,8 +95,12 @@ class ZIAClient:
             if json is not None:
                 headers["Content-Type"] = "application/json"
             resp = requests.request(
-                method, url,
-                headers=headers, json=json, params=params, timeout=30,
+                method,
+                url,
+                headers=headers,
+                json=json,
+                params=params,
+                timeout=30,
             )
             if resp.status_code != 429 or attempt == max_attempts - 1:
                 break
@@ -216,15 +222,21 @@ class ZIAClient:
 
     def update_allowlist(self, urls: List[str]) -> Dict:
         """Replace the entire allowlist with the provided URL list."""
-        result, resp, err = self._sdk.zia.security_policy_settings.update_whitelist(whitelist_urls=urls)
+        result, resp, err = self._sdk.zia.security_policy_settings.update_whitelist(
+            whitelist_urls=urls
+        )
         return _to_dict(_unwrap(result, resp, err))
 
     def update_denylist(self, urls: List[str]) -> Dict:
         """Replace the entire denylist with the provided URL list."""
-        result, resp, err = self._sdk.zia.security_policy_settings.update_blacklist(blacklist_urls=urls)
+        result, resp, err = self._sdk.zia.security_policy_settings.update_blacklist(
+            blacklist_urls=urls
+        )
         return _to_dict(_unwrap(result, resp, err))
 
-    def list_users(self, name: Optional[str] = None, group: Optional[str] = None, dept: Optional[str] = None) -> List[Dict]:
+    def list_users(
+        self, name: Optional[str] = None, group: Optional[str] = None, dept: Optional[str] = None
+    ) -> List[Dict]:
         params = {}
         if name:
             params["name"] = name
@@ -500,7 +512,9 @@ class ZIAClient:
         return _to_dict(_unwrap(result, resp, err))
 
     def remove_from_allowlist(self, url_list: List[str]) -> Dict:
-        result, resp, err = self._sdk.zia.security_policy_settings.delete_urls_from_whitelist(url_list)
+        result, resp, err = self._sdk.zia.security_policy_settings.delete_urls_from_whitelist(
+            url_list
+        )
         return _to_dict(_unwrap(result, resp, err))
 
     def add_to_denylist(self, url_list: List[str]) -> Dict:
@@ -508,7 +522,9 @@ class ZIAClient:
         return _to_dict(_unwrap(result, resp, err))
 
     def remove_from_denylist(self, url_list: List[str]) -> Dict:
-        result, resp, err = self._sdk.zia.security_policy_settings.delete_urls_from_blacklist(url_list)
+        result, resp, err = self._sdk.zia.security_policy_settings.delete_urls_from_blacklist(
+            url_list
+        )
         return _to_dict(_unwrap(result, resp, err))
 
     # ------------------------------------------------------------------
@@ -551,22 +567,30 @@ class ZIAClient:
     # Cloud Applications (read-only catalog)
     # ------------------------------------------------------------------
 
-    def list_cloud_app_policy(self, search: Optional[str] = None, app_class: Optional[str] = None) -> List[Dict]:
+    def list_cloud_app_policy(
+        self, search: Optional[str] = None, app_class: Optional[str] = None
+    ) -> List[Dict]:
         params = {}
         if search:
             params["search"] = search
         if app_class:
             params["app_class"] = app_class
-        result, resp, err = self._sdk.zia.cloud_applications.list_cloud_app_policy(query_params=params)
+        result, resp, err = self._sdk.zia.cloud_applications.list_cloud_app_policy(
+            query_params=params
+        )
         return _to_dicts(_unwrap(result, resp, err))
 
-    def list_cloud_app_ssl_policy(self, search: Optional[str] = None, app_class: Optional[str] = None) -> List[Dict]:
+    def list_cloud_app_ssl_policy(
+        self, search: Optional[str] = None, app_class: Optional[str] = None
+    ) -> List[Dict]:
         params = {}
         if search:
             params["search"] = search
         if app_class:
             params["app_class"] = app_class
-        result, resp, err = self._sdk.zia.cloud_applications.list_cloud_app_ssl_policy(query_params=params)
+        result, resp, err = self._sdk.zia.cloud_applications.list_cloud_app_ssl_policy(
+            query_params=params
+        )
         return _to_dicts(_unwrap(result, resp, err))
 
     def list_cloud_app_instances(self) -> List[Dict]:
@@ -601,11 +625,24 @@ class ZIAClient:
     # (e.g. AI_ML → aiMl), so get_rule_type_mapping() can't be used to drive
     # the import loop.  Use the canonical type list from the SDK docs instead.
     _CLOUD_APP_RULE_TYPES: List[str] = [
-        "AI_ML", "BUSINESS_PRODUCTIVITY", "CONSUMER", "DNS_OVER_HTTPS",
-        "ENTERPRISE_COLLABORATION", "FILE_SHARE", "FINANCE", "HEALTH_CARE",
-        "HOSTING_PROVIDER", "HUMAN_RESOURCES", "INSTANT_MESSAGING", "IT_SERVICES",
-        "LEGAL", "SALES_AND_MARKETING", "SOCIAL_NETWORKING", "STREAMING_MEDIA",
-        "SYSTEM_AND_DEVELOPMENT", "WEBMAIL",
+        "AI_ML",
+        "BUSINESS_PRODUCTIVITY",
+        "CONSUMER",
+        "DNS_OVER_HTTPS",
+        "ENTERPRISE_COLLABORATION",
+        "FILE_SHARE",
+        "FINANCE",
+        "HEALTH_CARE",
+        "HOSTING_PROVIDER",
+        "HUMAN_RESOURCES",
+        "INSTANT_MESSAGING",
+        "IT_SERVICES",
+        "LEGAL",
+        "SALES_AND_MARKETING",
+        "SOCIAL_NETWORKING",
+        "STREAMING_MEDIA",
+        "SYSTEM_AND_DEVELOPMENT",
+        "WEBMAIL",
     ]
 
     def list_all_cloud_app_rules(self) -> List[Dict]:
@@ -644,7 +681,9 @@ class ZIAClient:
             raise RuntimeError(str(err))
 
     def duplicate_cloud_app_rule(self, rule_type: str, rule_id: str, name: str) -> Dict:
-        result, resp, err = self._sdk.zia.cloudappcontrol.add_duplicate_rule(rule_type, rule_id, name)
+        result, resp, err = self._sdk.zia.cloudappcontrol.add_duplicate_rule(
+            rule_type, rule_id, name
+        )
         return _to_dict(_unwrap(result, resp, err))
 
     # ------------------------------------------------------------------
@@ -788,7 +827,9 @@ class ZIAClient:
         return _to_dict(_unwrap(result, resp, err))
 
     def update_network_app_group(self, group_id: str, config: Dict) -> Dict:
-        result, resp, err = self._sdk.zia.cloud_firewall.update_network_app_group(group_id, **config)
+        result, resp, err = self._sdk.zia.cloud_firewall.update_network_app_group(
+            group_id, **config
+        )
         return _to_dict(_unwrap(result, resp, err))
 
     def delete_network_app_group(self, group_id: str) -> None:
@@ -916,7 +957,9 @@ class ZIAClient:
         return _to_dict(_unwrap(result, resp, err))
 
     def update_ip_destination_group(self, group_id: str, config: Dict) -> Dict:
-        result, resp, err = self._sdk.zia.cloud_firewall.update_ip_destination_group(group_id, **config)
+        result, resp, err = self._sdk.zia.cloud_firewall.update_ip_destination_group(
+            group_id, **config
+        )
         return _to_dict(_unwrap(result, resp, err))
 
     def delete_ip_destination_group(self, group_id: str) -> None:
@@ -940,7 +983,9 @@ class ZIAClient:
         return _to_dict(_unwrap(result, resp, err))
 
     def update_network_service(self, service_id: str, config: Dict) -> Dict:
-        result, resp, err = self._sdk.zia.cloud_firewall.update_network_service(service_id, **config)
+        result, resp, err = self._sdk.zia.cloud_firewall.update_network_service(
+            service_id, **config
+        )
         return _to_dict(_unwrap(result, resp, err))
 
     def delete_network_service(self, service_id: str) -> None:
@@ -952,7 +997,9 @@ class ZIAClient:
         return _to_dict(_unwrap(result, resp, err))
 
     def update_network_svc_group(self, group_id: str, config: Dict) -> Dict:
-        result, resp, err = self._sdk.zia.cloud_firewall.update_network_svc_group(group_id, **config)
+        result, resp, err = self._sdk.zia.cloud_firewall.update_network_svc_group(
+            group_id, **config
+        )
         return _to_dict(_unwrap(result, resp, err))
 
     def delete_network_svc_group(self, group_id: str) -> None:
@@ -1080,8 +1127,14 @@ class ZIAClient:
 
     def list_url_filter_cloud_app_settings(self) -> List[Dict]:
         data = self.zia_get("/zia/api/v1/advancedUrlFilterAndCloudAppSettings")
-        return [{"id": 1, "name": "url_filter_cloud_app_settings",
-                  "access_control": "READ_WRITE", **data}]
+        return [
+            {
+                "id": 1,
+                "name": "url_filter_cloud_app_settings",
+                "access_control": "READ_WRITE",
+                **data,
+            }
+        ]
 
     def update_url_filter_cloud_app_settings(self, rule_id: str, config: Dict) -> bool:
         """PUT singleton settings — rule_id is unused (singleton endpoint)."""
@@ -1092,8 +1145,7 @@ class ZIAClient:
     def list_advanced_settings(self) -> List[Dict]:
         """Return singleton advancedSettings wrapped in a one-element list for import compatibility."""
         data = self.zia_get("/zia/api/v1/advancedSettings")
-        return [{"id": 1, "name": "advanced_settings",
-                  "access_control": "READ_WRITE", **data}]
+        return [{"id": 1, "name": "advanced_settings", "access_control": "READ_WRITE", **data}]
 
     def update_advanced_settings(self, rule_id: str, config: Dict) -> bool:
         """PUT singleton advancedSettings — rule_id is unused (singleton endpoint)."""
@@ -1104,8 +1156,9 @@ class ZIAClient:
     def list_browser_control_settings(self) -> List[Dict]:
         """Return singleton browserControlSettings wrapped in a one-element list."""
         data = self.zia_get("/zia/api/v1/browserControlSettings")
-        return [{"id": 1, "name": "browser_control_settings",
-                  "access_control": "READ_WRITE", **data}]
+        return [
+            {"id": 1, "name": "browser_control_settings", "access_control": "READ_WRITE", **data}
+        ]
 
     def update_browser_control_settings(self, rule_id: str, config: Dict) -> bool:
         """PUT singleton browserControlSettings — rule_id is unused (singleton endpoint)."""
@@ -1206,6 +1259,7 @@ class ZIAClient:
         pac_verification_status, pac_commit_message.
         """
         from zscaler.helpers import convert_keys_to_camel_case
+
         return self.zia_post("/zia/api/v1/pacFiles", convert_keys_to_camel_case(config))
 
     def update_pac_file_content(self, pac_id: int, pac_version: int, config: Dict) -> Dict:
@@ -1217,6 +1271,7 @@ class ZIAClient:
         Raises RuntimeError if all 10 versions are marked Last Known Good.
         """
         from zscaler.helpers import convert_keys_to_camel_case
+
         versions = self.get_pac_file_versions(pac_id)
         path = f"/zia/api/v1/pacFiles/{pac_id}/version/{pac_version}"
         if len(versions) >= 10:
@@ -1346,15 +1401,11 @@ class ZIAClient:
         """
         return self.zia_post(self._ROOT_CERT_PATH, config)
 
-    def delete_root_certificate(
-        self, cert_id: str, cert_type: str = "PROXY_CHAINING"
-    ) -> None:
+    def delete_root_certificate(self, cert_id: str, cert_type: str = "PROXY_CHAINING") -> None:
         """Delete a root certificate.
 
         `certTypes` is required.  Without it the endpoint answers 204 and
         leaves the certificate in place -- a silent no-op that survives an
         activation, so a bare 204 is not on its own proof of deletion.
         """
-        self.zia_delete(
-            f"{self._ROOT_CERT_PATH}/{cert_id}?certTypes={cert_type}"
-        )
+        self.zia_delete(f"{self._ROOT_CERT_PATH}/{cert_id}?certTypes={cert_type}")

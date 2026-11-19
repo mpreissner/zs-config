@@ -91,10 +91,20 @@ _REQUIRED = {"name", "action"}
 _VALID_ACTIONS = {"ALLOW", "DENY"}
 
 # Fields stripped before PUT (read-only in ZPA API)
-ZPA_READONLY = frozenset({
-    "id", "policy_set_id", "modified_time", "creation_time", "modified_by",
-    "policy_type", "action_id", "default_rule", "read_only", "zscaler_managed",
-})
+ZPA_READONLY = frozenset(
+    {
+        "id",
+        "policy_set_id",
+        "modified_time",
+        "creation_time",
+        "modified_by",
+        "policy_type",
+        "action_id",
+        "default_rule",
+        "read_only",
+        "zscaler_managed",
+    }
+)
 
 # Valid platform identifiers (lowercase SDK values)
 VALID_PLATFORMS = frozenset({"ios", "android", "mac_os", "windows", "linux", "chrome_os"})
@@ -107,6 +117,7 @@ VALID_RISK_FACTORS = frozenset({"LOW", "MEDIUM", "HIGH", "CRITICAL"})
 # Result types
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class BulkCreateResult:
     created: int = 0
@@ -118,6 +129,7 @@ class BulkCreateResult:
 @dataclass
 class SyncClassification:
     """Output of classify_sync() — what would happen on apply."""
+
     # CSV rows in CSV order. action: "UPDATE" | "CREATE" | "SKIP"
     csv_rows: List[Dict] = field(default_factory=list)
     # DB rules not present in CSV → will be deleted
@@ -151,6 +163,7 @@ class SyncResult:
 # ---------------------------------------------------------------------------
 # CSV parsing
 # ---------------------------------------------------------------------------
+
 
 def parse_csv(path: str) -> List[Dict]:
     """Read and validate a CSV file of access policy rule rows.
@@ -203,6 +216,7 @@ def parse_csv(path: str) -> List[Dict]:
 # Dependency resolution
 # ---------------------------------------------------------------------------
 
+
 def resolve_dependencies(
     tenant_id: int,
     rows: List[Dict],
@@ -227,9 +241,9 @@ def resolve_dependencies(
     # Collect unique names to resolve
     app_group_names: set = set()
     app_names: set = set()
-    saml_pairs: set = set()       # (attr_name, value)
+    saml_pairs: set = set()  # (attr_name, value)
     scim_attr_pairs: set = set()  # (attr_name, value)
-    scim_pairs: set = set()       # (idp_name, group_name)
+    scim_pairs: set = set()  # (idp_name, group_name)
     machine_group_names: set = set()
     trusted_network_names: set = set()
     idp_names: set = set()
@@ -263,20 +277,25 @@ def resolve_dependencies(
 
     app_group_map: Dict[str, str] = {}
     app_map: Dict[str, str] = {}
-    saml_map: Dict[Tuple[str, str], str] = {}             # (attr_name, value) → attr_id
-    scim_attr_map: Dict[Tuple[str, str], str] = {}        # (attr_name, value) → attr_id
-    scim_map: Dict[Tuple[str, str], Tuple[str, str]] = {} # (idp_name, group_name) → (idp_id, group_id)
+    saml_map: Dict[Tuple[str, str], str] = {}  # (attr_name, value) → attr_id
+    scim_attr_map: Dict[Tuple[str, str], str] = {}  # (attr_name, value) → attr_id
+    scim_map: Dict[
+        Tuple[str, str], Tuple[str, str]
+    ] = {}  # (idp_name, group_name) → (idp_id, group_id)
     machine_group_map: Dict[str, str] = {}
     trusted_network_map: Dict[str, str] = {}
     idp_map: Dict[str, str] = {}
-    posture_profile_map: Dict[str, str] = {}    # name → posture_udid
+    posture_profile_map: Dict[str, str] = {}  # name → posture_udid
 
-    def _lookup_by_type(session, resource_type: str, names: set, result_map: dict, missing_key: str):
+    def _lookup_by_type(
+        session, resource_type: str, names: set, result_map: dict, missing_key: str
+    ):
         for name in names:
             rec = (
                 session.query(ZPAResource)
-                .filter_by(tenant_id=tenant_id, resource_type=resource_type,
-                            name=name, is_deleted=False)
+                .filter_by(
+                    tenant_id=tenant_id, resource_type=resource_type, name=name, is_deleted=False
+                )
                 .first()
             )
             if rec:
@@ -285,12 +304,26 @@ def resolve_dependencies(
                 missing[missing_key].append(name)
 
     with get_session() as session:
-        _lookup_by_type(session, "segment_group",    app_group_names,        app_group_map,        "app_group")
-        _lookup_by_type(session, "application",      app_names,              app_map,              "application")
-        _lookup_by_type(session, "machine_group",    machine_group_names,    machine_group_map,    "machine_group")
-        _lookup_by_type(session, "trusted_network",  trusted_network_names,  trusted_network_map,  "trusted_network")
-        _lookup_by_type(session, "idp",              idp_names,              idp_map,              "idp")
-        _lookup_by_type(session, "posture_profile",  posture_profile_names,  posture_profile_map,  "posture_profile")
+        _lookup_by_type(session, "segment_group", app_group_names, app_group_map, "app_group")
+        _lookup_by_type(session, "application", app_names, app_map, "application")
+        _lookup_by_type(
+            session, "machine_group", machine_group_names, machine_group_map, "machine_group"
+        )
+        _lookup_by_type(
+            session,
+            "trusted_network",
+            trusted_network_names,
+            trusted_network_map,
+            "trusted_network",
+        )
+        _lookup_by_type(session, "idp", idp_names, idp_map, "idp")
+        _lookup_by_type(
+            session,
+            "posture_profile",
+            posture_profile_names,
+            posture_profile_map,
+            "posture_profile",
+        )
 
         # SAML attributes — resolve by attribute name
         saml_attr_names = {pair[0] for pair in saml_pairs}
@@ -298,8 +331,9 @@ def resolve_dependencies(
         for name in saml_attr_names:
             rec = (
                 session.query(ZPAResource)
-                .filter_by(tenant_id=tenant_id, resource_type="saml_attribute",
-                            name=name, is_deleted=False)
+                .filter_by(
+                    tenant_id=tenant_id, resource_type="saml_attribute", name=name, is_deleted=False
+                )
                 .first()
             )
             if rec:
@@ -317,8 +351,9 @@ def resolve_dependencies(
         for name in scim_attr_names:
             rec = (
                 session.query(ZPAResource)
-                .filter_by(tenant_id=tenant_id, resource_type="scim_attribute",
-                            name=name, is_deleted=False)
+                .filter_by(
+                    tenant_id=tenant_id, resource_type="scim_attribute", name=name, is_deleted=False
+                )
                 .first()
             )
             if rec:
@@ -368,13 +403,9 @@ def resolve_dependencies(
         r = dict(row)
 
         r["_app_group_ids"] = [
-            app_group_map[n] for n in _split(row.get("app_groups", ""))
-            if n in app_group_map
+            app_group_map[n] for n in _split(row.get("app_groups", "")) if n in app_group_map
         ]
-        r["_app_ids"] = [
-            app_map[n] for n in _split(row.get("applications", ""))
-            if n in app_map
-        ]
+        r["_app_ids"] = [app_map[n] for n in _split(row.get("applications", "")) if n in app_map]
         r["_saml_conditions"] = []
         for pair in _split(row.get("saml_attributes", "")):
             if "=" in pair:
@@ -403,24 +434,26 @@ def resolve_dependencies(
 
         r["_client_types"] = [ct for ct in _split(row.get("client_types", "")) if ct]
         r["_machine_group_ids"] = [
-            machine_group_map[n] for n in _split(row.get("machine_groups", ""))
+            machine_group_map[n]
+            for n in _split(row.get("machine_groups", ""))
             if n in machine_group_map
         ]
         r["_trusted_network_ids"] = [
-            trusted_network_map[n] for n in _split(row.get("trusted_networks", ""))
+            trusted_network_map[n]
+            for n in _split(row.get("trusted_networks", ""))
             if n in trusted_network_map
         ]
         r["_platforms"] = [p.lower() for p in _split(row.get("platforms", "")) if p]
         r["_country_codes"] = [c.upper() for c in _split(row.get("country_codes", "")) if c]
-        r["_idp_ids"] = [
-            idp_map[n] for n in _split(row.get("idp_names", ""))
-            if n in idp_map
-        ]
+        r["_idp_ids"] = [idp_map[n] for n in _split(row.get("idp_names", "")) if n in idp_map]
         r["_posture_profile_udids"] = [
-            posture_profile_map[n] for n in _split(row.get("posture_profiles", ""))
+            posture_profile_map[n]
+            for n in _split(row.get("posture_profiles", ""))
             if n in posture_profile_map
         ]
-        r["_risk_factor_types"] = [rf.upper() for rf in _split(row.get("risk_factor_types", "")) if rf]
+        r["_risk_factor_types"] = [
+            rf.upper() for rf in _split(row.get("risk_factor_types", "")) if rf
+        ]
 
         enriched.append(r)
 
@@ -430,6 +463,7 @@ def resolve_dependencies(
 # ---------------------------------------------------------------------------
 # Dry run (legacy — for bulk_create flow)
 # ---------------------------------------------------------------------------
+
 
 def dry_run(tenant_id: int, rows: List[Dict]) -> List[Dict]:
     """Tag each row READY or MISSING_DEPENDENCY. No API calls."""
@@ -500,6 +534,7 @@ def dry_run(tenant_id: int, rows: List[Dict]) -> List[Dict]:
 # Sync classification (dry run for sync)
 # ---------------------------------------------------------------------------
 
+
 def classify_sync(tenant_id: int, rows: List[Dict]) -> SyncClassification:
     """Classify CSV rows vs existing DB rules. No API calls.
 
@@ -566,45 +601,57 @@ def classify_sync(tenant_id: int, rows: List[Dict]) -> SyncClassification:
             csv_existing_ids.append(rule_id)
             existing_cfg = existing_by_id[rule_id]["raw_config"]
             if issues:
-                classification.csv_rows.append({
-                    "action": "MISSING_DEP",
-                    "row": row,
-                    "zpa_id": rule_id,
-                    "changes": [],
-                    "issues": issues,
-                })
-            else:
-                unchanged, changes = _is_row_unchanged(row, existing_cfg, scim_group_map=scim_group_map)
-                if unchanged:
-                    classification.csv_rows.append({
-                        "action": "SKIP",
+                classification.csv_rows.append(
+                    {
+                        "action": "MISSING_DEP",
                         "row": row,
                         "zpa_id": rule_id,
                         "changes": [],
-                    })
+                        "issues": issues,
+                    }
+                )
+            else:
+                unchanged, changes = _is_row_unchanged(
+                    row, existing_cfg, scim_group_map=scim_group_map
+                )
+                if unchanged:
+                    classification.csv_rows.append(
+                        {
+                            "action": "SKIP",
+                            "row": row,
+                            "zpa_id": rule_id,
+                            "changes": [],
+                        }
+                    )
                 else:
-                    classification.csv_rows.append({
-                        "action": "UPDATE",
-                        "row": row,
-                        "zpa_id": rule_id,
-                        "existing_cfg": existing_cfg,
-                        "changes": changes,
-                    })
+                    classification.csv_rows.append(
+                        {
+                            "action": "UPDATE",
+                            "row": row,
+                            "zpa_id": rule_id,
+                            "existing_cfg": existing_cfg,
+                            "changes": changes,
+                        }
+                    )
         elif rule_id and rule_id not in existing_by_id:
-            classification.csv_rows.append({
-                "action": "MISSING_DEP" if issues else "CREATE",
-                "row": row,
-                "zpa_id": None,
-                "warn": f"ID {rule_id!r} not found in DB — creating as new rule",
-                "issues": issues,
-            })
+            classification.csv_rows.append(
+                {
+                    "action": "MISSING_DEP" if issues else "CREATE",
+                    "row": row,
+                    "zpa_id": None,
+                    "warn": f"ID {rule_id!r} not found in DB — creating as new rule",
+                    "issues": issues,
+                }
+            )
         else:
-            classification.csv_rows.append({
-                "action": "MISSING_DEP" if issues else "CREATE",
-                "row": row,
-                "zpa_id": None,
-                "issues": issues,
-            })
+            classification.csv_rows.append(
+                {
+                    "action": "MISSING_DEP" if issues else "CREATE",
+                    "row": row,
+                    "zpa_id": None,
+                    "issues": issues,
+                }
+            )
 
     # Rules in DB but not in CSV → delete
     for zpa_id, rec in existing_by_id.items():
@@ -615,8 +662,11 @@ def classify_sync(tenant_id: int, rows: List[Dict]) -> SyncClassification:
     existing_id_order = [r["zpa_id"] for r in existing_ordered]
     applicable = [e for e in classification.csv_rows if e["action"] in ("UPDATE", "SKIP", "CREATE")]
     csv_existing_ids_applicable = [e["zpa_id"] for e in applicable if e.get("zpa_id")]
-    if (classification.to_create or classification.to_delete
-            or csv_existing_ids_applicable != existing_id_order):
+    if (
+        classification.to_create
+        or classification.to_delete
+        or csv_existing_ids_applicable != existing_id_order
+    ):
         classification.reorder_needed = True
 
     return classification
@@ -625,6 +675,7 @@ def classify_sync(tenant_id: int, rows: List[Dict]) -> SyncClassification:
 # ---------------------------------------------------------------------------
 # Sync execution
 # ---------------------------------------------------------------------------
+
 
 def sync_policy(
     client,
@@ -665,21 +716,36 @@ def sync_policy(
                 kwargs["conditions"] = conditions
             client.update_access_rule(zpa_id, name=name, action=action, **kwargs)
             audit_service.log(
-                product="ZPA", operation="sync_access_rules", action="UPDATE",
-                status="SUCCESS", tenant_id=tenant_id, resource_type="policy_access",
-                resource_id=zpa_id, resource_name=name,
+                product="ZPA",
+                operation="sync_access_rules",
+                action="UPDATE",
+                status="SUCCESS",
+                tenant_id=tenant_id,
+                resource_type="policy_access",
+                resource_id=zpa_id,
+                resource_name=name,
                 details={"changes": item.get("changes", [])},
             )
-            result.rows_detail.append({"name": name, "status": "UPDATED", "id": zpa_id, "error": None})
+            result.rows_detail.append(
+                {"name": name, "status": "UPDATED", "id": zpa_id, "error": None}
+            )
             result.updated += 1
         except Exception as exc:
             error_msg = str(exc)
             audit_service.log(
-                product="ZPA", operation="sync_access_rules", action="UPDATE",
-                status="FAILURE", tenant_id=tenant_id, resource_type="policy_access",
-                resource_id=zpa_id, resource_name=name, error_message=error_msg,
+                product="ZPA",
+                operation="sync_access_rules",
+                action="UPDATE",
+                status="FAILURE",
+                tenant_id=tenant_id,
+                resource_type="policy_access",
+                resource_id=zpa_id,
+                resource_name=name,
+                error_message=error_msg,
             )
-            result.rows_detail.append({"name": name, "status": "FAILED", "id": zpa_id, "error": error_msg})
+            result.rows_detail.append(
+                {"name": name, "status": "FAILED", "id": zpa_id, "error": error_msg}
+            )
             result.errors.append(f"UPDATE {name!r}: {error_msg}")
         _tick(f"Updating {name}")
 
@@ -690,20 +756,35 @@ def sync_policy(
         try:
             client.delete_access_rule(zpa_id)
             audit_service.log(
-                product="ZPA", operation="sync_access_rules", action="DELETE",
-                status="SUCCESS", tenant_id=tenant_id, resource_type="policy_access",
-                resource_id=zpa_id, resource_name=name,
+                product="ZPA",
+                operation="sync_access_rules",
+                action="DELETE",
+                status="SUCCESS",
+                tenant_id=tenant_id,
+                resource_type="policy_access",
+                resource_id=zpa_id,
+                resource_name=name,
             )
-            result.rows_detail.append({"name": name, "status": "DELETED", "id": zpa_id, "error": None})
+            result.rows_detail.append(
+                {"name": name, "status": "DELETED", "id": zpa_id, "error": None}
+            )
             result.deleted += 1
         except Exception as exc:
             error_msg = str(exc)
             audit_service.log(
-                product="ZPA", operation="sync_access_rules", action="DELETE",
-                status="FAILURE", tenant_id=tenant_id, resource_type="policy_access",
-                resource_id=zpa_id, resource_name=name, error_message=error_msg,
+                product="ZPA",
+                operation="sync_access_rules",
+                action="DELETE",
+                status="FAILURE",
+                tenant_id=tenant_id,
+                resource_type="policy_access",
+                resource_id=zpa_id,
+                resource_name=name,
+                error_message=error_msg,
             )
-            result.rows_detail.append({"name": name, "status": "FAILED", "id": zpa_id, "error": error_msg})
+            result.rows_detail.append(
+                {"name": name, "status": "FAILED", "id": zpa_id, "error": error_msg}
+            )
             result.errors.append(f"DELETE {name!r}: {error_msg}")
         _tick(f"Deleting {name}")
 
@@ -723,43 +804,61 @@ def sync_policy(
             rule_id = str(created.get("id", ""))
             item["zpa_id"] = rule_id
             audit_service.log(
-                product="ZPA", operation="sync_access_rules", action="CREATE",
-                status="SUCCESS", tenant_id=tenant_id, resource_type="policy_access",
-                resource_id=rule_id, resource_name=name,
+                product="ZPA",
+                operation="sync_access_rules",
+                action="CREATE",
+                status="SUCCESS",
+                tenant_id=tenant_id,
+                resource_type="policy_access",
+                resource_id=rule_id,
+                resource_name=name,
             )
-            result.rows_detail.append({"name": name, "status": "CREATED", "id": rule_id, "error": None})
+            result.rows_detail.append(
+                {"name": name, "status": "CREATED", "id": rule_id, "error": None}
+            )
             result.created += 1
         except Exception as exc:
             error_msg = str(exc)
             audit_service.log(
-                product="ZPA", operation="sync_access_rules", action="CREATE",
-                status="FAILURE", tenant_id=tenant_id, resource_type="policy_access",
-                resource_name=name, error_message=error_msg,
+                product="ZPA",
+                operation="sync_access_rules",
+                action="CREATE",
+                status="FAILURE",
+                tenant_id=tenant_id,
+                resource_type="policy_access",
+                resource_name=name,
+                error_message=error_msg,
             )
-            result.rows_detail.append({"name": name, "status": "FAILED", "id": None, "error": error_msg})
+            result.rows_detail.append(
+                {"name": name, "status": "FAILED", "id": None, "error": error_msg}
+            )
             result.errors.append(f"CREATE {name!r}: {error_msg}")
         _tick(f"Creating {name}")
 
     # Add SKIPPED entries
     for item in classification.unchanged:
         row = item["row"]
-        result.rows_detail.append({
-            "name": row.get("name", ""),
-            "status": "SKIPPED",
-            "id": item.get("zpa_id"),
-            "error": None,
-        })
+        result.rows_detail.append(
+            {
+                "name": row.get("name", ""),
+                "status": "SKIPPED",
+                "id": item.get("zpa_id"),
+                "error": None,
+            }
+        )
 
     # Add MISSING_DEP entries
     for item in classification.csv_rows:
         if item["action"] == "MISSING_DEP":
             name = item["row"].get("name", "")
-            result.rows_detail.append({
-                "name": name,
-                "status": "SKIPPED (missing deps)",
-                "id": item.get("zpa_id"),
-                "error": "; ".join(item.get("issues", [])),
-            })
+            result.rows_detail.append(
+                {
+                    "name": name,
+                    "status": "SKIPPED (missing deps)",
+                    "id": item.get("zpa_id"),
+                    "error": "; ".join(item.get("issues", [])),
+                }
+            )
 
     # 4. Bulk reorder
     if classification.reorder_needed:
@@ -773,16 +872,24 @@ def sync_policy(
                 client.bulk_reorder_access_rules(ordered_ids)
                 result.reordered = True
                 audit_service.log(
-                    product="ZPA", operation="sync_access_rules", action="REORDER",
-                    status="SUCCESS", tenant_id=tenant_id, resource_type="policy_access",
+                    product="ZPA",
+                    operation="sync_access_rules",
+                    action="REORDER",
+                    status="SUCCESS",
+                    tenant_id=tenant_id,
+                    resource_type="policy_access",
                     details={"rule_count": len(ordered_ids)},
                 )
             except Exception as exc:
                 error_msg = str(exc)
                 result.errors.append(f"REORDER: {error_msg}")
                 audit_service.log(
-                    product="ZPA", operation="sync_access_rules", action="REORDER",
-                    status="FAILURE", tenant_id=tenant_id, resource_type="policy_access",
+                    product="ZPA",
+                    operation="sync_access_rules",
+                    action="REORDER",
+                    status="FAILURE",
+                    tenant_id=tenant_id,
+                    resource_type="policy_access",
                     error_message=error_msg,
                 )
         _tick("Reordering rules")
@@ -793,6 +900,7 @@ def sync_policy(
 # ---------------------------------------------------------------------------
 # Bulk create (legacy)
 # ---------------------------------------------------------------------------
+
 
 def bulk_create(
     client,
@@ -824,33 +932,49 @@ def bulk_create(
             rule_id = str(created.get("id", ""))
 
             audit_service.log(
-                product="ZPA", operation="bulk_create_access_rules", action="CREATE",
-                status="SUCCESS", tenant_id=tenant_id, resource_type="policy_access",
-                resource_id=rule_id, resource_name=name,
+                product="ZPA",
+                operation="bulk_create_access_rules",
+                action="CREATE",
+                status="SUCCESS",
+                tenant_id=tenant_id,
+                resource_type="policy_access",
+                resource_id=rule_id,
+                resource_name=name,
             )
-            result.rows_detail.append({"name": name, "status": "CREATED", "id": rule_id, "error": None})
+            result.rows_detail.append(
+                {"name": name, "status": "CREATED", "id": rule_id, "error": None}
+            )
             result.created += 1
 
         except Exception as exc:
             error_msg = str(exc)
             audit_service.log(
-                product="ZPA", operation="bulk_create_access_rules", action="CREATE",
-                status="FAILURE", tenant_id=tenant_id, resource_type="policy_access",
-                resource_name=name, error_message=error_msg,
+                product="ZPA",
+                operation="bulk_create_access_rules",
+                action="CREATE",
+                status="FAILURE",
+                tenant_id=tenant_id,
+                resource_type="policy_access",
+                resource_name=name,
+                error_message=error_msg,
             )
-            result.rows_detail.append({"name": name, "status": "FAILED", "id": None, "error": error_msg})
+            result.rows_detail.append(
+                {"name": name, "status": "FAILED", "id": None, "error": error_msg}
+            )
             result.failed += 1
 
         if progress_callback:
             progress_callback(i, total)
 
     for row in skipped_rows:
-        result.rows_detail.append({
-            "name": row.get("name", ""),
-            "status": f"SKIPPED ({row.get('_status', 'UNKNOWN')})",
-            "id": None,
-            "error": "; ".join(row.get("_issues", [])),
-        })
+        result.rows_detail.append(
+            {
+                "name": row.get("name", ""),
+                "status": f"SKIPPED ({row.get('_status', 'UNKNOWN')})",
+                "id": None,
+                "error": "; ".join(row.get("_issues", [])),
+            }
+        )
 
     return result
 
@@ -858,6 +982,7 @@ def bulk_create(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _split(value: str) -> List[str]:
     """Split a semicolon-separated string, stripping whitespace and empty parts."""
@@ -946,7 +1071,14 @@ def _decode_conditions(
     Without it, SCIM_GROUP operands are omitted (name field is null in the API).
     """
     conditions = cfg.get("conditions") or []
-    app_groups, applications, saml_attrs, scim_attrs, scim_groups, client_types = [], [], [], [], [], []
+    app_groups, applications, saml_attrs, scim_attrs, scim_groups, client_types = (
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+    )
     machine_groups, trusted_networks, platforms, country_codes, idp_names = [], [], [], [], []
     posture_profiles, risk_factor_types = [], []
 
@@ -997,18 +1129,18 @@ def _decode_conditions(
                 risk_factor_types.append(rhs)
 
     return {
-        "app_groups":        ";".join(app_groups),
-        "applications":      ";".join(applications),
-        "saml_attributes":   ";".join(saml_attrs),
-        "scim_attributes":   ";".join(scim_attrs),
-        "scim_groups":       ";".join(scim_groups),
-        "client_types":      ";".join(client_types),
-        "machine_groups":    ";".join(machine_groups),
-        "trusted_networks":  ";".join(trusted_networks),
-        "platforms":         ";".join(platforms),
-        "country_codes":     ";".join(country_codes),
-        "idp_names":         ";".join(idp_names),
-        "posture_profiles":  ";".join(posture_profiles),
+        "app_groups": ";".join(app_groups),
+        "applications": ";".join(applications),
+        "saml_attributes": ";".join(saml_attrs),
+        "scim_attributes": ";".join(scim_attrs),
+        "scim_groups": ";".join(scim_groups),
+        "client_types": ";".join(client_types),
+        "machine_groups": ";".join(machine_groups),
+        "trusted_networks": ";".join(trusted_networks),
+        "platforms": ";".join(platforms),
+        "country_codes": ";".join(country_codes),
+        "idp_names": ";".join(idp_names),
+        "posture_profiles": ";".join(posture_profiles),
         "risk_factor_types": ";".join(risk_factor_types),
     }
 
@@ -1024,7 +1156,11 @@ def _is_row_unchanged(
     """
     changes = []
 
-    for csv_key, cfg_key in [("name", "name"), ("action", "action"), ("description", "description")]:
+    for csv_key, cfg_key in [
+        ("name", "name"),
+        ("action", "action"),
+        ("description", "description"),
+    ]:
         csv_val = (row.get(csv_key) or "").strip()
         db_val = (existing_cfg.get(cfg_key) or "").strip()
         if csv_key == "action":
@@ -1035,9 +1171,19 @@ def _is_row_unchanged(
 
     db_cond = _decode_conditions(existing_cfg, scim_group_map=scim_group_map)
     condition_fields = [
-        "app_groups", "applications", "saml_attributes", "scim_attributes", "scim_groups",
-        "client_types", "machine_groups", "trusted_networks", "platforms", "country_codes",
-        "idp_names", "posture_profiles", "risk_factor_types",
+        "app_groups",
+        "applications",
+        "saml_attributes",
+        "scim_attributes",
+        "scim_groups",
+        "client_types",
+        "machine_groups",
+        "trusted_networks",
+        "platforms",
+        "country_codes",
+        "idp_names",
+        "posture_profiles",
+        "risk_factor_types",
     ]
     for field_name in condition_fields:
         csv_val = ";".join(_split(row.get(field_name, "")))

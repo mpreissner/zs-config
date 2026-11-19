@@ -34,7 +34,11 @@ from typing import Iterable, List, Optional, Set
 from sqlalchemy.orm import Session
 
 from db.models import (
-    TemplateShare, User, UserGroup, UserGroupMember, ZIATemplate,
+    TemplateShare,
+    User,
+    UserGroup,
+    UserGroupMember,
+    ZIATemplate,
 )
 
 
@@ -42,20 +46,15 @@ from db.models import (
 # Visibility
 # ---------------------------------------------------------------------------
 
+
 def _group_ids_for(user_id: int, session: Session) -> List[int]:
     """Groups this account belongs to — the same source GroupTenantEntitlement reads."""
-    return [
-        g for (g,) in session.query(UserGroupMember.group_id).filter_by(user_id=user_id)
-    ]
+    return [g for (g,) in session.query(UserGroupMember.group_id).filter_by(user_id=user_id)]
 
 
 def unowned_template_ids(session: Session) -> Set[int]:
     """Templates with no owner — the admin's entire view, and its work queue."""
-    return {
-        t for (t,) in session.query(ZIATemplate.id).filter(
-            ZIATemplate.owner_user_id.is_(None)
-        )
-    }
+    return {t for (t,) in session.query(ZIATemplate.id).filter(ZIATemplate.owner_user_id.is_(None))}
 
 
 def visible_template_ids(user_id: int, role: str, session: Session) -> Set[int]:
@@ -77,19 +76,19 @@ def visible_template_ids(user_id: int, role: str, session: Session) -> Set[int]:
         t for (t,) in session.query(ZIATemplate.id).filter(ZIATemplate.visibility == "org")
     }
     ids |= {
-        t for (t,) in session.query(ZIATemplate.id).filter(
-            ZIATemplate.owner_user_id == user_id
-        )
+        t for (t,) in session.query(ZIATemplate.id).filter(ZIATemplate.owner_user_id == user_id)
     }
     ids |= {
-        t for (t,) in session.query(TemplateShare.template_id).filter(
+        t
+        for (t,) in session.query(TemplateShare.template_id).filter(
             TemplateShare.user_id == user_id
         )
     }
     group_ids = _group_ids_for(user_id, session)
     if group_ids:
         ids |= {
-            t for (t,) in session.query(TemplateShare.template_id).filter(
+            t
+            for (t,) in session.query(TemplateShare.template_id).filter(
                 TemplateShare.group_id.in_(group_ids)
             )
         }
@@ -146,6 +145,7 @@ def can_manage(template: ZIATemplate, user_id: int, role: str) -> bool:
 # Share CRUD
 # ---------------------------------------------------------------------------
 
+
 def _out(row: TemplateShare, username: Optional[str], group_name: Optional[str]) -> dict:
     return {
         "id": row.id,
@@ -180,9 +180,7 @@ def share_counts(template_ids: Iterable[int], session: Session) -> dict:
     ids = list(template_ids)
     if not ids:
         return counts
-    rows = session.query(TemplateShare.template_id).filter(
-        TemplateShare.template_id.in_(ids)
-    ).all()
+    rows = session.query(TemplateShare.template_id).filter(TemplateShare.template_id.in_(ids)).all()
     for (tid,) in rows:
         counts[tid] = counts.get(tid, 0) + 1
     return counts
@@ -217,7 +215,8 @@ def add_shares(
 
     if user_ids:
         found = {
-            u for (u,) in session.query(User.id).filter(
+            u
+            for (u,) in session.query(User.id).filter(
                 User.id.in_(user_ids), User.is_active.is_(True)
             )
         }
@@ -225,9 +224,7 @@ def add_shares(
         if missing:
             raise ValueError(f"Unknown or inactive user id(s): {sorted(missing)}")
     if group_ids:
-        found = {
-            g for (g,) in session.query(UserGroup.id).filter(UserGroup.id.in_(group_ids))
-        }
+        found = {g for (g,) in session.query(UserGroup.id).filter(UserGroup.id.in_(group_ids))}
         missing = set(group_ids) - found
         if missing:
             raise ValueError(f"Unknown group id(s): {sorted(missing)}")
@@ -241,15 +238,17 @@ def add_shares(
     for uid in user_ids:
         if uid in have_users:
             continue
-        row = TemplateShare(template_id=template.id, user_id=uid,
-                            shared_at=now, shared_by=shared_by)
+        row = TemplateShare(
+            template_id=template.id, user_id=uid, shared_at=now, shared_by=shared_by
+        )
         session.add(row)
         created.append(row)
     for gid in group_ids:
         if gid in have_groups:
             continue
-        row = TemplateShare(template_id=template.id, group_id=gid,
-                            shared_at=now, shared_by=shared_by)
+        row = TemplateShare(
+            template_id=template.id, group_id=gid, shared_at=now, shared_by=shared_by
+        )
         session.add(row)
         created.append(row)
 
@@ -263,9 +262,7 @@ def add_shares(
 
 def remove_share(template_id: int, share_id: int, session: Session) -> Optional[dict]:
     """Drop one grant.  Returns what was removed, or None if it was already gone."""
-    row = session.query(TemplateShare).filter_by(
-        id=share_id, template_id=template_id
-    ).first()
+    row = session.query(TemplateShare).filter_by(id=share_id, template_id=template_id).first()
     if row is None:
         return None
     user_name = None
@@ -283,6 +280,7 @@ def remove_share(template_id: int, share_id: int, session: Session) -> Optional[
 # Deprovisioning
 # ---------------------------------------------------------------------------
 
+
 def disown_templates(user_id: int, session: Session) -> List[str]:
     """Cut an account loose from the templates it owns.  Returns their names.
 
@@ -297,9 +295,7 @@ def disown_templates(user_id: int, session: Session) -> List[str]:
     permission, and it is the only thing telling the admin whose template they
     are now holding.  The name is returned so the caller can audit what moved.
     """
-    rows = session.query(ZIATemplate).filter(
-        ZIATemplate.owner_user_id == user_id
-    ).all()
+    rows = session.query(ZIATemplate).filter(ZIATemplate.owner_user_id == user_id).all()
     names = []
     for tmpl in rows:
         tmpl.owner_user_id = None

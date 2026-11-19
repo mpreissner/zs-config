@@ -31,8 +31,8 @@ router = APIRouter(prefix="/api/v1/auth/sso", tags=["SSO"])
 # swept on access. Both hold seconds-lived values, so losing them on restart is
 # the correct behaviour — an in-flight login simply restarts.
 
-_LOGIN_TTL = 600   # seconds an in-flight IdP round trip may take
-_CODE_TTL = 60     # seconds the SPA has to redeem its one-time code
+_LOGIN_TTL = 600  # seconds an in-flight IdP round trip may take
+_CODE_TTL = 60  # seconds the SPA has to redeem its one-time code
 
 _login_states: Dict[str, Tuple[dict, datetime]] = {}
 _handoff_codes: Dict[str, Tuple[dict, datetime]] = {}
@@ -61,6 +61,7 @@ def _take(store: Dict[str, Tuple[Any, datetime]], key: str) -> Optional[Any]:
 @dataclass
 class _TokenUser:
     """Minimal stand-in so auth_utils can mint tokens without a live session."""
+
     id: int
     username: str
     role: str
@@ -102,6 +103,7 @@ def _complete_login(cfg: SsoConfig, identity: Identity) -> RedirectResponse:
     _put(_handoff_codes, code, payload, _CODE_TTL)
 
     from services import audit_service
+
     audit_service.log(
         product=None,
         operation="sso_login",
@@ -427,7 +429,9 @@ def sso_test(_: AuthUser = Depends(require_admin)):
     except SsoError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except ImportError:
-        raise HTTPException(status_code=501, detail="SAML not available (python3-saml not installed)")
+        raise HTTPException(
+            status_code=501, detail="SAML not available (python3-saml not installed)"
+        )
     idp = settings["idp"]
     return {
         "ok": True,

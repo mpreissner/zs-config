@@ -20,6 +20,7 @@ rewritten.  That only works if the referenced candidate is in the same baseline,
 which is why unresolved references are reported rather than discovered at push
 time as an API rejection.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -44,9 +45,11 @@ def _engine_types(product: str) -> Tuple[List[str], Optional[Set[str]]]:
     product = (product or "").upper()
     if product == "ZPA":
         from services.zpa_push_service import CAN_CREATE, RTYPE_ORDER
+
         return list(RTYPE_ORDER), set(CAN_CREATE)
     if product == "ZIA":
         from services.zia_push_service import PUSH_ORDER
+
         return list(PUSH_ORDER), None
     raise ValueError(f"Unsupported product for candidate push: {product!r}")
 
@@ -55,6 +58,7 @@ def _engine_types(product: str) -> Tuple[List[str], Optional[Set[str]]]:
 # Result types
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class BaselineResult:
     """A push-ready baseline plus everything the caller should show first."""
@@ -62,8 +66,8 @@ class BaselineResult:
     product: str
     resources: Dict[str, List[dict]] = field(default_factory=dict)
     included: List[cs.Candidate] = field(default_factory=list)
-    excluded: List[dict] = field(default_factory=list)     # {resource_type, name, reason}
-    unresolved: List[dict] = field(default_factory=list)   # {resource_type, name, references}
+    excluded: List[dict] = field(default_factory=list)  # {resource_type, name, reason}
+    unresolved: List[dict] = field(default_factory=list)  # {resource_type, name, references}
     key_index: Dict[Tuple[str, str], str] = field(default_factory=dict)
 
     def as_baseline(self) -> Dict[str, Any]:
@@ -98,6 +102,7 @@ class BaselineResult:
 # Outbound: candidates -> baseline
 # ---------------------------------------------------------------------------
 
+
 def build_baseline(
     tenant_id: int,
     product: str,
@@ -122,8 +127,11 @@ def build_baseline(
     rank = {rtype: i for i, rtype in enumerate(order)}
 
     accepted = cs.list_candidates(
-        tenant_id, product, status=cs.STATUS_ACCEPTED,
-        resource_type=resource_type, source=source,
+        tenant_id,
+        product,
+        status=cs.STATUS_ACCEPTED,
+        resource_type=resource_type,
+        source=source,
     )
     if candidate_ids is not None:
         wanted = {int(i) for i in candidate_ids}
@@ -133,18 +141,22 @@ def build_baseline(
 
     for cand in accepted:
         if cand.resource_type not in rank:
-            result.excluded.append({
-                "resource_type": cand.resource_type,
-                "name": cand.name,
-                "reason": REASON_UNKNOWN_TYPE,
-            })
+            result.excluded.append(
+                {
+                    "resource_type": cand.resource_type,
+                    "name": cand.name,
+                    "reason": REASON_UNKNOWN_TYPE,
+                }
+            )
             continue
         if creatable is not None and cand.resource_type not in creatable:
-            result.excluded.append({
-                "resource_type": cand.resource_type,
-                "name": cand.name,
-                "reason": REASON_NO_CREATE,
-            })
+            result.excluded.append(
+                {
+                    "resource_type": cand.resource_type,
+                    "name": cand.name,
+                    "reason": REASON_NO_CREATE,
+                }
+            )
             continue
         result.included.append(cand)
         result.key_index[(cand.resource_type, cand.name)] = cand.key
@@ -170,10 +182,7 @@ def _unresolved_references(
     rather than guessed from the `<source>:<name>` shape, so a live resource
     whose id happens to contain a colon is never mistaken for one.
     """
-    all_keys = {
-        c.key
-        for c in cs.list_candidates(tenant_id, product)
-    }
+    all_keys = {c.key for c in cs.list_candidates(tenant_id, product)}
     if not all_keys:
         return []
 
@@ -186,11 +195,13 @@ def _unresolved_references(
     for cand in result.included:
         hits = sorted(_referenced_keys(cand.raw_config, dangling))
         if hits:
-            out.append({
-                "resource_type": cand.resource_type,
-                "name": cand.name,
-                "references": hits,
-            })
+            out.append(
+                {
+                    "resource_type": cand.resource_type,
+                    "name": cand.name,
+                    "references": hits,
+                }
+            )
     return out
 
 
@@ -213,6 +224,7 @@ def _referenced_keys(obj: Any, keys: Set[str]) -> Set[str]:
 # Inbound: push records -> promotions
 # ---------------------------------------------------------------------------
 
+
 def _record_outcome(record: Any) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """(resource_type, name, tenant_id) for a written record, else (…, None).
 
@@ -223,13 +235,16 @@ def _record_outcome(record: Any) -> Tuple[Optional[str], Optional[str], Optional
     rtype = getattr(record, "resource_type", None)
     name = getattr(record, "name", None)
 
-    if hasattr(record, "zia_id"):                       # ZIA
+    if hasattr(record, "zia_id"):  # ZIA
         status = getattr(record, "status", "")
         written = status in ("created", "updated")
         return rtype, name, (str(record.zia_id) if written and record.zia_id else None)
 
-    if getattr(record, "is_applied", False) and getattr(record, "action", "") in ("create", "update"):
-        rid = getattr(record, "resource_id", None)      # ZPA
+    if getattr(record, "is_applied", False) and getattr(record, "action", "") in (
+        "create",
+        "update",
+    ):
+        rid = getattr(record, "resource_id", None)  # ZPA
         return rtype, name, (str(rid) if rid else None)
 
     return rtype, name, None

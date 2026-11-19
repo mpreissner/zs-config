@@ -76,6 +76,7 @@ def _out(group: UserGroup, member_count: int = 0, tenant_count: int = 0) -> dict
 
 def _counts(session, table, column) -> dict:
     from sqlalchemy import func
+
     rows = session.query(column, func.count()).group_by(column).all()
     return {gid: n for gid, n in rows}
 
@@ -264,9 +265,7 @@ def add_members(group_id: int, user_ids: Iterable[int], added_by: Optional[str] 
             if uid in already:
                 continue
             session.add(
-                UserGroupMember(
-                    group_id=group_id, user_id=uid, source="local", added_by=added_by
-                )
+                UserGroupMember(group_id=group_id, user_id=uid, source="local", added_by=added_by)
             )
             added.append(uid)
         session.flush()
@@ -357,7 +356,9 @@ def grant_tenants(
         g = session.query(UserGroup).filter_by(id=group_id).first()
         if not g:
             raise GroupError("Group not found", status=404)
-        found = {t for (t,) in session.query(TenantConfig.id).filter(TenantConfig.id.in_(tenant_ids))}
+        found = {
+            t for (t,) in session.query(TenantConfig.id).filter(TenantConfig.id.in_(tenant_ids))
+        }
         missing = [t for t in tenant_ids if t not in found]
         if missing:
             raise GroupError(f"Tenant not found: {', '.join(str(t) for t in missing)}", status=404)

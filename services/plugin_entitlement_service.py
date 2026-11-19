@@ -45,10 +45,7 @@ def list_entitlements(package: Optional[str] = None) -> list[dict]:
         user_names = dict(session.query(User.id, User.username).all())
         group_names = dict(session.query(UserGroup.id, UserGroup.display_name).all())
 
-        return [
-            _out(r, user_names.get(r.user_id), group_names.get(r.group_id))
-            for r in rows
-        ]
+        return [_out(r, user_names.get(r.user_id), group_names.get(r.group_id)) for r in rows]
 
 
 def grant(
@@ -110,10 +107,7 @@ def grant(
 
         user_names = dict(session.query(User.id, User.username).all())
         group_names = dict(session.query(UserGroup.id, UserGroup.display_name).all())
-        granted = [
-            _out(r, user_names.get(r.user_id), group_names.get(r.group_id))
-            for r in created
-        ]
+        granted = [_out(r, user_names.get(r.user_id), group_names.get(r.group_id)) for r in created]
 
     return {
         "granted": granted,
@@ -167,7 +161,8 @@ def entitled_packages(user_id: int, role: str = "user") -> Optional[list[str]]:
         rows = {p for (p,) in query}
         if group_ids:
             rows |= {
-                p for (p,) in session.query(PluginEntitlement.package).filter(
+                p
+                for (p,) in session.query(PluginEntitlement.package).filter(
                     PluginEntitlement.group_id.in_(group_ids)
                 )
             }

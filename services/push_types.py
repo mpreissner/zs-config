@@ -28,10 +28,10 @@ class PushRecord:
 
     resource_type: str
     name: str
-    action: str                                  # create | update | delete
-    status: str                                  # applied | failed | manual
+    action: str  # create | update | delete
+    status: str  # applied | failed | manual
     reason: str = ""
-    resource_id: Optional[str] = None            # set on applied create/update
+    resource_id: Optional[str] = None  # set on applied create/update
     warnings: List[str] = field(default_factory=list)
 
     @property
@@ -82,10 +82,10 @@ class PushPlanEntry:
     name: str
     action: str
     supported: bool
-    target_id: Optional[str] = None      # existing resource id (update/delete)
-    source_id: Optional[str] = None      # id in the input set (create; may be synthetic)
+    target_id: Optional[str] = None  # existing resource id (update/delete)
+    source_id: Optional[str] = None  # id in the input set (create; may be synthetic)
     desired_config: Dict[str, Any] = field(default_factory=dict)
-    pre_config: Dict[str, Any] = field(default_factory=dict)   # pre-write state, for rollback
+    pre_config: Dict[str, Any] = field(default_factory=dict)  # pre-write state, for rollback
     skip_reason: str = ""
 
 
@@ -93,7 +93,7 @@ class PushPlanEntry:
 class PushPlan:
     """Classification output.  No API writes have been made."""
 
-    mode: str                                    # restore | merge
+    mode: str  # restore | merge
     deletes: List[PushPlanEntry] = field(default_factory=list)
     creates: List[PushPlanEntry] = field(default_factory=list)
     updates: List[PushPlanEntry] = field(default_factory=list)
@@ -136,14 +136,24 @@ class PushPlan:
     def type_summary(self) -> Dict[str, Dict[str, int]]:
         """{resource_type: {create|update|delete|skip: N}}"""
         out: Dict[str, Dict[str, int]] = {}
-        for action, entries in ((DELETE, self.deletes), (CREATE, self.creates), (UPDATE, self.updates)):
+        for action, entries in (
+            (DELETE, self.deletes),
+            (CREATE, self.creates),
+            (UPDATE, self.updates),
+        ):
             for e in entries:
-                bucket = out.setdefault(e.resource_type, {"create": 0, "update": 0, "delete": 0, "skip": 0})
+                bucket = out.setdefault(
+                    e.resource_type, {"create": 0, "update": 0, "delete": 0, "skip": 0}
+                )
                 bucket[action if e.supported else "skip"] += 1
         return out
 
-    def changes_by_action(self) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]], List[Tuple[str, str]]]:
+    def changes_by_action(
+        self,
+    ) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]], List[Tuple[str, str]]]:
         """(creates, updates, deletes) as (resource_type, name) pairs."""
+
         def pairs(entries: List[PushPlanEntry]) -> List[Tuple[str, str]]:
             return [(e.resource_type, e.name) for e in entries if e.supported]
+
         return pairs(self.creates), pairs(self.updates), pairs(self.deletes)
